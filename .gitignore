@@ -5,3 +5,22 @@
 *.log
 **/debug-store.txt
 **/data/sessions/
+
+.cache/
+.gocache/
+
+# Local historical configuration files containing API credentials
+democode/v3/config/config.go
+democode/v4/config/config.go
+democode/v5/config/config.go
+democode/v6/config/config.go
+democode/v6.5/config/config.go
+democode/v7/config/config.go
+democode/v9/config/config.go
+democode/v10/config/config.go
+democode/v11/config/config.go
+
+# Nested practice repositories
+democode/v6/workspace/
+democode/v6.5/workspace/
+democode/v7/workspace/
