@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>剧本杀</title>
+  <style>
+    :root {
+      --accent: #d4485f;
+      --surface: rgba(255,255,255,0.88);
+      --text: #25212a;
+      --muted: #6a6170;
+      --line: rgba(37,33,42,0.14);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, #f6d365 0%, #fda085 38%, #6fb1fc 100%);
+    }
+    button, input, select, textarea { font: inherit; }
+    button {
+      border: 0;
+      background: var(--accent);
+      color: #fff;
+      min-height: 40px;
+      padding: 0 14px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: rgba(255,255,255,0.86);
+      color: var(--text);
+      padding: 10px 11px;
+    }
+    textarea { min-height: 76px; resize: vertical; }
+    .shell {
+      width: min(1220px, 100%);
+      margin: 0 auto;
+      padding: 22px;
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr) 300px;
+      gap: 16px;
+    }
+    .band {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      backdrop-filter: blur(16px);
+      min-width: 0;
+    }
+    .left, .right {
+      height: calc(100vh - 44px);
+      overflow: auto;
+      padding: 16px;
+    }
+    .main {
+      height: calc(100vh - 44px);
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      overflow: hidden;
+    }
+    .topbar {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 24px; line-height: 1.1; }
+    h2 { font-size: 15px; margin-bottom: 10px; }
+    h3 { font-size: 14px; }
+    .sub { color: var(--muted); margin-top: 5px; font-size: 13px; line-height: 1.35; }
+    .stack { display: grid; gap: 12px; }
+    .field { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+    .script-card, .role-card, .clue, .private-text {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.54);
+      padding: 12px;
+    }
+    .script-card { cursor: pointer; }
+    .script-card.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+    .role-grid { display: grid; gap: 8px; }
+    .role-card {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+    }
+    .avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: var(--accent);
+      font-weight: 700;
+    }
+    .progress {
+      min-width: 120px;
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(37,33,42,0.13);
+      overflow: hidden;
+    }
+    .progress > span {
+      display: block;
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+      transition: width 180ms ease;
+    }
+    .log {
+      min-height: 0;
+      overflow: auto;
+      padding: 16px 18px;
+      display: grid;
+      align-content: start;
+      gap: 10px;
+    }
+    .msg {
+      max-width: 82%;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.72);
+      border-radius: 8px;
+      padding: 10px 12px;
+      line-height: 1.55;
+      word-break: break-word;
+    }
+    .msg.dm { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+    .msg.me { margin-left: auto; background: color-mix(in srgb, var(--accent) 12%, white); }
+    .msg .from { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .composer {
+      border-top: 1px solid var(--line);
+      padding: 14px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: end;
+    }
+    .phase-pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 7px 11px;
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .private-text {
+      white-space: pre-wrap;
+      line-height: 1.55;
+      color: var(--text);
+      max-height: 210px;
+      overflow: auto;
+    }
+    .clue { display: grid; gap: 5px; }
+    .tag {
+      display: inline-flex;
+      width: fit-content;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    @media (max-width: 980px) {
+      .shell { grid-template-columns: 1fr; padding: 12px; }
+      .left, .right, .main { height: auto; max-height: none; }
+      .main { min-height: 72vh; }
+      .log { height: 52vh; }
+      .composer { grid-template-columns: 1fr; }
+      .msg { max-width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="band left stack">
+      <section class="stack">
+        <div>
+          <h1 id="title">剧本杀</h1>
+          <p id="subtitle" class="sub">选择剧本和角色后开局。</p>
+        </div>
+        <div id="scripts" class="stack"></div>
+      </section>
+      <section class="stack">
+        <h2>玩家</h2>
+        <label class="field">显示名<input id="playerName" value="玩家" maxlength="18"></label>
+        <label class="field">语言
+          <select id="language">
+            <option value="zh-CN">中文</option>
+            <option value="ja-JP">日本語</option>
+          </select>
+        </label>
+        <label class="field">剧本角色<select id="roleSelect"></select></label>
+        <button id="startBtn">开始</button>
+      </section>
+      <section class="stack">
+        <h2>角色</h2>
+        <div id="roles" class="role-grid"></div>
+      </section>
+    </aside>
+
+    <main class="band main">
+      <div class="topbar">
+        <div>
+          <h2 id="phaseTitle">未开局</h2>
+          <p id="phaseSub" class="sub">等待选择。</p>
+        </div>
+        <div class="progress"><span id="progressBar"></span></div>
+      </div>
+      <div id="log" class="log"></div>
+      <form id="composer" class="composer">
+        <textarea id="input" placeholder="以角色身份发言" disabled></textarea>
+        <button id="sendBtn" disabled>发送</button>
+      </form>
+    </main>
+
+    <aside class="band right stack">
+      <section class="stack">
+        <h2>DM</h2>
+        <div id="dmPanel" class="private-text">-</div>
+      </section>
+      <section class="stack">
+        <h2>私有剧本</h2>
+        <div id="privatePanel" class="private-text">-</div>
+      </section>
+      <section class="stack">
+        <h2>线索</h2>
+        <div id="clues" class="stack"></div>
+      </section>
+    </aside>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let scripts = [];
+    let selectedScript = null;
+    let streamController = null;
+    let waiting = false;
+
+    async function loadScripts() {
+      const res = await fetch("/api/mystery/scripts", { cache: "no-store" });
+      scripts = await res.json();
+      selectedScript = scripts[0];
+      renderScripts();
+      renderSelected();
+    }
+
+    function renderScripts() {
+      $("scripts").innerHTML = "";
+      scripts.forEach((script) => {
+        const el = document.createElement("div");
+        el.className = "script-card" + (selectedScript?.id === script.id ? " active" : "");
+        el.innerHTML = `<h3>${escapeHtml(script.title)}</h3><p class="sub">${escapeHtml(script.summary || script.subtitle || "")}</p>`;
+        el.onclick = () => { selectedScript = script; renderScripts(); renderSelected(); };
+        $("scripts").appendChild(el);
+      });
+    }
+
+    function renderSelected() {
+      if (!selectedScript) return;
+      const theme = selectedScript.theme || {};
+      document.body.style.background = theme.background || "";
+      document.body.style.fontFamily = theme.font || "";
+      document.documentElement.style.setProperty("--accent", theme.accent || "#d4485f");
+      document.documentElement.style.setProperty("--surface", theme.surface || "rgba(255,255,255,0.88)");
+      document.documentElement.style.setProperty("--text", theme.text || "#25212a");
+      document.documentElement.style.setProperty("--muted", theme.muted || "#6a6170");
+      $("title").textContent = theme.title || selectedScript.title;
+      $("subtitle").textContent = theme.subtitle || selectedScript.subtitle || "";
+      $("roleSelect").innerHTML = selectedScript.roles.map((r) => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join("");
+      $("roles").innerHTML = "";
+      selectedScript.roles.forEach((role) => {
+        const color = role.color || theme.roleColors?.[role.id] || theme.accent || "#d4485f";
+        const el = document.createElement("div");
+        el.className = "role-card";
+        el.innerHTML = `<div class="avatar" style="background:${color}">${escapeHtml(role.avatar || role.name.slice(0,1))}</div><div><h3>${escapeHtml(role.name)}</h3><p class="sub">${escapeHtml(role.publicIntro || "")}</p></div>`;
+        $("roles").appendChild(el);
+      });
+    }
+
+    async function startGame() {
+      if (streamController) streamController.abort();
+      $("log").innerHTML = "";
+      $("clues").innerHTML = "";
+      $("dmPanel").textContent = "-";
+      $("privatePanel").textContent = "-";
+      setWaiting(false);
+      streamController = new AbortController();
+      const params = new URLSearchParams({
+        scriptId: selectedScript.id,
+        roleId: $("roleSelect").value,
+        playerName: $("playerName").value || "玩家",
+        language: $("language").value
+      });
+      const res = await fetch(`/api/mystery/stream?${params}`, { signal: streamController.signal });
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split("\n\n");
+        buffer = chunks.pop();
+        for (const chunk of chunks) {
+          const line = chunk.split("\n").find((x) => x.startsWith("data:"));
+          if (!line) continue;
+          handleFrame(JSON.parse(line.slice(5).trim()));
+        }
+      }
+    }
+
+    function handleFrame(frame) {
+      if (frame.type === "error") {
+        addMessage("DM", frame.message, "dm");
+      } else if (frame.type === "script" && frame.script) {
+        selectedScript = frame.script;
+        renderSelected();
+      } else if (frame.type === "role") {
+        addMessage("DM", `你当前绑定的剧本角色是 ${frame.role.name}。`, "dm");
+      } else if (frame.type === "phase") {
+        $("phaseTitle").textContent = frame.title;
+        $("phaseSub").textContent = `${frame.index} / ${frame.total}`;
+        $("progressBar").style.width = `${Math.round((frame.index / frame.total) * 100)}%`;
+        setWaiting(false);
+      } else if (frame.type === "dm") {
+        $("dmPanel").textContent = frame.text;
+        addMessage(frame.from || "DM", frame.text, "dm");
+      } else if (frame.type === "script" && frame.text) {
+        $("privatePanel").textContent = frame.text;
+      } else if (frame.type === "clue") {
+        addClue(frame.clue, frame.private);
+      } else if (frame.type === "prompt") {
+        setWaiting(true);
+      } else if (frame.type === "speech") {
+        addMessage(frame.from, frame.text, frame.from === ($("playerName").value || "玩家") ? "me" : "");
+      } else if (frame.type === "reveal") {
+        const text = frame.roles.map((x) => `${x.player} / ${x.role}`).join("；");
+        addMessage("DM", text, "dm");
+      } else if (frame.type === "done") {
+        setWaiting(false);
+        addMessage("DM", "本局结束。", "dm");
+      }
+    }
+
+    function addMessage(from, text, cls) {
+      const el = document.createElement("div");
+      el.className = `msg ${cls || ""}`;
+      el.innerHTML = `<div class="from">${escapeHtml(from || "")}</div><div>${escapeHtml(text || "")}</div>`;
+      $("log").appendChild(el);
+      $("log").scrollTop = $("log").scrollHeight;
+    }
+
+    function addClue(clue, isPrivate) {
+      const el = document.createElement("div");
+      el.className = "clue";
+      el.innerHTML = `<h3>${escapeHtml(clue.title)}</h3><span class="tag">${isPrivate ? "私有" : "公开"}</span>`;
+      $("clues").appendChild(el);
+    }
+
+    function setWaiting(value) {
+      waiting = value;
+      $("input").disabled = !value;
+      $("sendBtn").disabled = !value;
+      if (value) $("input").focus();
+    }
+
+    $("startBtn").addEventListener("click", startGame);
+    $("composer").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const text = $("input").value.trim();
+      if (!waiting || !text) return;
+      setWaiting(false);
+      $("input").value = "";
+      await fetch("/api/mystery/input", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text })
+      });
+    });
+
+    function escapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[ch]));
+    }
+
+    loadScripts().catch((err) => addMessage("DM", err.message, "dm"));
+  </script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+# Go build artifacts
+*.exe
+
+# Runtime and debug output
+*.log
+**/debug-store.txt
+**/data/sessions/

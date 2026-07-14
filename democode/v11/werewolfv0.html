@@ -1,0 +1,1662 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>雾镇狼人杀</title>
+    <style>
+        :root {
+            --ink: #241711;
+            --paper: #f4ead6;
+            --paper-deep: #e8d6b6;
+            --night: #10131b;
+            --night-2: #18151e;
+            --wine: #7f1d1d;
+            --blood: #b4232a;
+            --gold: #c28a38;
+            --moss: #2d6a4f;
+            --teal: #1f6f78;
+            --violet: #4c315f;
+            --line: rgba(36, 23, 17, .18);
+            --shadow: 0 18px 55px rgba(5, 5, 12, .38);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            color: var(--paper);
+            font-family: "Noto Serif SC", "Songti SC", "Microsoft YaHei", serif;
+            background:
+                radial-gradient(circle at 16% 18%, rgba(194, 138, 56, .22), transparent 28%),
+                radial-gradient(circle at 82% 20%, rgba(127, 29, 29, .28), transparent 32%),
+                linear-gradient(135deg, #0b1018 0%, #17101b 48%, #20110f 100%);
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background:
+                linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+            background-size: 32px 32px;
+            mask-image: radial-gradient(circle at center, black, transparent 82%);
+        }
+
+        button, input, select {
+            font: inherit;
+        }
+
+        button {
+            border: 0;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+            opacity: .55;
+        }
+
+        .shell {
+            width: min(1480px, calc(100vw - 28px));
+            margin: 0 auto;
+            padding: 18px 0 24px;
+        }
+
+        .topbar {
+            display: grid;
+            grid-template-columns: minmax(240px, 1fr) auto minmax(240px, 1fr);
+            gap: 14px;
+            align-items: center;
+            margin-bottom: 14px;
+            padding: 14px;
+            border: 1px solid rgba(244, 234, 214, .18);
+            border-radius: 8px;
+            background: rgba(16, 19, 27, .82);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(14px);
+        }
+
+        .scene {
+            position: relative;
+            height: 138px;
+            margin-bottom: 14px;
+            overflow: hidden;
+            border: 1px solid rgba(244, 234, 214, .16);
+            border-radius: 8px;
+            background:
+                radial-gradient(circle at 72% 24%, rgba(244, 210, 142, .22), transparent 12%),
+                linear-gradient(180deg, rgba(20, 24, 38, .92), rgba(34, 19, 24, .86));
+            box-shadow: var(--shadow);
+        }
+
+        .scene::before,
+        .scene::after {
+            content: "";
+            position: absolute;
+            left: -20%;
+            right: -20%;
+            height: 42px;
+            bottom: 14px;
+            background: radial-gradient(ellipse at center, rgba(244,234,214,.2), rgba(244,234,214,0) 65%);
+            filter: blur(12px);
+            animation: fogMove 18s linear infinite;
+            opacity: .48;
+        }
+
+        .scene::after {
+            bottom: 46px;
+            animation-duration: 27s;
+            animation-direction: reverse;
+            opacity: .28;
+        }
+
+        .panorama {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .moon-glow {
+            animation: moonPulse 5s ease-in-out infinite;
+            transform-origin: 76% 27%;
+        }
+
+        .lantern {
+            animation: lanternFlicker 1.7s ease-in-out infinite;
+        }
+
+        .bat-a { animation: flyA 9s linear infinite; }
+        .bat-b { animation: flyB 12s linear infinite; }
+        .cat-tail { animation: tailWave 2.4s ease-in-out infinite; transform-origin: 88% 74%; }
+        .owl-eye { animation: blink 4.6s ease-in-out infinite; transform-origin: center; }
+
+        @keyframes fogMove {
+            from { transform: translateX(-8%); }
+            to { transform: translateX(8%); }
+        }
+
+        @keyframes moonPulse {
+            0%, 100% { opacity: .88; filter: drop-shadow(0 0 8px rgba(244,210,142,.34)); }
+            50% { opacity: 1; filter: drop-shadow(0 0 18px rgba(244,210,142,.62)); }
+        }
+
+        @keyframes lanternFlicker {
+            0%, 100% { opacity: .74; }
+            48% { opacity: 1; }
+            56% { opacity: .52; }
+            62% { opacity: .94; }
+        }
+
+        @keyframes flyA {
+            from { transform: translateX(-16%); }
+            to { transform: translateX(116%); }
+        }
+
+        @keyframes flyB {
+            from { transform: translateX(112%); }
+            to { transform: translateX(-22%); }
+        }
+
+        @keyframes tailWave {
+            0%, 100% { transform: rotate(0deg); }
+            50% { transform: rotate(8deg); }
+        }
+
+        @keyframes blink {
+            0%, 92%, 100% { transform: scaleY(1); }
+            95% { transform: scaleY(.12); }
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        .sigil {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            color: #f4d28e;
+            border: 1px solid rgba(194, 138, 56, .58);
+            background:
+                radial-gradient(circle at 50% 35%, rgba(244, 210, 142, .28), transparent 34%),
+                conic-gradient(from 20deg, #351719, #76211f, #1d2631, #5b4121, #351719);
+            box-shadow: 0 0 28px rgba(180, 35, 42, .25);
+            flex: 0 0 auto;
+        }
+
+        .sigil svg { width: 30px; height: 30px; }
+
+        .title {
+            min-width: 0;
+        }
+
+        .title h1 {
+            margin: 0;
+            font-size: 22px;
+            letter-spacing: .08em;
+            font-weight: 900;
+            line-height: 1.1;
+        }
+
+        .title p {
+            margin: 5px 0 0;
+            color: rgba(244, 234, 214, .62);
+            font-size: 12px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .phase-strip {
+            justify-self: center;
+            display: grid;
+            grid-template-columns: auto auto;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .badge, .round {
+            min-height: 40px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(244, 234, 214, .18);
+            background: rgba(5, 7, 12, .42);
+            white-space: nowrap;
+        }
+
+        .badge strong, .round strong {
+            font-size: 13px;
+        }
+
+        .dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: #6b7280;
+            box-shadow: 0 0 0 4px rgba(107, 114, 128, .16);
+            flex: 0 0 auto;
+        }
+
+        .dot.online { background: #34d399; box-shadow: 0 0 0 4px rgba(52, 211, 153, .16); }
+        .dot.warn { background: #f59e0b; box-shadow: 0 0 0 4px rgba(245, 158, 11, .16); }
+        .dot.fail { background: #ef4444; box-shadow: 0 0 0 4px rgba(239, 68, 68, .16); }
+
+        .controls {
+            justify-self: end;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+        }
+
+        .role-select {
+            height: 38px;
+            color: var(--paper);
+            border: 1px solid rgba(244, 234, 214, .18);
+            border-radius: 8px;
+            background: rgba(5, 7, 12, .55);
+            padding: 0 10px;
+            outline: none;
+        }
+
+        .primary, .secondary {
+            height: 38px;
+            border-radius: 8px;
+            padding: 0 13px;
+            color: var(--paper);
+            font-weight: 800;
+            letter-spacing: .03em;
+        }
+
+        .primary {
+            background: linear-gradient(135deg, var(--blood), #6f1d1b);
+            box-shadow: 0 10px 26px rgba(180, 35, 42, .24);
+        }
+
+        .secondary {
+            border: 1px solid rgba(244, 234, 214, .18);
+            background: rgba(244, 234, 214, .08);
+        }
+
+        .icon-btn {
+            width: 38px;
+            height: 38px;
+            border-radius: 8px;
+            display: grid;
+            place-items: center;
+            color: var(--paper);
+            border: 1px solid rgba(244, 234, 214, .18);
+            background: rgba(244, 234, 214, .08);
+        }
+
+        .icon-btn.active {
+            color: #f5d08a;
+            border-color: rgba(194, 138, 56, .55);
+            background: rgba(194, 138, 56, .14);
+        }
+
+        .board {
+            display: grid;
+            grid-template-columns: 300px minmax(0, 1fr) 320px;
+            gap: 14px;
+            align-items: stretch;
+            height: calc(100vh - 238px);
+            min-height: 620px;
+        }
+
+        .panel {
+            border: 1px solid rgba(244, 234, 214, .17);
+            border-radius: 8px;
+            background: rgba(16, 19, 27, .78);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(14px);
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        .panel-head {
+            min-height: 48px;
+            padding: 12px 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            border-bottom: 1px solid rgba(244, 234, 214, .13);
+            background: linear-gradient(90deg, rgba(194, 138, 56, .12), rgba(127, 29, 29, .11), transparent);
+        }
+
+        .panel-head h2 {
+            margin: 0;
+            font-size: 14px;
+            letter-spacing: .08em;
+        }
+
+        .mini {
+            color: rgba(244, 234, 214, .58);
+            font-size: 12px;
+        }
+
+        .seats {
+            height: calc(100vh - 188px);
+            min-height: 560px;
+            overflow: auto;
+            padding: 10px;
+            display: grid;
+            gap: 8px;
+            align-content: start;
+        }
+
+        .seat {
+            display: grid;
+            grid-template-columns: 54px minmax(0, 1fr);
+            gap: 10px;
+            align-items: center;
+            padding: 9px;
+            border: 1px solid rgba(244, 234, 214, .13);
+            border-radius: 8px;
+            background: linear-gradient(135deg, rgba(244, 234, 214, .075), rgba(255,255,255,.018));
+            transition: border-color .2s ease, background .2s ease, transform .2s ease;
+        }
+
+        .seat.me {
+            border-color: rgba(194, 138, 56, .72);
+            background: linear-gradient(135deg, rgba(194, 138, 56, .18), rgba(127, 29, 29, .08));
+        }
+
+        .seat.speaking {
+            border-color: rgba(69, 183, 168, .8);
+            transform: translateY(-1px);
+        }
+
+        .seat.dead {
+            filter: grayscale(.85);
+            opacity: .58;
+        }
+
+        .avatar {
+            width: 54px;
+            height: 54px;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #111827;
+            border: 1px solid rgba(244, 234, 214, .18);
+        }
+
+        .seat-main {
+            min-width: 0;
+        }
+
+        .seat-name {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+        }
+
+        .seat-name strong {
+            display: block;
+            font-size: 13px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            height: 20px;
+            border-radius: 6px;
+            padding: 0 6px;
+            font-size: 11px;
+            border: 1px solid rgba(244, 234, 214, .16);
+            color: rgba(244, 234, 214, .72);
+            background: rgba(5, 7, 12, .34);
+            white-space: nowrap;
+        }
+
+        .tag.gold { color: #f5d08a; border-color: rgba(194, 138, 56, .5); background: rgba(194, 138, 56, .12); }
+        .tag.red { color: #ffb4aa; border-color: rgba(180, 35, 42, .45); background: rgba(180, 35, 42, .14); }
+        .tag.green { color: #b8f3d2; border-color: rgba(45, 106, 79, .6); background: rgba(45, 106, 79, .18); }
+
+        .seat-lore {
+            margin-top: 5px;
+            color: rgba(244, 234, 214, .54);
+            font-size: 12px;
+            line-height: 1.35;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .stage {
+            display: grid;
+            grid-template-rows: auto minmax(0, 1fr) auto;
+            height: 100%;
+            min-height: 0;
+        }
+
+        .status-ribbon {
+            padding: 10px 14px;
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 12px;
+            align-items: center;
+            border-bottom: 1px solid rgba(244, 234, 214, .12);
+            background: rgba(5, 7, 12, .22);
+        }
+
+        .identity {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            min-width: 0;
+        }
+
+        .identity strong {
+            color: #f5d08a;
+        }
+
+        .log {
+            padding: 16px;
+            overflow: auto;
+            min-height: 0;
+            background:
+                linear-gradient(rgba(16,19,27,.48), rgba(16,19,27,.82)),
+                radial-gradient(circle at 50% 5%, rgba(244, 234, 214, .08), transparent 36%),
+                url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='720' height='420' viewBox='0 0 720 420'%3E%3Cg fill='none' stroke='%23f4ead6' stroke-opacity='.055'%3E%3Cpath d='M40 360c90-70 160-76 245-32s180 46 300-36'/%3E%3Cpath d='M76 120c42-38 88-55 138-48 75 10 110 72 174 68 64-5 82-64 160-72 34-3 66 5 96 22'/%3E%3Cpath d='M128 286h74v-92l37-34 38 34v92h74v-122l54-50 54 50v122h82'/%3E%3Cpath d='M516 314c18-36 52-56 92-56s72 20 90 56'/%3E%3C/g%3E%3Cg fill='%23f4ead6' fill-opacity='.05'%3E%3Ccircle cx='596' cy='70' r='42'/%3E%3Ccircle cx='112' cy='328' r='18'/%3E%3Ccircle cx='642' cy='310' r='14'/%3E%3C/g%3E%3C/svg%3E");
+            background-size: cover;
+            background-position: center;
+        }
+
+        .empty {
+            min-height: 100%;
+            display: grid;
+            place-items: center;
+            text-align: center;
+            color: rgba(244, 234, 214, .62);
+        }
+
+        .empty-box {
+            max-width: 430px;
+            padding: 22px;
+            border: 1px dashed rgba(244, 234, 214, .2);
+            border-radius: 8px;
+            background: rgba(5, 7, 12, .25);
+        }
+
+        .empty-box h3 {
+            margin: 0 0 8px;
+            color: var(--paper);
+            letter-spacing: .06em;
+        }
+
+        .message {
+            display: grid;
+            grid-template-columns: 42px minmax(0, 1fr);
+            gap: 10px;
+            align-items: start;
+            margin: 0 0 12px;
+        }
+
+        .message.me {
+            grid-template-columns: minmax(0, 1fr) 42px;
+        }
+
+        .message.me .bubble {
+            order: 1;
+            justify-self: end;
+        }
+
+        .message.me .small-avatar { order: 2; }
+
+        .small-avatar {
+            width: 42px;
+            height: 42px;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid rgba(244, 234, 214, .14);
+            background: rgba(5, 7, 12, .5);
+        }
+
+        .bubble {
+            width: min(680px, 100%);
+            max-width: 100%;
+            min-width: min(260px, 100%);
+            max-height: 220px;
+            overflow: auto;
+            padding: 10px 12px;
+            border: 1px solid rgba(244, 234, 214, .14);
+            border-radius: 8px;
+            background:
+                linear-gradient(135deg, rgba(var(--bubble-rgb, 194, 138, 56), .18), rgba(5, 7, 12, .46)),
+                radial-gradient(circle at 100% 0, rgba(var(--bubble-rgb, 194, 138, 56), .2), transparent 34%);
+            border-color: rgba(var(--bubble-rgb, 194, 138, 56), .32);
+            color: rgba(244, 234, 214, .9);
+            box-shadow: 0 10px 26px rgba(0,0,0,.16);
+            position: relative;
+        }
+
+        .bubble::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            border-radius: inherit;
+            background:
+                linear-gradient(90deg, rgba(var(--bubble-rgb, 194, 138, 56), .42), transparent 34%) left top / 100% 2px no-repeat,
+                repeating-linear-gradient(135deg, rgba(244,234,214,.045) 0 1px, transparent 1px 8px);
+            opacity: .8;
+        }
+
+        .bubble > * { position: relative; }
+
+        .bubble.private {
+            border-color: rgba(127, 29, 29, .5);
+            background: rgba(64, 22, 25, .34);
+        }
+
+        .speaker {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            margin-bottom: 5px;
+            color: rgba(244, 234, 214, .58);
+            font-size: 12px;
+        }
+
+        .text {
+            font-size: 14px;
+            line-height: 1.65;
+            white-space: pre-wrap;
+            overflow-wrap: break-word;
+            word-break: break-word;
+        }
+
+        .system-line {
+            margin: 12px 0;
+            text-align: center;
+        }
+
+        .system-line span {
+            display: inline-block;
+            max-width: 760px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(194, 138, 56, .28);
+            background: rgba(64, 42, 20, .28);
+            color: #f5d08a;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .action {
+            padding: 12px;
+            border-top: 1px solid rgba(244, 234, 214, .13);
+            background: rgba(8, 9, 14, .62);
+        }
+
+        .prompt-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 9px;
+        }
+
+        .prompt {
+            color: rgba(244, 234, 214, .7);
+            font-size: 13px;
+            overflow-wrap: anywhere;
+        }
+
+        .candidates {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin: 0 0 9px;
+        }
+
+        .chip {
+            height: 28px;
+            padding: 0 9px;
+            border-radius: 8px;
+            border: 1px solid rgba(244, 234, 214, .16);
+            color: rgba(244, 234, 214, .78);
+            background: rgba(244, 234, 214, .06);
+        }
+
+        .form {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px;
+        }
+
+        .input {
+            height: 42px;
+            border-radius: 8px;
+            border: 1px solid rgba(244, 234, 214, .16);
+            color: var(--paper);
+            background: rgba(5, 7, 12, .58);
+            padding: 0 12px;
+            outline: none;
+        }
+
+        .input:focus {
+            border-color: rgba(194, 138, 56, .8);
+            box-shadow: 0 0 0 3px rgba(194, 138, 56, .14);
+        }
+
+        .input:disabled {
+            color: rgba(244, 234, 214, .4);
+        }
+
+        .side {
+            display: grid;
+            grid-template-rows: auto auto minmax(0, 1fr);
+            height: 100%;
+            min-height: 0;
+        }
+
+        .role-card {
+            padding: 14px;
+            border-bottom: 1px solid rgba(244, 234, 214, .12);
+            background:
+                linear-gradient(135deg, rgba(194, 138, 56, .12), rgba(127, 29, 29, .12)),
+                rgba(5, 7, 12, .24);
+        }
+
+        .role-card h3 {
+            margin: 0 0 8px;
+            font-size: 13px;
+            color: rgba(244, 234, 214, .62);
+            letter-spacing: .08em;
+        }
+
+        .role-value {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .role-value strong {
+            font-size: 24px;
+            color: #f5d08a;
+        }
+
+        .rule-list {
+            margin: 10px 0 0;
+            padding-left: 18px;
+            color: rgba(244, 234, 214, .66);
+            font-size: 12px;
+            line-height: 1.65;
+        }
+
+        .teammates {
+            display: none;
+            margin-top: 10px;
+            padding: 9px;
+            border: 1px solid rgba(180, 35, 42, .28);
+            border-radius: 8px;
+            background: rgba(180, 35, 42, .1);
+            color: #ffcabf;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .clues {
+            padding: 10px 12px;
+            overflow: auto;
+        }
+
+        .clue {
+            border-left: 3px solid rgba(194, 138, 56, .45);
+            padding: 7px 9px;
+            margin-bottom: 8px;
+            border-radius: 0 8px 8px 0;
+            background: rgba(244, 234, 214, .055);
+            color: rgba(244, 234, 214, .74);
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 20;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(4, 6, 10, .78);
+            backdrop-filter: blur(10px);
+        }
+
+        .overlay.show { display: flex; }
+
+        .reveal {
+            width: min(760px, 100%);
+            max-height: min(760px, calc(100vh - 40px));
+            overflow: auto;
+            border: 1px solid rgba(194, 138, 56, .42);
+            border-radius: 8px;
+            background:
+                linear-gradient(135deg, rgba(244, 234, 214, .96), rgba(232, 214, 182, .96));
+            color: var(--ink);
+            box-shadow: 0 30px 90px rgba(0,0,0,.55);
+        }
+
+        .reveal-head {
+            padding: 18px;
+            border-bottom: 1px solid rgba(36, 23, 17, .16);
+            background: rgba(194, 138, 56, .16);
+        }
+
+        .reveal-head h2 {
+            margin: 0;
+            letter-spacing: .08em;
+        }
+
+        .reveal-grid {
+            padding: 14px;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .reveal-item {
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(36, 23, 17, .16);
+            background: rgba(255,255,255,.34);
+            font-size: 14px;
+        }
+
+        .reveal-actions {
+            padding: 14px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            border-top: 1px solid rgba(36, 23, 17, .12);
+        }
+
+        .toast-wrap {
+            position: fixed;
+            z-index: 30;
+            top: 16px;
+            right: 16px;
+            display: grid;
+            gap: 8px;
+            width: min(360px, calc(100vw - 32px));
+        }
+
+        .toast {
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(244, 234, 214, .16);
+            color: var(--paper);
+            background: rgba(16, 19, 27, .94);
+            box-shadow: 0 14px 34px rgba(0,0,0,.28);
+            font-size: 13px;
+        }
+
+        @media (max-width: 1180px) {
+            .topbar { grid-template-columns: 1fr; }
+            .phase-strip, .controls { justify-self: stretch; }
+            .controls { justify-content: start; flex-wrap: wrap; }
+            .board { grid-template-columns: 280px minmax(0, 1fr); height: auto; min-height: 0; }
+            .stage { height: 72vh; min-height: 560px; }
+            .side { grid-column: 1 / -1; min-height: auto; }
+        }
+
+        @media (max-width: 820px) {
+            .shell { width: min(100vw - 16px, 1480px); padding-top: 8px; }
+            .scene { height: 112px; }
+            .board { grid-template-columns: 1fr; min-height: auto; }
+            .seats { height: auto; min-height: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .stage { height: 76vh; min-height: 520px; }
+            .status-ribbon { grid-template-columns: 1fr; }
+            .form { grid-template-columns: 1fr; }
+            .reveal-grid { grid-template-columns: 1fr; }
+        }
+
+        @media (max-width: 560px) {
+            .phase-strip { grid-template-columns: 1fr; }
+            .seats { grid-template-columns: 1fr; }
+            .controls > * { width: 100%; }
+            .message, .message.me { grid-template-columns: 38px minmax(0, 1fr); }
+            .message.me { grid-template-columns: minmax(0, 1fr) 38px; }
+            .message.me .bubble { justify-self: end; order: 1; }
+            .message.me .small-avatar { order: 2; }
+            .bubble { width: 100%; min-width: 0; max-height: 180px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="shell">
+        <header class="topbar">
+            <div class="brand">
+                <div class="sigil" aria-hidden="true">
+                    <svg viewBox="0 0 64 64" fill="none">
+                        <path d="M32 7c8 8 13 16 13 25 0 12-7 21-13 25-6-4-13-13-13-25 0-9 5-17 13-25Z" stroke="currentColor" stroke-width="3"/>
+                        <path d="M20 32c7-3 17-3 24 0M25 43c4 3 10 3 14 0" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                    </svg>
+                </div>
+                <div class="title">
+                    <h1>雾镇狼人杀</h1>
+                    <p>万圣节哥特童话局 · 身份隐藏 · 发言推理</p>
+                </div>
+            </div>
+
+            <div class="phase-strip">
+                <div class="badge"><span id="conn-dot" class="dot"></span><strong id="connection">未连接</strong></div>
+                <div class="round"><span id="phase-label">准备开局</span><strong id="round-label">第 0 夜</strong></div>
+            </div>
+
+            <div class="controls">
+                <select id="role-select" class="role-select" title="选择自己的身份">
+                    <option value="">随机身份</option>
+                    <option value="werewolf">狼人</option>
+                    <option value="seer">预言家</option>
+                    <option value="witch">女巫</option>
+                    <option value="hunter">猎人</option>
+                    <option value="villager">平民</option>
+                </select>
+                <button id="start-btn" class="primary" onclick="startGame()">开始</button>
+                <button id="reset-btn" class="secondary" onclick="resetGame()" disabled>重置</button>
+                <button id="music-btn" class="icon-btn" onclick="toggleMusic()" title="背景音乐" aria-label="背景音乐">♪</button>
+            </div>
+        </header>
+
+        <section class="scene" aria-label="雾镇万圣节夜景">
+            <svg class="panorama" viewBox="0 0 1200 180" preserveAspectRatio="none" aria-hidden="true">
+                <defs>
+                    <linearGradient id="hill" x1="0" x2="0" y1="0" y2="1">
+                        <stop offset="0" stop-color="#283323"/>
+                        <stop offset="1" stop-color="#10131b"/>
+                    </linearGradient>
+                    <radialGradient id="moon" cx="50%" cy="50%" r="50%">
+                        <stop offset="0" stop-color="#fff4c7"/>
+                        <stop offset=".72" stop-color="#e6bd70"/>
+                        <stop offset="1" stop-color="#e6bd70" stop-opacity="0"/>
+                    </radialGradient>
+                </defs>
+
+                <circle class="moon-glow" cx="915" cy="45" r="34" fill="url(#moon)"/>
+                <path d="M0 124 C140 90 260 112 386 92 C544 67 680 116 816 88 C990 52 1100 78 1200 58 L1200 180 L0 180 Z" fill="url(#hill)"/>
+                <path d="M0 146 C168 116 280 136 430 117 C610 96 756 138 912 112 C1032 92 1116 104 1200 88 L1200 180 L0 180 Z" fill="#0b1018"/>
+
+                <g fill="#10131b" stroke="#2b1a16" stroke-width="2">
+                    <path d="M132 114 L132 66 L151 48 L170 66 L170 114 Z"/>
+                    <path d="M184 118 L184 50 L206 27 L228 50 L228 118 Z"/>
+                    <path d="M242 116 L242 72 L261 56 L280 72 L280 116 Z"/>
+                    <rect x="152" y="94" width="108" height="36"/>
+                    <path d="M142 65 H160 M197 49 H215 M252 72 H270" stroke="#c28a38" stroke-opacity=".34"/>
+                </g>
+
+                <g fill="#0a0d12">
+                    <path d="M42 142 L64 80 L86 142 Z"/>
+                    <path d="M78 146 L106 62 L134 146 Z"/>
+                    <path d="M1010 139 L1032 79 L1056 139 Z"/>
+                    <path d="M1050 146 L1082 58 L1116 146 Z"/>
+                    <path d="M1120 144 L1145 86 L1172 144 Z"/>
+                </g>
+
+                <g class="bat-a" fill="none" stroke="#0a0d12" stroke-width="4" stroke-linecap="round">
+                    <path d="M140 42 q14 -12 28 0 q14 -12 28 0"/>
+                    <path d="M80 66 q10 -8 20 0 q10 -8 20 0" opacity=".72"/>
+                </g>
+                <g class="bat-b" fill="none" stroke="#0a0d12" stroke-width="4" stroke-linecap="round">
+                    <path d="M930 70 q13 -10 26 0 q13 -10 26 0"/>
+                    <path d="M1030 38 q9 -7 18 0 q9 -7 18 0" opacity=".66"/>
+                </g>
+
+                <g transform="translate(548 89)">
+                    <path d="M0 50 C18 24 54 24 72 50 Z" fill="#1f130f" stroke="#c28a38" stroke-opacity=".35"/>
+                    <path d="M28 50 V18 h16 v32" fill="#2a1711"/>
+                    <rect class="lantern" x="32" y="25" width="8" height="15" rx="3" fill="#f0b45a"/>
+                    <path d="M8 52 C24 42 46 42 64 52" stroke="#6b2c21" fill="none"/>
+                </g>
+
+                <g transform="translate(706 126)">
+                    <ellipse cx="18" cy="19" rx="18" ry="12" fill="#0a0d12"/>
+                    <circle cx="38" cy="12" r="10" fill="#0a0d12"/>
+                    <path class="cat-tail" d="M2 16 C-18 5 -8 -14 8 -4" fill="none" stroke="#0a0d12" stroke-width="7" stroke-linecap="round"/>
+                    <circle cx="35" cy="10" r="1.8" fill="#d6b15e"/>
+                    <circle cx="42" cy="10" r="1.8" fill="#d6b15e"/>
+                </g>
+
+                <g transform="translate(100 95)">
+                    <circle cx="15" cy="15" r="15" fill="#7f3f1d"/>
+                    <path d="M7 15 Q15 23 23 15" stroke="#ffd27a" stroke-width="3" fill="none"/>
+                    <path d="M15 0 q5 -9 10 0" stroke="#2d6a4f" stroke-width="4" fill="none"/>
+                </g>
+                <g transform="translate(1082 101)">
+                    <path d="M18 0 C34 8 34 34 18 42 C2 34 2 8 18 0Z" fill="#21161f"/>
+                    <circle class="owl-eye" cx="12" cy="17" r="3" fill="#f5d08a"/>
+                    <circle class="owl-eye" cx="24" cy="17" r="3" fill="#f5d08a"/>
+                    <path d="M15 24 h6 l-3 5Z" fill="#c28a38"/>
+                </g>
+            </svg>
+        </section>
+
+        <main class="board">
+            <section class="panel">
+                <div class="panel-head">
+                    <h2>村民席位</h2>
+                    <span id="alive-count" class="mini">8 / 8 存活</span>
+                </div>
+                <div id="seats" class="seats"></div>
+            </section>
+
+            <section class="panel stage">
+                <div class="status-ribbon">
+                    <div class="identity">
+                        <span class="tag gold">你的身份</span>
+                        <strong id="my-role">未揭示</strong>
+                        <span id="my-team" class="tag">等待开局</span>
+                    </div>
+                    <span id="phase-note" class="mini">选择身份后开始，其他人的身份不会显示。</span>
+                </div>
+
+                <div id="log" class="log">
+                    <div class="empty">
+                        <div class="empty-box">
+                            <h3>钟楼还没有敲响</h3>
+                            <div>雾镇的村民已经入席。你可以选择自己的身份，也可以交给命运。</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="action">
+                    <div class="prompt-row">
+                        <div id="prompt" class="prompt">等待行动阶段。</div>
+                        <span id="counter" class="mini">0 / 160</span>
+                    </div>
+                    <div id="candidates" class="candidates"></div>
+                    <form class="form" onsubmit="sendInput(event)">
+                        <input id="input" class="input" maxlength="160" disabled oninput="updateCounter()" placeholder="未轮到你行动">
+                        <button id="send-btn" class="primary" disabled>发送</button>
+                    </form>
+                </div>
+            </section>
+
+            <aside class="panel side">
+                <div class="panel-head">
+                    <h2>推理板</h2>
+                    <span class="mini">公开线索</span>
+                </div>
+                <div class="role-card">
+                    <h3>规则身份</h3>
+                    <div class="role-value">
+                        <strong id="side-role">未知</strong>
+                        <span id="side-team" class="tag">未开局</span>
+                    </div>
+                    <div id="teammates" class="teammates"></div>
+                    <ul class="rule-list">
+                        <li>狼人夜晚袭击，白天伪装。</li>
+                        <li>预言家每晚查验一人。</li>
+                        <li>女巫有一次解药和一次毒药。</li>
+                        <li>猎人与平民只能靠发言和投票找狼。</li>
+                    </ul>
+                </div>
+                <div class="panel-head">
+                    <h2>局势纪要</h2>
+                    <span id="clue-count" class="mini">0 条</span>
+                </div>
+                <div id="clues" class="clues"></div>
+            </aside>
+        </main>
+    </div>
+
+    <div id="overlay" class="overlay">
+        <div class="reveal">
+            <div class="reveal-head">
+                <h2>黎明后的身份揭示</h2>
+            </div>
+            <div id="reveal-grid" class="reveal-grid"></div>
+            <div class="reveal-actions">
+                <button class="secondary" onclick="closeReveal()">继续查看记录</button>
+                <button class="primary" onclick="resetGame()">再来一局</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toasts" class="toast-wrap"></div>
+
+    <script>
+        const publicPlayers = [
+            { id: 1, name: "钟匠赫尔", lore: "维护废钟楼的老人", alive: true, isHuman: false },
+            { id: 2, name: "药师薇拉", lore: "住在黑松林边的药师", alive: true, isHuman: false },
+            { id: 3, name: "守墓人洛林", lore: "掌管旧墓园钥匙", alive: true, isHuman: false },
+            { id: 4, name: "铁匠巴伦", lore: "会打造银钉与马掌", alive: true, isHuman: false },
+            { id: 5, name: "猎犬师诺克", lore: "总听见远处的脚步", alive: true, isHuman: false },
+            { id: 6, name: "修女伊芙", lore: "守着破败小教堂", alive: true, isHuman: false },
+            { id: 7, name: "磨坊女艾达", lore: "夜里仍听见水车转动", alive: true, isHuman: false },
+            { id: 8, name: "你", lore: "被雾镇邀请的陌生人", alive: true, isHuman: true }
+        ];
+
+        const phaseMap = {
+            intro: ["自我介绍", "第 {round} 日"],
+            night_wolves: ["狼人夜行", "第 {round} 夜"],
+            night_seer: ["烛火查验", "第 {round} 夜"],
+            night_witch: ["药瓶低语", "第 {round} 夜"],
+            day_announce: ["天亮宣告", "第 {round} 日"],
+            day_discuss: ["白日讨论", "第 {round} 日"],
+            day_vote: ["投票放逐", "第 {round} 日"],
+            day_announce_vote: ["放逐结果", "第 {round} 日"],
+            end: ["游戏结束", "终局"]
+        };
+
+        const roleLabels = {
+            werewolf: ["狼人", "狼人阵营"],
+            seer: ["预言家", "好人阵营"],
+            witch: ["女巫", "好人阵营"],
+            hunter: ["猎人", "好人阵营"],
+            villager: ["平民", "好人阵营"]
+        };
+
+        const avatarThemes = [
+            { bg: "#442018", accent: "#c28a38", hair: "#d8d0bb", skin: "#d8ad82", item: "clock", rgb: "194,138,56", face: "old" },
+            { bg: "#183b2f", accent: "#89c2a0", hair: "#2e2218", skin: "#c9946c", item: "herb", rgb: "137,194,160", face: "calm" },
+            { bg: "#20273a", accent: "#a7b7d8", hair: "#15171d", skin: "#b98b68", item: "hood", rgb: "167,183,216", face: "stern" },
+            { bg: "#4b1f1c", accent: "#d0834e", hair: "#2b1710", skin: "#c98962", item: "hammer", rgb: "208,131,78", face: "bold" },
+            { bg: "#26351f", accent: "#b2c76b", hair: "#4a2d19", skin: "#d0a174", item: "hound", rgb: "178,199,107", face: "sharp" },
+            { bg: "#32243f", accent: "#d6b5e8", hair: "#f2e8dc", skin: "#dfb893", item: "veil", rgb: "214,181,232", face: "soft" },
+            { bg: "#4b3821", accent: "#e3c36a", hair: "#6b3b22", skin: "#d59a70", item: "grain", rgb: "227,195,106", face: "young" },
+            { bg: "#1f3d43", accent: "#8fd3d8", hair: "#1e293b", skin: "#ddb089", item: "lantern", rgb: "143,211,216", face: "hero" }
+        ];
+
+        let players = clonePlayers();
+        let running = false;
+        let reader = null;
+        let activeSpeakers = new Set();
+        let currentPromptPhase = "";
+        let clueCount = 0;
+        let myTeammates = [];
+        const TRACKS = [
+            "/static/A_Porcelain_Game.mp3",
+            "/static/Lament_for_the_Stone_Hall.mp3",
+            "/static/Throne_of_Granite.mp3"
+        ];
+        let bgmAudio = null;
+        let bgmTrackIdx = -1;
+        let musicOn = false;
+
+        window.addEventListener("load", () => {
+            renderSeats();
+        });
+
+        function clonePlayers() {
+            return publicPlayers.map(p => ({ ...p, role: "", roleName: "", team: "", teamName: "" }));
+        }
+
+        function renderSeats() {
+            const seats = document.getElementById("seats");
+            seats.innerHTML = "";
+            for (const p of players) {
+                const knownRole = p.isHuman && p.roleName ? p.roleName : "身份未知";
+                const stateClass = [
+                    "seat",
+                    p.isHuman ? "me" : "",
+                    p.alive ? "" : "dead",
+                    activeSpeakers.has(p.name) ? "speaking" : ""
+                ].filter(Boolean).join(" ");
+                seats.insertAdjacentHTML("beforeend", `
+                    <div class="${stateClass}">
+                        <div class="avatar">${avatarSvg(p)}</div>
+                        <div class="seat-main">
+                            <div class="seat-name">
+                                <strong>${escapeHtml(p.name)}</strong>
+                                ${p.isHuman ? '<span class="tag gold">你</span>' : ""}
+                                <span class="tag ${p.alive ? "green" : "red"}">${p.alive ? "存活" : "出局"}</span>
+                            </div>
+                            <div class="seat-lore">${escapeHtml(p.lore)} · ${escapeHtml(knownRole)}</div>
+                        </div>
+                    </div>
+                `);
+            }
+            const alive = players.filter(p => p.alive).length;
+            document.getElementById("alive-count").textContent = `${alive} / ${players.length} 存活`;
+        }
+
+        function avatarSvg(player) {
+            const idx = Math.max(0, players.findIndex(p => p.name === player.name));
+            const theme = avatarThemes[idx % avatarThemes.length];
+            const { bg, accent, hair, skin, item, face } = theme;
+            const dead = player.alive ? "" : `<line x1="18" y1="18" x2="70" y2="70" stroke="#ef4444" stroke-width="5" stroke-linecap="round"/><line x1="70" y1="18" x2="18" y2="70" stroke="#ef4444" stroke-width="5" stroke-linecap="round"/>`;
+            const mouth = face === "stern" || face === "bold"
+                ? `<path d="M36 58 Q44 55 52 58" stroke="#4b221d" stroke-width="2.3" fill="none" stroke-linecap="round"/>`
+                : `<path d="M36 56 Q44 61 52 56" stroke="#7f3429" stroke-width="2.3" fill="none" stroke-linecap="round"/>`;
+            const brows = face === "soft" || face === "young"
+                ? `<path d="M31 39 Q35 37 39 39M49 39 Q53 37 57 39" stroke="${hair}" stroke-width="2" fill="none" stroke-linecap="round"/>`
+                : `<path d="M30 38 L39 36M49 36 L58 38" stroke="${hair}" stroke-width="2.4" fill="none" stroke-linecap="round"/>`;
+            const accessory = accessorySvg(item, accent, bg);
+            return `
+                <svg viewBox="0 0 88 88" width="100%" height="100%" role="img" aria-label="${escapeHtml(player.name)}">
+                    <defs>
+                        <radialGradient id="g-${player.id}" cx="50%" cy="35%" r="65%">
+                            <stop offset="0" stop-color="${accent}" stop-opacity=".28"/>
+                            <stop offset="1" stop-color="${bg}"/>
+                        </radialGradient>
+                        <clipPath id="clip-${player.id}"><rect x="3" y="3" width="82" height="82" rx="12"/></clipPath>
+                    </defs>
+                    <rect x="3" y="3" width="82" height="82" rx="12" fill="url(#g-${player.id})" stroke="${accent}" stroke-opacity=".72" stroke-width="2"/>
+                    <g clip-path="url(#clip-${player.id})">
+                        <path d="M14 77c4-17 17-27 30-27s26 10 30 27" fill="${accent}" opacity=".34"/>
+                        <path d="M24 73c5-13 13-19 20-19s15 6 20 19" fill="#f4ead6" opacity=".16"/>
+                        <path d="M25 34c1-18 12-26 22-25 14 1 22 13 19 29-2 15-11 29-23 29S24 50 25 34Z" fill="${skin}"/>
+                        <path d="M23 34c2-22 17-32 31-27 10 4 17 13 15 26-8-8-20-7-30-14-5 5-9 9-16 15Z" fill="${hair}"/>
+                        <path d="M23 34c2-8 8-12 16-15 7 8 19 9 30 16" stroke="${accent}" stroke-opacity=".55" stroke-width="2" fill="none"/>
+                        ${brows}
+                        <circle cx="35" cy="45" r="2.7" fill="#1a1010"/>
+                        <circle cx="53" cy="45" r="2.7" fill="#1a1010"/>
+                        <circle cx="36" cy="44" r="1" fill="#fff3d8" opacity=".8"/>
+                        <circle cx="54" cy="44" r="1" fill="#fff3d8" opacity=".8"/>
+                        <path d="M44 47 Q42 52 45 53" stroke="#8a4a3a" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+                        ${mouth}
+                        ${accessory}
+                    </g>
+                    ${dead}
+                </svg>
+            `;
+        }
+
+        function accessorySvg(item, accent, bg) {
+            switch (item) {
+                case "clock":
+                    return `<circle cx="64" cy="20" r="9" fill="#f4ead6" opacity=".22" stroke="${accent}" stroke-width="2"/><path d="M64 15v6l4 3" stroke="${accent}" stroke-width="2" fill="none" stroke-linecap="round"/>`;
+                case "herb":
+                    return `<path d="M60 18c-7 3-9 9-7 16 8-1 12-7 7-16Z" fill="${accent}" opacity=".8"/><path d="M65 23c-6 1-9 6-8 11 7 0 11-5 8-11Z" fill="#d7f6d2" opacity=".65"/>`;
+                case "hood":
+                    return `<path d="M18 20c11-16 41-17 54 0-9-5-16-6-27-6-11 0-19 2-27 6Z" fill="#0d1118"/><path d="M20 23c10-9 38-10 50 0" stroke="${accent}" stroke-width="2" opacity=".7"/>`;
+                case "hammer":
+                    return `<path d="M61 16l10 10-5 5-10-10Z" fill="${accent}"/><path d="M56 26l-16 18" stroke="#f1d0a0" stroke-width="4" stroke-linecap="round"/>`;
+                case "hound":
+                    return `<path d="M59 18c8-3 16 2 15 10-5-4-10-5-16-3Z" fill="${accent}" opacity=".8"/><circle cx="70" cy="27" r="2" fill="#111"/>`;
+                case "veil":
+                    return `<path d="M22 17c12-13 33-13 45 0 1 20-5 46-22 51-18-7-24-31-23-51Z" fill="#efe7ff" opacity=".22"/><path d="M29 19c8-7 23-7 31 0" stroke="${accent}" stroke-width="2.4" fill="none"/>`;
+                case "grain":
+                    return `<path d="M64 14c-4 9-4 18 1 27M58 18c5 2 7 5 7 8M70 20c-4 2-6 5-5 9M58 30c5 1 8 4 9 8" stroke="${accent}" stroke-width="2.3" fill="none" stroke-linecap="round"/>`;
+                case "lantern":
+                    return `<rect x="60" y="17" width="13" height="18" rx="4" fill="${bg}" stroke="${accent}" stroke-width="2"/><rect x="64" y="23" width="5" height="8" rx="2" fill="#ffd782" opacity=".9"/><path d="M63 17c1-5 8-5 9 0" stroke="${accent}" stroke-width="2" fill="none"/>`;
+                default:
+                    return "";
+            }
+        }
+
+        async function startGame() {
+            if (running) return;
+            running = true;
+            resetUiForStart();
+            if (!musicOn) startMusic();
+
+            const role = document.getElementById("role-select").value;
+            const url = role ? `/api/werewolf/stream?role=${encodeURIComponent(role)}` : "/api/werewolf/stream";
+            setConnection("连接中", "warn");
+            addSystem("钟楼敲响，雾镇进入第一夜前的沉默。");
+            addClue(role ? `你选择了自己的身份：${roleLabels[role]?.[0] || role}` : "你没有选择身份，本局由命运随机分配。");
+
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                setConnection("已连接", "online");
+                reader = response.body.getReader();
+                await readSse(reader);
+            } catch (err) {
+                setConnection("连接失败", "fail");
+                toast(`连接失败：${err.message}`);
+                running = false;
+                setButtons(false);
+            }
+        }
+
+        async function readSse(streamReader) {
+            const decoder = new TextDecoder("utf-8");
+            let buffer = "";
+            while (running) {
+                const { value, done } = await streamReader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const frames = buffer.split("\n\n");
+                buffer = frames.pop() || "";
+                for (const frame of frames) {
+                    const line = frame.split("\n").find(x => x.trim().startsWith("data:"));
+                    if (!line) continue;
+                    try {
+                        handleFrame(JSON.parse(line.replace(/^data:\s*/, "")));
+                    } catch (err) {
+                        console.error("SSE parse failed", err, frame);
+                    }
+                }
+            }
+        }
+
+        function handleFrame(frame) {
+            if (!frame || !frame.type) return;
+            switch (frame.type) {
+                case "role":
+                    applyMyRole(frame);
+                    break;
+                case "state":
+                    applyState(frame);
+                    break;
+                case "phase":
+                    updatePhase(frame.phase, frame.round);
+                    break;
+                case "announce":
+                    addSystem(frame.text);
+                    addClue(frame.text);
+                    break;
+                case "speech":
+                    addSpeech(frame);
+                    break;
+                case "prompt":
+                    unlockInput(frame.phase, frame.message);
+                    break;
+                case "reveal":
+                    showReveal(frame.text);
+                    break;
+                case "done":
+                    finishGame(frame.winner);
+                    break;
+                case "error":
+                    toast(frame.message || "服务端错误");
+                    addSystem(frame.message || "服务端错误");
+                    break;
+            }
+        }
+
+        function applyMyRole(frame) {
+            const role = normalizeRole(frame.role, frame.roleName);
+            myTeammates = Array.isArray(frame.teammates) ? frame.teammates : [];
+            const me = players.find(p => p.isHuman);
+            if (me) {
+                me.role = frame.role || "";
+                me.roleName = role.label;
+                me.team = frame.team || role.teamKey;
+                me.teamName = frame.teamName || role.team;
+            }
+            document.getElementById("my-role").textContent = role.label;
+            document.getElementById("my-team").textContent = frame.teamName || role.team;
+            document.getElementById("my-team").className = role.teamKey === "werewolf" ? "tag red" : "tag green";
+            document.getElementById("side-role").textContent = role.label;
+            document.getElementById("side-team").textContent = frame.teamName || role.team;
+            document.getElementById("side-team").className = role.teamKey === "werewolf" ? "tag red" : "tag green";
+            const mates = document.getElementById("teammates");
+            if (myTeammates.length) {
+                mates.style.display = "block";
+                mates.textContent = `你的狼队同伴：${myTeammates.join("、")}。这条信息只属于你。`;
+            } else {
+                mates.style.display = "none";
+                mates.textContent = "";
+            }
+            addSystem(`你摸到的身份牌是：${role.label}。`);
+            renderSeats();
+        }
+
+        function applyState(frame) {
+            if (Array.isArray(frame.players)) {
+                for (const next of frame.players) {
+                    const p = players.find(x => x.name === next.name);
+                    if (!p) continue;
+                    p.alive = next.alive !== false;
+                    p.isHuman = Boolean(next.isHuman);
+                    if (next.isHuman && next.roleName) {
+                        p.role = next.role || p.role;
+                        p.roleName = next.roleName;
+                        p.team = next.team || p.team;
+                        p.teamName = next.teamName || p.teamName;
+                    }
+                }
+            }
+            renderSeats();
+        }
+
+        function normalizeRole(role, roleName) {
+            if (roleName) {
+                const key = Object.keys(roleLabels).find(k => roleLabels[k][0] === roleName) || role || "villager";
+                return { label: roleName, team: roleLabels[key]?.[1] || "好人阵营", teamKey: key === "werewolf" ? "werewolf" : "villager" };
+            }
+            const labels = roleLabels[role] || roleLabels.villager;
+            return { label: labels[0], team: labels[1], teamKey: role === "werewolf" ? "werewolf" : "villager" };
+        }
+
+        function updatePhase(phase, round) {
+            const [label, roundTpl] = phaseMap[phase] || [phase || "未知阶段", "第 {round} 轮"];
+            document.getElementById("phase-label").textContent = label;
+            document.getElementById("round-label").textContent = roundTpl.replace("{round}", round || 0);
+            document.getElementById("phase-note").textContent = phaseHelp(phase);
+            currentPromptPhase = "";
+            lockInput();
+            addSystem(`阶段转换：${label}`);
+        }
+
+        function phaseHelp(phase) {
+            switch (phase) {
+                case "night_wolves": return "夜晚信息按可见范围显示。非狼人看不到狼队密谋。";
+                case "night_seer": return "预言家行动只对本人可见。";
+                case "night_witch": return "女巫行动只对本人可见。";
+                case "day_discuss": return "根据发言、死亡和投票倾向推理。";
+                case "day_vote": return "投票必须选择一名存活玩家。";
+                default: return "其他玩家身份保持未知，直到终局揭示。";
+            }
+        }
+
+        function addSpeech(frame) {
+            clearEmptyLog();
+            const from = frame.from || "系统";
+            const visibleTo = Array.isArray(frame.visibleTo) ? frame.visibleTo : [];
+            const me = players.find(p => p.isHuman);
+            if (visibleTo.length && (!me || !visibleTo.includes(me.name))) return;
+
+            activeSpeakers.add(from);
+            renderSeats();
+            setTimeout(() => {
+                activeSpeakers.delete(from);
+                renderSeats();
+            }, 700);
+
+            const p = players.find(x => x.name === from) || { id: 0, name: from, alive: true, isHuman: false, lore: "", roleName: "" };
+            const isMe = p.isHuman;
+            const theme = themeForPlayer(p);
+            const privateClass = visibleTo.length ? " private" : "";
+            const rowClass = isMe ? "message me" : "message";
+            const privateTag = visibleTo.length ? '<span class="tag red">私密可见</span>' : "";
+            document.getElementById("log").insertAdjacentHTML("beforeend", `
+                <div class="${rowClass}">
+                    <div class="small-avatar">${avatarSvg(p)}</div>
+                    <div class="bubble${privateClass}" style="--bubble-rgb:${theme.rgb}">
+                        <div class="speaker"><strong>${escapeHtml(from)}</strong>${privateTag}</div>
+                        <div class="text">${escapeHtml(frame.text || "")}</div>
+                    </div>
+                </div>
+            `);
+            scrollLog();
+        }
+
+        function themeForPlayer(player) {
+            const idx = Math.max(0, players.findIndex(p => p.name === player.name));
+            return avatarThemes[idx % avatarThemes.length];
+        }
+
+        function addSystem(text) {
+            clearEmptyLog();
+            document.getElementById("log").insertAdjacentHTML("beforeend", `
+                <div class="system-line"><span>${escapeHtml(text || "")}</span></div>
+            `);
+            scrollLog();
+        }
+
+        function addClue(text) {
+            if (!text) return;
+            clueCount += 1;
+            document.getElementById("clues").insertAdjacentHTML("afterbegin", `
+                <div class="clue">${escapeHtml(text)}</div>
+            `);
+            document.getElementById("clue-count").textContent = `${clueCount} 条`;
+        }
+
+        function unlockInput(phase, message) {
+            currentPromptPhase = phase;
+            document.getElementById("input").disabled = false;
+            document.getElementById("send-btn").disabled = false;
+            document.getElementById("input").placeholder = "输入发言、目标姓名或行动";
+            document.getElementById("prompt").textContent = message || "轮到你行动。";
+            renderCandidateChips(message || "");
+            document.getElementById("input").focus();
+        }
+
+        function lockInput() {
+            document.getElementById("input").disabled = true;
+            document.getElementById("send-btn").disabled = true;
+            document.getElementById("input").placeholder = "未轮到你行动";
+            document.getElementById("prompt").textContent = running ? "等待其他玩家行动。" : "等待行动阶段。";
+            document.getElementById("candidates").innerHTML = "";
+        }
+
+        function renderCandidateChips(message) {
+            const box = document.getElementById("candidates");
+            box.innerHTML = "";
+            const aliveNames = players.filter(p => p.alive && !p.isHuman).map(p => p.name);
+            const names = aliveNames.filter(name => message.includes(name));
+            for (const name of names) {
+                box.insertAdjacentHTML("beforeend", `<button type="button" class="chip" onclick="fillCandidate('${escapeAttr(name)}')">${escapeHtml(name)}</button>`);
+            }
+        }
+
+        function fillCandidate(name) {
+            const input = document.getElementById("input");
+            if (currentPromptPhase === "night_witch") {
+                input.value = input.value.includes("毒") ? `毒 ${name}` : name;
+            } else {
+                input.value = name;
+            }
+            updateCounter();
+            input.focus();
+        }
+
+        async function sendInput(event) {
+            event.preventDefault();
+            const input = document.getElementById("input");
+            const text = input.value.trim();
+            if (!text) return;
+            lockInput();
+            input.value = "";
+            updateCounter();
+
+            try {
+                const response = await fetch("/api/werewolf/input", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ text })
+                });
+                if (!response.ok) throw new Error(await response.text());
+            } catch (err) {
+                toast(`发送失败：${err.message}`);
+                unlockInput(currentPromptPhase, "发送失败，请重试。");
+            }
+        }
+
+        function showReveal(text) {
+            const grid = document.getElementById("reveal-grid");
+            grid.innerHTML = "";
+            const parts = String(text || "").split(/[；;\n]/).map(x => x.trim()).filter(Boolean);
+            for (const part of parts) {
+                grid.insertAdjacentHTML("beforeend", `<div class="reveal-item">${escapeHtml(part)}</div>`);
+            }
+            document.getElementById("overlay").classList.add("show");
+        }
+
+        function closeReveal() {
+            document.getElementById("overlay").classList.remove("show");
+        }
+
+        function finishGame(winner) {
+            running = false;
+            document.getElementById("start-btn").disabled = false;
+            document.getElementById("reset-btn").disabled = false;
+            document.getElementById("role-select").disabled = false;
+            lockInput();
+            updatePhase("end", 0);
+            const label = winner === "werewolf" ? "狼人阵营胜利" : "好人阵营胜利";
+            addSystem(`游戏结束：${label}`);
+            addClue(`终局结果：${label}`);
+            setConnection("已结束", "");
+        }
+
+        function resetUiForStart() {
+            closeReveal();
+            players = clonePlayers();
+            activeSpeakers.clear();
+            clueCount = 0;
+            myTeammates = [];
+            renderSeats();
+            setButtons(true);
+            document.getElementById("log").innerHTML = "";
+            document.getElementById("clues").innerHTML = "";
+            document.getElementById("clue-count").textContent = "0 条";
+            document.getElementById("my-role").textContent = "未揭示";
+            document.getElementById("my-team").textContent = "等待开局";
+            document.getElementById("my-team").className = "tag";
+            document.getElementById("side-role").textContent = "未知";
+            document.getElementById("side-team").textContent = "未开局";
+            document.getElementById("side-team").className = "tag";
+            document.getElementById("teammates").style.display = "none";
+            document.getElementById("teammates").textContent = "";
+            document.getElementById("phase-label").textContent = "准备开局";
+            document.getElementById("round-label").textContent = "第 0 夜";
+            lockInput();
+        }
+
+        function resetGame() {
+            running = false;
+            if (reader) {
+                try { reader.cancel(); } catch (err) {}
+                reader = null;
+            }
+            closeReveal();
+            players = clonePlayers();
+            activeSpeakers.clear();
+            clueCount = 0;
+            myTeammates = [];
+            renderSeats();
+            setButtons(false);
+            setConnection("未连接", "");
+            document.getElementById("phase-label").textContent = "准备开局";
+            document.getElementById("round-label").textContent = "第 0 夜";
+            document.getElementById("log").innerHTML = `
+                <div class="empty">
+                    <div class="empty-box">
+                        <h3>钟楼还没有敲响</h3>
+                        <div>雾镇的村民已经入席。你可以选择自己的身份，也可以交给命运。</div>
+                    </div>
+                </div>
+            `;
+            document.getElementById("clues").innerHTML = "";
+            document.getElementById("clue-count").textContent = "0 条";
+            document.getElementById("my-role").textContent = "未揭示";
+            document.getElementById("my-team").textContent = "等待开局";
+            document.getElementById("my-team").className = "tag";
+            document.getElementById("side-role").textContent = "未知";
+            document.getElementById("side-team").textContent = "未开局";
+            document.getElementById("side-team").className = "tag";
+            document.getElementById("teammates").style.display = "none";
+            document.getElementById("teammates").textContent = "";
+            lockInput();
+        }
+
+        function toggleMusic() {
+            if (musicOn) {
+                stopMusic();
+            } else {
+                startMusic();
+            }
+        }
+
+        function nextTrack() {
+            let next;
+            do {
+                next = Math.floor(Math.random() * TRACKS.length);
+            } while (next === bgmTrackIdx && TRACKS.length > 1);
+            bgmTrackIdx = next;
+            bgmAudio.src = TRACKS[next];
+            bgmAudio.play().catch(() => {});
+        }
+
+        function startMusic() {
+            try {
+                if (musicOn) return;
+                if (!bgmAudio) {
+                    bgmAudio = new Audio();
+                    bgmAudio.volume = 0.3;
+                    bgmAudio.addEventListener("ended", nextTrack);
+                }
+                nextTrack();
+                musicOn = true;
+                document.getElementById("music-btn").classList.add("active");
+            } catch (err) {
+                toast("浏览器阻止了背景音乐，请再点一次音乐按钮。");
+            }
+        }
+
+        function stopMusic() {
+            if (bgmAudio) {
+                bgmAudio.pause();
+                bgmAudio.currentTime = 0;
+            }
+            musicOn = false;
+            document.getElementById("music-btn").classList.remove("active");
+        }
+
+        function setButtons(isRunning) {
+            document.getElementById("start-btn").disabled = isRunning;
+            document.getElementById("reset-btn").disabled = !isRunning;
+            document.getElementById("role-select").disabled = isRunning;
+        }
+
+        function setConnection(text, state) {
+            const dot = document.getElementById("conn-dot");
+            dot.className = `dot ${state || ""}`.trim();
+            document.getElementById("connection").textContent = text;
+        }
+
+        function updateCounter() {
+            const len = document.getElementById("input").value.length;
+            document.getElementById("counter").textContent = `${len} / 160`;
+        }
+
+        function clearEmptyLog() {
+            const log = document.getElementById("log");
+            if (log.querySelector(".empty")) log.innerHTML = "";
+        }
+
+        function scrollLog() {
+            const log = document.getElementById("log");
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function toast(text) {
+            const wrap = document.getElementById("toasts");
+            const el = document.createElement("div");
+            el.className = "toast";
+            el.textContent = text;
+            wrap.appendChild(el);
+            setTimeout(() => {
+                el.style.opacity = "0";
+                el.style.transform = "translateY(-6px)";
+                el.style.transition = "all .25s ease";
+                setTimeout(() => el.remove(), 260);
+            }, 3200);
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+        }
+
+        function escapeAttr(value) {
+            return escapeHtml(value).replace(/`/g, "&#96;");
+        }
+    </script>
+</body>
+</html>

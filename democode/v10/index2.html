@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>元老院 · Senate</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        marble: { 50: '#faf7f2', 100: '#f0ebe0', 200: '#e0d5c1', 300: '#c4b393', 400: '#a38c63', 500: '#8a7045', 600: '#6b5436', 700: '#4e3c27', 800: '#362919', 900: '#1f160d' },
+                        gold: { 400: '#c9a84c', 500: '#b8922e', 600: '#9a7922' },
+                        senate: {
+                            red: '#8b2500',
+                            gold: '#b8922e',
+                            ivory: '#faf7f2',
+                            stone: '#e8e0d5',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&display=swap');
+        .font-roman { font-family: 'Cinzel', Georgia, 'Times New Roman', serif; }
+        .font-body { font-family: Georgia, 'Times New Roman', serif; }
+
+        /* 大理石纹理背景 */
+        .marble-bg {
+            background: linear-gradient(135deg, #faf7f2 0%, #f0ebe0 30%, #f5f0e8 60%, #e8e0d5 100%);
+        }
+
+        /* 滚动条 */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: #f0ebe0; }
+        ::-webkit-scrollbar-thumb { background: #c4b393; border-radius: 99px; }
+
+        /* 流式打字光标 */
+        .typing-cursor::after {
+            content: '▌';
+            animation: blink 1s step-end infinite;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+    </style>
+</head>
+<body class="h-full marble-bg text-marble-800 flex flex-col">
+
+    <!-- 顶部横楣 -->
+    <header class="border-b-2 border-gold-400/40 bg-white/60 backdrop-blur px-6 py-4 flex items-center justify-between shadow-sm">
+        <div class="flex items-center gap-3">
+            <div class="bg-senate-red text-white p-2.5 rounded-lg font-roman text-xl font-bold shadow-md">
+                SPQR
+            </div>
+            <div>
+                <h1 class="font-roman text-xl font-bold text-marble-900 tracking-wide">元老院 · Senatus</h1>
+                <p class="text-xs text-marble-500">多 AI 人格辩论议事厅</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-2 text-xs text-marble-500 font-body">
+            <span id="status-dot" class="h-2 w-2 rounded-full bg-slate-300"></span>
+            <span id="status-text">待命</span>
+        </div>
+    </header>
+
+    <!-- 主区域 -->
+    <main class="flex-1 flex gap-0 max-w-[1400px] mx-auto w-full overflow-hidden">
+
+        <!-- 左侧：辩论记录 -->
+        <section class="flex-[3] flex flex-col p-6 overflow-hidden">
+            <!-- 议题输入 -->
+            <div class="bg-white/70 border border-marble-200 rounded-xl p-4 mb-4 shadow-sm">
+                <div class="flex gap-3 items-end">
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-marble-600 mb-1 font-body">📜 议题</label>
+                        <input id="topic-input" type="text" placeholder="例：罗马应该继续扩张还是巩固现有领土？"
+                            class="w-full bg-white border border-marble-300 rounded-lg px-4 py-2.5 text-sm text-marble-800 placeholder-marble-400 focus:outline-none focus:ring-2 focus:ring-gold-400 focus:border-transparent font-body">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-marble-600 mb-1 font-body">轮数</label>
+                        <select id="rounds-select" class="bg-white border border-marble-300 rounded-lg px-3 py-2.5 text-sm text-marble-800 focus:outline-none focus:ring-2 focus:ring-gold-400 font-body">
+                            <option value="1">1 轮</option>
+                            <option value="2">2 轮</option>
+                            <option value="3" selected>3 轮</option>
+                            <option value="5">5 轮</option>
+                        </select>
+                    </div>
+                    <button id="btn-summon" onclick="summonCouncil()"
+                        class="bg-senate-red hover:bg-red-800 text-white font-roman font-bold px-6 py-2.5 rounded-lg transition-all shadow-md flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                        🏛️ 召集元老
+                    </button>
+                </div>
+            </div>
+
+            <!-- 辩论记录滚动区 -->
+            <div id="transcript" class="flex-1 overflow-y-auto space-y-3 pr-2">
+                <div class="text-center text-marble-400 font-body text-sm py-20 italic">
+                    上方输入议题，点击「召集元老」开始辩论
+                </div>
+            </div>
+        </section>
+
+        <!-- 右侧：插话 + 统计 -->
+        <aside class="flex-[1] border-l border-marble-200 bg-white/40 p-5 flex flex-col gap-4 min-w-[240px]">
+            <!-- 元老名单 -->
+            <div>
+                <h3 class="font-roman text-sm font-bold text-marble-700 mb-2">👥 今日元老</h3>
+                <div id="roster" class="space-y-1">
+                    <div class="text-xs text-marble-400 italic font-body">加载中...</div>
+                </div>
+            </div>
+
+            <hr class="border-marble-200">
+
+            <!-- 公民插话 -->
+            <div>
+                <h3 class="font-roman text-sm font-bold text-marble-700 mb-2">📢 公民陈情</h3>
+                <textarea id="interruption-input" rows="3" placeholder="以公民身份向元老院插话..."
+                    class="w-full bg-white border border-marble-300 rounded-lg px-3 py-2 text-xs text-marble-800 placeholder-marble-400 focus:outline-none focus:ring-1 focus:ring-gold-400 font-body resize-none"></textarea>
+                <button onclick="citizenInterrupt()"
+                    class="w-full mt-2 bg-gold-500 hover:bg-gold-600 text-white font-bold py-1.5 rounded-lg text-xs transition-all font-body disabled:opacity-50 disabled:cursor-not-allowed"
+                    id="btn-interrupt" disabled>
+                    向元老院陈情
+                </button>
+            </div>
+
+            <hr class="border-marble-200">
+
+            <!-- 统计 -->
+            <div class="bg-white/60 border border-marble-200 rounded-lg p-3 space-y-1.5">
+                <h3 class="font-roman text-sm font-bold text-marble-700">📊 辩论统计</h3>
+                <div class="text-xs font-body text-marble-600 space-y-1">
+                    <div class="flex justify-between"><span>Token 消耗</span><span id="stat-tokens" class="font-bold">--</span></div>
+                    <div class="flex justify-between"><span>当前轮次</span><span id="stat-round" class="font-bold">--</span></div>
+                    <div class="flex justify-between"><span>发言数</span><span id="stat-speeches" class="font-bold">0</span></div>
+                </div>
+            </div>
+
+            <button onclick="resetCouncil()"
+                class="w-full mt-auto border border-marble-300 text-marble-500 hover:text-marble-700 hover:bg-white font-bold py-1.5 rounded-lg text-xs transition-all font-body">
+                🔄 重置元老院
+            </button>
+        </aside>
+    </main>
+
+    <script>
+        // ============================================================================
+        // 状态
+        // ============================================================================
+        const state = {
+            debating: false,
+            currentRound: 0,
+            totalSpeeches: 0,
+            personalities: []
+        };
+
+        // Agent 配色板
+        const palette = [
+            { bg: 'bg-rose-50', border: 'border-rose-300', text: 'text-rose-900', badge: 'bg-rose-200 text-rose-800' },
+            { bg: 'bg-amber-50', border: 'border-amber-300', text: 'text-amber-900', badge: 'bg-amber-200 text-amber-800' },
+            { bg: 'bg-sky-50', border: 'border-sky-300', text: 'text-sky-900', badge: 'bg-sky-200 text-sky-800' },
+            { bg: 'bg-emerald-50', border: 'border-emerald-300', text: 'text-emerald-900', badge: 'bg-emerald-200 text-emerald-800' },
+            { bg: 'bg-violet-50', border: 'border-violet-300', text: 'text-violet-900', badge: 'bg-violet-200 text-violet-800' },
+            { bg: 'bg-orange-50', border: 'border-orange-300', text: 'text-orange-900', badge: 'bg-orange-200 text-orange-800' },
+            { bg: 'bg-teal-50', border: 'border-teal-300', text: 'text-teal-900', badge: 'bg-teal-200 text-teal-800' },
+            { bg: 'bg-fuchsia-50', border: 'border-fuchsia-300', text: 'text-fuchsia-900', badge: 'bg-fuchsia-200 text-fuchsia-800' },
+        ];
+
+        function colorFor(agentName, idx) {
+            return palette[idx % palette.length];
+        }
+
+        // ============================================================================
+        // 后端 URL
+        // ============================================================================
+        const BACKEND_ORIGIN = 'http://localhost:8080';
+        function isServedByGo() {
+            const h = window.location.hostname;
+            const p = window.location.port;
+            return (h === 'localhost' || h === '127.0.0.1') && p === '8080';
+        }
+        function apiUrl(path) {
+            return isServedByGo() ? path : `${BACKEND_ORIGIN}${path}`;
+        }
+
+        // ============================================================================
+        // 启动时拉取元老名单（从后端获取已加载的 personality 名称）
+        // 后端不需要专门 API，直接从首次 SSE 的 agent 字段自动发现。
+        // 但首次使用前先用非流式 /api/council 轻量触发获取名单。
+        // 简单方案：页面加载时不做大请求，元老名单在第一次辩论时自动填充。
+        // ============================================================================
+
+        function setStatus(state, text) {
+            const dot = document.getElementById('status-dot');
+            const label = document.getElementById('status-text');
+            if (state === 'debating') {
+                dot.className = 'h-2 w-2 rounded-full bg-amber-500 animate-pulse';
+                label.textContent = text;
+            } else if (state === 'done') {
+                dot.className = 'h-2 w-2 rounded-full bg-emerald-500';
+                label.textContent = text;
+            } else {
+                dot.className = 'h-2 w-2 rounded-full bg-slate-300';
+                label.textContent = text;
+            }
+        }
+
+        function updateStats(tokens, round, speeches) {
+            document.getElementById('stat-tokens').textContent = tokens || '--';
+            document.getElementById('stat-round').textContent = round || '--';
+            document.getElementById('stat-speeches').textContent = speeches;
+        }
+
+        function resetCouncil() {
+            state.debating = false;
+            state.currentRound = 0;
+            state.totalSpeeches = 0;
+            state.personalities = [];
+            document.getElementById('transcript').innerHTML =
+                '<div class="text-center text-marble-400 font-body text-sm py-20 italic">上方输入议题，点击「召集元老」开始辩论</div>';
+            document.getElementById('roster').innerHTML =
+                '<div class="text-xs text-marble-400 italic font-body">辩论开始后自动识别...</div>';
+            document.getElementById('btn-summon').disabled = false;
+            document.getElementById('btn-interrupt').disabled = true;
+            updateStats('--', '--', 0);
+            setStatus('idle', '待命');
+        }
+
+        // ============================================================================
+        // 召集元老（SSE 流式）
+        // ============================================================================
+        async function summonCouncil() {
+            const topic = document.getElementById('topic-input').value.trim();
+            if (!topic) return;
+
+            const maxRounds = parseInt(document.getElementById('rounds-select').value);
+
+            // 重置
+            document.getElementById('transcript').innerHTML = '';
+            document.getElementById('roster').innerHTML = '';
+            state.debating = true;
+            state.currentRound = 0;
+            state.totalSpeeches = 0;
+            state.personalities = [];
+            updateStats('--', '--', 0);
+            document.getElementById('btn-summon').disabled = true;
+            document.getElementById('btn-interrupt').disabled = false;
+            setStatus('debating', '辩论中...');
+
+            // 议题卡片
+            appendTopicCard(topic);
+
+            try {
+                const response = await fetch(apiUrl('/api/council/stream'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ topic, maxRounds, interruption: '' })
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder('utf-8');
+                let buffer = '';
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    buffer += chunk;
+
+                    let lineEnd;
+                    while ((lineEnd = buffer.indexOf('\n')) !== -1) {
+                        const line = buffer.slice(0, lineEnd).trim();
+                        buffer = buffer.slice(lineEnd + 1);
+
+                        if (!line.startsWith('data:')) continue;
+                        const jsonStr = line.replace(/^data:\s*/, '');
+
+                        try {
+                            const evt = JSON.parse(jsonStr);
+                            handleSSEEvent(evt);
+                        } catch (e) {
+                            // 非 JSON 行，忽略
+                        }
+                    }
+                }
+
+                // 流结束
+                setStatus('done', '辩论结束');
+                document.getElementById('btn-summon').disabled = false;
+                document.getElementById('btn-interrupt').disabled = true;
+
+            } catch (err) {
+                setStatus('idle', '连接失败');
+                document.getElementById('btn-summon').disabled = false;
+                document.getElementById('btn-interrupt').disabled = true;
+                appendErrorCard('无法连接后端: ' + err.message);
+            }
+        }
+
+        function handleSSEEvent(evt) {
+            switch (evt.type) {
+                case 'topic':
+                    // 议题已在 summonCouncil 中显示，这里不重复
+                    break;
+
+                case 'round':
+                    state.currentRound = evt.round;
+                    updateStats(null, evt.round, state.totalSpeeches);
+                    appendRoundSeparator(evt.round);
+                    break;
+
+                case 'speech': {
+                    state.totalSpeeches++;
+                    updateStats(null, state.currentRound, state.totalSpeeches);
+
+                    // 自动发现新 agent
+                    if (!state.personalities.find(p => p.name === evt.agent)) {
+                        state.personalities.push({ name: evt.agent });
+                        updateRoster();
+                    }
+                    const idx = state.personalities.findIndex(p => p.name === evt.agent);
+                    appendSpeechCard(evt.agent, evt.text, evt.round, idx);
+                    break;
+                }
+
+                case 'done':
+                    setStatus('done', '辩论结束');
+                    break;
+
+                case 'error':
+                    appendErrorCard(evt.message);
+                    break;
+            }
+        }
+
+        // ============================================================================
+        // UI 渲染
+        // ============================================================================
+
+        function appendTopicCard(topic) {
+            const div = document.createElement('div');
+            div.className = 'bg-gold-400/10 border border-gold-400/30 rounded-xl p-4 text-center';
+            div.innerHTML = `
+                <div class="font-roman text-gold-600 text-xs tracking-widest mb-1">SENATUS CONSULTUM</div>
+                <div class="font-body text-marble-800 text-sm font-bold">${escapeHtml(topic)}</div>
+            `;
+            document.getElementById('transcript').appendChild(div);
+        }
+
+        function appendRoundSeparator(round) {
+            const div = document.createElement('div');
+            div.className = 'flex items-center gap-3 my-2';
+            div.innerHTML = `
+                <div class="flex-1 h-px bg-marble-300"></div>
+                <span class="font-roman text-xs text-marble-500 tracking-widest whitespace-nowrap">▬▬ 第 ${toRoman(round)} 轮 ▬▬</span>
+                <div class="flex-1 h-px bg-marble-300"></div>
+            `;
+            document.getElementById('transcript').appendChild(div);
+            div.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function appendSpeechCard(agent, text, round, colorIdx) {
+            const c = colorFor(agent, colorIdx);
+            const div = document.createElement('div');
+            div.className = `${c.bg} border ${c.border} rounded-xl p-4 shadow-sm transition-all`;
+            div.innerHTML = `
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="${c.badge} text-xs font-bold px-2 py-0.5 rounded-full font-roman">${escapeHtml(agent)}</span>
+                    <span class="text-xs text-marble-400 font-body">第 ${toRoman(round)} 轮</span>
+                </div>
+                <div class="font-body text-sm text-marble-800 leading-relaxed whitespace-pre-wrap">${escapeHtml(text)}</div>
+            `;
+            document.getElementById('transcript').appendChild(div);
+            div.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function appendErrorCard(msg) {
+            const div = document.createElement('div');
+            div.className = 'bg-red-50 border border-red-200 rounded-xl p-3';
+            div.innerHTML = `<span class="text-xs text-red-700 font-body">⚠️ ${escapeHtml(msg)}</span>`;
+            document.getElementById('transcript').appendChild(div);
+        }
+
+        function updateRoster() {
+            const roster = document.getElementById('roster');
+            roster.innerHTML = '';
+            state.personalities.forEach((p, i) => {
+                const c = colorFor(p.name, i);
+                const div = document.createElement('div');
+                div.className = `flex items-center gap-2 py-1`;
+                div.innerHTML = `
+                    <span class="h-3 w-3 rounded-full ${c.badge.split(' ')[0]}"></span>
+                    <span class="text-xs font-bold font-body text-marble-700">${escapeHtml(p.name)}</span>
+                `;
+                roster.appendChild(div);
+            });
+        }
+
+        // ============================================================================
+        // 公民插话
+        // ============================================================================
+        async function citizenInterrupt() {
+            const topic = document.getElementById('topic-input').value.trim();
+            const interruption = document.getElementById('interruption-input').value.trim();
+            const maxRounds = parseInt(document.getElementById('rounds-select').value);
+            if (!interruption || !state.debating) return;
+
+            document.getElementById('btn-interrupt').disabled = true;
+            document.getElementById('interruption-input').value = '';
+
+            // 插入公民发言卡片
+            const div = document.createElement('div');
+            div.className = 'bg-slate-100 border border-slate-300 rounded-xl p-4 italic';
+            div.innerHTML = `
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="bg-slate-300 text-slate-700 text-xs font-bold px-2 py-0.5 rounded-full font-roman">公民</span>
+                </div>
+                <div class="font-body text-sm text-slate-700">${escapeHtml(interruption)}</div>
+            `;
+            document.getElementById('transcript').appendChild(div);
+            div.scrollIntoView({ behavior: 'smooth' });
+
+            // 带插话重新拉流
+            try {
+                const response = await fetch(apiUrl('/api/council/stream'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ topic, maxRounds, interruption })
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder('utf-8');
+                let buffer = '';
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    const chunk = decoder.decode(value, { stream: true });
+                    buffer += chunk;
+                    let lineEnd;
+                    while ((lineEnd = buffer.indexOf('\n')) !== -1) {
+                        const line = buffer.slice(0, lineEnd).trim();
+                        buffer = buffer.slice(lineEnd + 1);
+                        if (!line.startsWith('data:')) continue;
+                        try {
+                            handleSSEEvent(JSON.parse(line.replace(/^data:\s*/, '')));
+                        } catch (e) { }
+                    }
+                }
+
+                setStatus('done', '辩论结束');
+                document.getElementById('btn-summon').disabled = false;
+                document.getElementById('btn-interrupt').disabled = true;
+            } catch (err) {
+                appendErrorCard('插话请求失败: ' + err.message);
+                document.getElementById('btn-interrupt').disabled = false;
+            }
+        }
+
+        // ============================================================================
+        // 辅助函数
+        // ============================================================================
+        function escapeHtml(s) {
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        function toRoman(num) {
+            const map = [
+                [5, 'V'], [4, 'IV'], [1, 'I']
+            ];
+            let r = '';
+            for (const [n, ch] of map) {
+                while (num >= n) { r += ch; num -= n; }
+            }
+            return r || num.toString();
+        }
+
+        // 回车提交
+        document.getElementById('topic-input').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') summonCouncil();
+        });
+    </script>
+</body>
+</html>

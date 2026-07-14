@@ -1,0 +1,1203 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="h-full bg-slate-900">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前端服务调用与 API 学习沙箱</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                            900: '#312e81',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* 滚动条美化 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+    </style>
+</head>
+<body class="h-full text-slate-100 flex flex-col font-sans">
+
+    <!-- 顶部导航栏 -->
+    <header class="bg-slate-950 border-b border-slate-800 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center space-x-3">
+            <div class="bg-indigo-600 p-2 rounded-lg text-white font-bold text-xl shadow-lg shadow-indigo-500/20">
+                Go-JS
+            </div>
+            <div>
+                <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+                    前端服务调用学习沙箱
+                    <span class="text-xs font-normal bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded">匹配 Go 1.22+ 路由</span>
+                </h1>
+                <p class="text-xs text-slate-400">学习 JavaScript 如何与 Go 后端 (`POST /api/chat`) 交互</p>
+            </div>
+        </div>
+
+        <!-- 模式切换与状态 -->
+        <div class="flex items-center gap-4 bg-slate-900 p-1.5 rounded-xl border border-slate-800">
+            <button id="btn-mock-mode" onclick="setMode('mock')" class="px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1.5 bg-indigo-600 text-white shadow">
+                <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                模拟模式 (本地学习)
+            </button>
+            <button id="btn-live-mode" onclick="setMode('live')" class="px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 text-slate-400 hover:text-white flex items-center gap-1.5">
+                <span id="live-dot" class="h-2 w-2 rounded-full bg-slate-500"></span>
+                真机联调 (Localhost)
+            </button>
+        </div>
+    </header>
+
+    <!-- 主容器 -->
+    <main class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 overflow-hidden max-w-7xl mx-auto w-full">
+        
+        <!-- 左侧：交互控制台 (Chat 客户端与自定义 API 发送器) -->
+        <section class="lg:col-span-5 flex flex-col bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl h-full min-h-[500px]">
+            <!-- 标签页头部 -->
+            <div class="flex bg-slate-900/50 border-b border-slate-800 p-1">
+                <button onclick="switchLeftTab('chat')" id="tab-left-chat" class="flex-1 py-3 text-center text-sm font-semibold rounded-xl transition-all text-indigo-400 bg-slate-900 border border-slate-800/80">
+                    💬 智能对话界面
+                </button>
+                <button onclick="switchLeftTab('sandbox')" id="tab-left-sandbox" class="flex-1 py-3 text-center text-sm font-semibold rounded-xl transition-all text-slate-400 hover:text-slate-200">
+                    🛠️ 原始请求沙箱
+                </button>
+            </div>
+
+            <!-- 标签页内容 1: 聊天界面 -->
+            <div id="content-left-chat" class="flex-1 flex flex-col overflow-hidden">
+                <!-- 聊天历史 -->
+                <div id="chat-messages" class="flex-1 p-4 overflow-y-auto space-y-4">
+                    <!-- 初始系统欢迎消息 -->
+                    <div class="flex items-start gap-2">
+                        <div class="bg-indigo-600/20 text-indigo-400 p-2 rounded-xl text-xs font-semibold">系统</div>
+                        <div class="bg-slate-900 border border-slate-800 p-3 rounded-2xl rounded-tl-none max-w-[85%] text-sm text-slate-300">
+                            欢迎来到前端 API 学习平台！🎉<br><br>
+                            这是一个专门对接 <strong>Go 后端</strong> 的前端应用。<br>
+                            在下方输入框中发送消息，即可触发一个 <code>POST /api/chat</code> 请求。
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 聊天输入框 -->
+                <div class="p-4 border-t border-slate-800 bg-slate-900/40">
+                    <form id="chat-form" onsubmit="handleChatSubmit(event)" class="flex gap-2">
+                        <input type="text" id="chat-input" placeholder="输入你想发送给后端的消息..." required
+                            class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                        <button type="submit" id="btn-send-chat" class="bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-semibold px-5 py-3 rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-1.5">
+                            发送
+                            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+                        </button>
+                    </form>
+                    <div class="mt-2 text-center">
+                        <span class="text-[10px] text-slate-500">发送的数据结构：<code>{"message": "你的输入内容"}</code></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 标签页内容 2: 自定义 API 请求沙箱 -->
+            <div id="content-left-sandbox" class="hidden flex-1 p-5 overflow-y-auto space-y-4">
+                <h3 class="text-sm font-semibold text-slate-200 flex items-center justify-between">
+                    <span>手动构造 HTTP 请求</span>
+                    <span class="text-[10px] text-slate-500 font-normal">交互式请求生成器</span>
+                </h3>
+
+                <!-- URL 配置 -->
+                <div class="space-y-1">
+                    <label class="block text-xs font-semibold text-slate-400">请求方法与路径 (Method & Path)</label>
+                    <div class="flex rounded-xl overflow-hidden border border-slate-700 bg-slate-900">
+                        <select id="sandbox-method" onchange="onMethodChange()" class="bg-slate-800 px-3 py-2 text-xs font-bold text-indigo-300 focus:outline-none border-r border-slate-700">
+                            <option value="POST">POST</option>
+                            <option value="GET">GET</option>
+                            <option value="PUT">PUT</option>
+                            <option value="DELETE">DELETE</option>
+                        </select>
+                        <input type="text" id="sandbox-url" value="/api/chat" class="flex-1 bg-slate-900 px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none">
+                    </div>
+                </div>
+
+                <!-- 1. 请求头配置区域 -->
+                <div class="space-y-2">
+                    <div class="flex justify-between items-center">
+                        <label class="block text-xs font-semibold text-slate-400">请求头配置 (Headers Builder)</label>
+                        <select id="sandbox-header-preset" onchange="applyHeaderPreset()" class="bg-slate-900 text-[11px] text-indigo-400 border border-slate-700 rounded px-1.5 py-0.5 focus:outline-none">
+                            <option value="json">⚡ 模板：标准 JSON 交互</option>
+                            <option value="form">⚡ 模板：Form 表单提交</option>
+                            <option value="auth">⚡ 模板：Bearer 鉴权</option>
+                            <option value="custom">🛠️ 自定义 (清空)</option>
+                        </select>
+                    </div>
+                    
+                    <!-- 动态 Headers 表单 -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-2">
+                        <div id="headers-list-container" class="space-y-2 max-h-[140px] overflow-y-auto pr-1">
+                            <!-- 动态生成的 Header 行将展示在此 -->
+                        </div>
+                        <button onclick="addHeaderRow()" class="w-full text-center py-1.5 border border-dashed border-slate-700 hover:border-indigo-500/50 rounded-lg text-[11px] text-slate-400 hover:text-indigo-400 transition-all">
+                            ＋ 添加自定义 Header 字段
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 2. 请求体模板与动态控件生成器 -->
+                <div id="sandbox-body-wrapper" class="space-y-2">
+                    <div class="flex justify-between items-center">
+                        <label class="block text-xs font-semibold text-slate-400">请求体表单 (Body Fields Builder)</label>
+                        <select id="sandbox-body-preset" onchange="applyBodyPreset()" class="bg-slate-900 text-[11px] text-indigo-400 border border-slate-700 rounded px-1.5 py-0.5 focus:outline-none">
+                            <option value="go-chat">📦 模板：Go Chat 基础消息</option>
+                            <option value="go-chat-debug">📦 模板：Go Chat 调试荷载</option>
+                            <option value="form-urlencoded">📦 模板：URL 表单数据</option>
+                            <option value="empty">❌ 模板：空 (No Body)</option>
+                        </select>
+                    </div>
+
+                    <!-- 动态表单组件挂载点 -->
+                    <div id="body-form-fields-container" class="bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-3">
+                        <!-- 动态表单输入控件会渲染在这里 -->
+                    </div>
+
+                    <!-- 实时序列化结果预览 -->
+                    <div class="space-y-1">
+                        <div class="flex justify-between items-center">
+                            <span class="text-[10px] font-mono text-slate-500">底层序列化报文 (HTTP Body Payload)</span>
+                            <button onclick="formatRawBody()" class="text-[10px] text-indigo-400 hover:underline">格式化 Payload</button>
+                        </div>
+                        <textarea id="sandbox-body" rows="4" oninput="onRawBodyInput()" 
+                            class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs font-mono text-emerald-400 focus:outline-none focus:ring-1 focus:ring-slate-700" 
+                            placeholder="{}"></textarea>
+                    </div>
+                </div>
+
+                <!-- 触发按钮 -->
+                <button onclick="triggerSandboxFetch()" class="w-full bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold py-3 px-4 rounded-xl text-xs tracking-wide transition-all shadow-lg shadow-emerald-600/10 flex items-center justify-center gap-1.5">
+                    🚀 发射 Fetch 请求 (观察右侧分析)
+                </button>
+            </div>
+        </section>
+
+        <!-- 右侧：教学与分析台 (网络抓包、代码生成器、知识库) -->
+        <section class="lg:col-span-7 flex flex-col bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl h-full min-h-[500px]">
+            <!-- 标签页头部 -->
+            <div class="flex bg-slate-900/50 border-b border-slate-800 p-1 flex-wrap">
+                <button onclick="switchRightTab('trace')" id="tab-right-trace" class="flex-1 py-3 text-center text-sm font-semibold rounded-xl transition-all text-indigo-400 bg-slate-900 border border-slate-800/80 min-w-[100px]">
+                    📊 实时请求分析仪
+                </button>
+                <button onclick="switchRightTab('code')" id="tab-right-code" class="flex-1 py-3 text-center text-sm font-semibold rounded-xl transition-all text-slate-400 hover:text-slate-200 min-w-[100px]">
+                    💻 代码实物对照
+                </button>
+                <button onclick="switchRightTab('guide')" id="tab-right-guide" class="flex-1 py-3 text-center text-sm font-semibold rounded-xl transition-all text-slate-400 hover:text-slate-200 min-w-[100px]">
+                    📚 联调与跨域知识库
+                </button>
+            </div>
+
+            <!-- 标签页内容 1: 实时抓包分析 -->
+            <div id="content-right-trace" class="flex-1 p-5 overflow-y-auto space-y-5">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-semibold text-slate-200">HTTP 通信探针</h3>
+                    <div id="trace-indicator" class="text-[11px] text-slate-500 flex items-center gap-1.5">
+                        <span class="h-2 w-2 rounded-full bg-slate-600"></span> 暂无请求产生
+                    </div>
+                </div>
+
+                <!-- 报错通知横幅 (如跨域报错) -->
+                <div id="cors-warning-banner" class="hidden bg-rose-950/40 border border-rose-800 text-rose-300 p-4 rounded-xl space-y-2">
+                    <div class="flex items-center gap-2 font-bold text-xs text-rose-400">
+                        <span class="p-1 bg-rose-500/10 rounded-lg">⚠️</span>
+                        检测到潜在的 CORS 跨域请求拦截！
+                    </div>
+                    <p class="text-[11px] leading-relaxed">
+                        当你在浏览器本地直接双击打开 HTML (地址为 <code>file://...</code>) 去访问 <code>http://localhost:8080</code> 时，浏览器安全策略会自动拦截请求。
+                    </p>
+                    <div class="text-[10px] bg-slate-950/60 p-2 rounded border border-rose-900/40 font-mono text-slate-300">
+                        解决办法：使用 Go 后端 handleIndex 将此 HTML 页面直接作为首页返回，通过 http://localhost:8080/ 访问即可完美避开跨域！
+                    </div>
+                </div>
+
+                <!-- 请求核心链路可视化 -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- 发送区 -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+                        <span class="text-xs font-semibold text-amber-400 flex items-center gap-1.5">
+                            ⬆️ 客户端 Request 送出
+                        </span>
+                        <div class="space-y-2 text-[11px]">
+                            <div>
+                                <span class="text-slate-500">请求方法 (Method):</span>
+                                <span id="trace-req-method" class="font-mono text-amber-300 ml-1 font-bold">---</span>
+                            </div>
+                            <div>
+                                <span class="text-slate-500">请求路径 (Path):</span>
+                                <span id="trace-req-url" class="font-mono text-slate-200 ml-1">---</span>
+                            </div>
+                            <div>
+                                <span class="text-slate-500 font-bold">请求头 (Headers):</span>
+                                <pre id="trace-req-headers" class="bg-slate-950 p-2 rounded mt-1 font-mono text-slate-400 overflow-x-auto">---</pre>
+                            </div>
+                            <div>
+                                <span class="text-slate-500 font-bold">携带载荷 (Payload / Body):</span>
+                                <pre id="trace-req-body" class="bg-slate-950 p-2 rounded mt-1 font-mono text-emerald-400 overflow-x-auto max-h-[120px]">---</pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 响应接收区 -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+                        <span class="text-xs font-semibold text-sky-400 flex items-center gap-1.5">
+                            ⬇️ 服务端 Response 接收
+                        </span>
+                        <div class="space-y-2 text-[11px]">
+                            <div>
+                                <span class="text-slate-500">状态码 (Status):</span>
+                                <span id="trace-res-status" class="font-mono ml-1 font-bold">---</span>
+                            </div>
+                            <div>
+                                <span class="text-slate-500">传输时延 (Latency):</span>
+                                <span id="trace-res-time" class="font-mono text-slate-200 ml-1">---</span>
+                            </div>
+                            <div>
+                                <span class="text-slate-500 font-bold">服务器响应头:</span>
+                                <pre id="trace-res-headers" class="bg-slate-950 p-2 rounded mt-1 font-mono text-slate-400 overflow-x-auto">---</pre>
+                            </div>
+                            <div>
+                                <span class="text-slate-500 font-bold">响应内容 (JSON Body):</span>
+                                <pre id="trace-res-body" class="bg-slate-950 p-2 rounded mt-1 font-mono text-indigo-300 overflow-x-auto max-h-[120px]">---</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 控制台输出日志 -->
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-xs font-semibold text-slate-300">JavaScript 开发者控制台日志 (Console Logs)</span>
+                        <button onclick="clearConsoleLogs()" class="text-[10px] text-slate-500 hover:text-slate-300">清空</button>
+                    </div>
+                    <div id="trace-console" class="bg-slate-950 p-3 rounded-lg font-mono text-xs text-sky-300 space-y-1 min-h-[80px] max-h-[150px] overflow-y-auto">
+                        <span class="text-slate-500">[System] 沙箱已准备就绪，等待触发 Fetch 调用。</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 标签页内容 2: 代码实物对照 -->
+            <div id="content-right-code" class="hidden flex-1 p-5 overflow-y-auto space-y-4">
+                <h3 class="text-sm font-semibold text-slate-200">前端如何编写底层代码发请求？</h3>
+                <p class="text-xs text-slate-400">刚才进行的操作对应的完整、可用的 JavaScript 前端原生代码如下所示：</p>
+
+                <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+                    <div class="bg-slate-850 px-4 py-2 border-b border-slate-800 flex justify-between items-center">
+                        <span class="text-xs font-semibold text-slate-300 font-mono">Fetch_Request_Template.js</span>
+                        <button onclick="copyCode()" class="text-[11px] bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/20 px-2 py-1 rounded transition-all">
+                            复制代码
+                        </button>
+                    </div>
+                    <pre class="p-4 text-xs font-mono text-slate-300 overflow-x-auto bg-slate-950 leading-relaxed"><code id="code-snippet-pre">
+// 这是一个通用的前端原生 fetch 调用方法，用于发送请求并解析 Go 端返回的 JSON 数据
+async function sendRequestToGoServer(messageContent) {
+    const url = '/api/chat'; // 对应 Go 中 http.HandleFunc("POST /api/chat", handleChat)
+
+    const payload = {
+        message: messageContent // 构建后端所需的 JSON 数据字段
+    };
+
+    try {
+        const response = await fetch(url, {
+            method: 'POST', // 配合 Go 端路由匹配 POST 方法
+            headers: {
+                'Content-Type': 'application/json' // 告知服务器我们发送的是 JSON
+            },
+            body: JSON.stringify(payload) // 将 JS 对象序列化为 JSON 字符串
+        });
+
+        // 检查服务器 HTTP 响应状态码是否在 200-299 范围内
+        if (!response.ok) {
+            throw new Error(`HTTP 报错！状态码: ${response.status}`);
+        }
+
+        // 解析并读取服务器传回的 JSON 格式响应体
+        const data = await response.json();
+        console.log('接收到 Go 后端响应数据:', data);
+        return data;
+        
+    } catch (error) {
+        console.error('发生网络错误或解析错误:', error);
+        throw error;
+    }
+}
+                    </code></pre>
+                </div>
+
+                <div class="bg-indigo-950/20 border border-indigo-800/40 p-4 rounded-xl space-y-2">
+                    <h4 class="text-xs font-bold text-indigo-400">💡 核心知识剖析</h4>
+                    <ul class="text-[11px] text-slate-400 list-disc pl-4 space-y-1">
+                        <li><strong class="text-slate-300">async/await 异步机制</strong>: 解决网络请求的延迟等待问题，使代码能够像写同步代码一样简单易读。</li>
+                        <li><strong class="text-slate-300">Content-Type 头部</strong>: 告诉 Go 后端以什么形式解析请求体。后端通过 <code>json.NewDecoder(r.Body).Decode(&amp;payload)</code> 解析的就是它。</li>
+                        <li><strong class="text-slate-300">JSON.stringify() 与 json()</strong>: 前者把 JavaScript 内存对象转成能经网络传递的纯文本字符串；后者把网络传回的纯文本字符串重新变成 JS 内存对象。</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- 标签页内容 3: 联调与跨域知识库 -->
+            <div id="content-right-guide" class="hidden flex-1 p-5 overflow-y-auto space-y-4">
+                <h3 class="text-sm font-semibold text-slate-200">前后端联调核心通关秘籍</h3>
+                
+                <div class="space-y-4 text-xs leading-relaxed text-slate-300">
+                    <!-- Go 1.22+ 路由匹配特性 -->
+                    <div class="border-l-2 border-indigo-500 pl-3 py-1 space-y-1">
+                        <h4 class="font-bold text-slate-100">1. Go 1.22 引入的全新方法匹配机制</h4>
+                        <p class="text-slate-400">
+                            在 Go 1.22+ 中，<code>http.HandleFunc("POST /api/chat", handleChat)</code> 
+                            自动做了双重保障：<strong>只匹配 POST 方法</strong>。如果前端不小心发成了 GET 请求，Go 会自动返回 
+                            <code>405 Method Not Allowed</code>。
+                        </p>
+                    </div>
+
+                    <!-- 解决 CORS 跨域问题 -->
+                    <div class="border-l-2 border-rose-500 pl-3 py-1 space-y-1">
+                        <h4 class="font-bold text-rose-300">2. 彻底歼灭 CORS 跨域大怪兽</h4>
+                        <p class="text-slate-400">
+                            当前端直接从本地 <code>file://</code> 打开本页面，向 <code>localhost:8080</code> 发生网络调用时，会受到同源策略限制，触发跨域拦截。解决它有两种方法：
+                        </p>
+                        <ul class="list-decimal pl-4 mt-1 text-slate-400 space-y-1.5">
+                            <li>
+                                <strong class="text-slate-200">推荐方法：通过 Go 直接提供 HTML 页面（GET /）</strong><br>
+                                也就是你后端注册的 <code>http.HandleFunc("GET /", handleIndex)</code> 路由。<br>
+                                当你从浏览器里访问 <code>http://localhost:8080</code> 拿到这个网页并访问时，前端和后端就是<strong>完全同源</strong>的！跨域问题不攻自破！
+                            </li>
+                            <li>
+                                <strong class="text-slate-200">备选方法：在 Go 后端设置 CORS 头响应</strong><br>
+                                在 Go 路由处理函数中，手动加上响应头授权：<br>
+                                <code class="block bg-slate-900 border border-slate-800 p-2 rounded mt-1 font-mono text-[11px] text-amber-300">
+                                w.Header().Set("Access-Control-Allow-Origin", "*")<br>
+                                w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+                                </code>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <!-- Go 端处理 POST JSON 的典型逻辑 -->
+                    <div class="border-l-2 border-emerald-500 pl-3 py-1 space-y-1">
+                        <h4 class="font-bold text-emerald-300">3. Go 后端对应的接收代码参考</h4>
+                        <p class="text-slate-400">Go 接收本前端发送数据的标准代码模型：</p>
+                        <pre class="bg-slate-900 border border-slate-800 p-3 rounded mt-2 font-mono text-[10px] text-slate-300 overflow-x-auto leading-normal">
+type ChatRequest struct {
+    Message string `json:"message"`
+}
+
+func handleChat(w http.ResponseWriter, r *http.Request) {
+    // 1. 解析 JSON 请求体
+    var req ChatRequest
+    err := json.NewDecoder(r.Body).Decode(&req)
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusBadRequest)
+        return
+    }
+
+    // 2. 返回 JSON 格式响应
+    w.Header().Set("Content-Type", "application/json")
+    response := map[string]string{
+        "reply": "你发送了: " + req.Message,
+    }
+    json.NewEncoder(w).Encode(response)
+}
+                        </pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- 全局状态通知框 -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 pointer-events-none space-y-2"></div>
+
+    <script>
+        // --- 核心全局应用状态管理 ---
+        const state = {
+            mode: 'mock', // 'mock' (模拟模式) 或 'live' (真机/联调模式)
+            activeLeftTab: 'chat',
+            activeRightTab: 'trace',
+            messages: [
+                { sender: 'system', text: '欢迎来到前端服务调用学习沙箱！在左下侧输入消息即可向后端发起 POST 请求，在右侧观察通信链路。' }
+            ]
+        };
+
+        // 请求头常用快捷选项
+        const popularHeaderKeys = [
+            "Content-Type",
+            "Authorization",
+            "Accept",
+            "Cache-Control",
+            "X-Requested-With",
+            "X-Debug-Mode"
+        ];
+
+        // 预设请求头配置数据
+        const headerPresets = {
+            json: [
+                { key: 'Content-Type', value: 'application/json' },
+                { key: 'Accept', value: 'application/json' }
+            ],
+            form: [
+                { key: 'Content-Type', value: 'application/x-www-form-urlencoded' }
+            ],
+            auth: [
+                { key: 'Content-Type', value: 'application/json' },
+                { key: 'Authorization', value: 'Bearer demo_token_go_987654' }
+            ],
+            custom: []
+        };
+
+        // 请求体表单配置定义 (用于动态渲染控件并赋予默认值)
+        const bodyTemplates = {
+            'go-chat': {
+                format: 'json',
+                fields: [
+                    { key: 'message', label: '对话文本 (message)', type: 'text', default: 'Hello CC-Agent Go Backend!' }
+                ]
+            },
+            'go-chat-debug': {
+                format: 'json',
+                fields: [
+                    { key: 'message', label: '调试对话消息 (message)', type: 'text', default: '来自前端沙箱的压力测试消息' },
+                    { key: 'timestamp', label: '发起时间戳 (timestamp)', type: 'number', default: Math.floor(Date.now() / 1000) },
+                    { key: 'debug', label: '强制开启调试路由 (debug)', type: 'boolean', default: true }
+                ]
+            },
+            'form-urlencoded': {
+                format: 'urlencoded',
+                fields: [
+                    { key: 'user', label: '账号昵称 (user)', type: 'text', default: 'golang_learner' },
+                    { key: 'topic', label: '学习主题 (topic)', type: 'text', default: 'CORS_Fix_101' },
+                    { key: 'duration_hours', label: '学习时长 (duration_hours)', type: 'number', default: 2 }
+                ]
+            },
+            'empty': {
+                format: 'raw',
+                fields: []
+            }
+        };
+
+        // 预设的 Mock AI 回答，用于离线模式下给用户逼真的答复
+        const mockReplies = [
+            "这是一个模拟回复！因为你现在处于【模拟本地模式】。如果启动了 Go 后端并切换到【真机联调模式】，你会接收到真实后端的数据哟！",
+            "你好！你知道吗，前端通过 fetch 发送的数据，其实会被序列化为一串字符串，然后打包成 TCP 报文发送给你的 Go 服务器。",
+            "在 Go 后端里，你可以通过 `r.Body` 读取到我发送过去的请求体数据。",
+            "刚才你发送的请求，已经被我实时拦截，并在右侧的【实时请求分析仪】中将所有细节全部拆解打印出来了，快去看看！",
+            "建议你在 Go 中使用 `http.HandleFunc(\"GET /\", handleIndex)` 路由，把这个 `index.html` 网页直接读取出来返回给浏览器。"
+        ];
+
+        // 页面初始化
+        window.onload = function() {
+            setMode('mock'); // 默认进模拟模式，防报错
+            applyHeaderPreset(); // 初始化渲染请求头表单
+            applyBodyPreset();   // 初始化渲染请求体表单与联动
+            renderMessages();
+            logConsole("应用已初始化。");
+        };
+
+        // --- 运行模式设置 (Mock 模拟 vs Live 真实) ---
+        function setMode(mode) {
+            state.mode = mode;
+            const btnMock = document.getElementById('btn-mock-mode');
+            const btnLive = document.getElementById('btn-live-mode');
+            const liveDot = document.getElementById('live-dot');
+
+            if (mode === 'mock') {
+                btnMock.className = "px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1.5 bg-indigo-600 text-white shadow";
+                btnLive.className = "px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 text-slate-400 hover:text-white flex items-center gap-1.5";
+                liveDot.className = "h-2 w-2 rounded-full bg-slate-500";
+                
+                showToast("已切到：模拟开发模式 (无需启动 Go)", "info");
+                logConsole("[Mode] 切换至 [模拟本地模式]：前端将接管并模拟一切网络应答。");
+                document.getElementById('cors-warning-banner').classList.add('hidden');
+            } else {
+                btnLive.className = "px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1.5 bg-indigo-600 text-white shadow";
+                btnMock.className = "px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 text-slate-400 hover:text-white flex items-center gap-1.5";
+                liveDot.className = "h-2 w-2 rounded-full bg-emerald-400 animate-pulse";
+                
+                showToast("已切到：真机联调模式 (将真实调用 localhost:8080)", "success");
+                logConsole("[Mode] 切换至 [真机联调模式]：将实打实向 localhost:8080 发起 API 网络请求。");
+            }
+        }
+
+        // --- UI 导航逻辑 ---
+        function switchLeftTab(tabName) {
+            state.activeLeftTab = tabName;
+            
+            const tabChat = document.getElementById('tab-left-chat');
+            const tabSandbox = document.getElementById('tab-left-sandbox');
+            const contentChat = document.getElementById('content-left-chat');
+            const contentSandbox = document.getElementById('content-left-sandbox');
+
+            const activeClass = "flex-1 py-3 text-center text-sm font-semibold rounded-xl transition-all text-indigo-400 bg-slate-900 border border-slate-800/80";
+            const inactiveClass = "flex-1 py-3 text-center text-sm font-semibold rounded-xl transition-all text-slate-400 hover:text-slate-200";
+
+            if (tabName === 'chat') {
+                tabChat.className = activeClass;
+                tabSandbox.className = inactiveClass;
+                contentChat.classList.remove('hidden');
+                contentSandbox.classList.add('hidden');
+            } else {
+                tabChat.className = inactiveClass;
+                tabSandbox.className = activeClass;
+                contentChat.classList.add('hidden');
+                contentSandbox.classList.remove('hidden');
+            }
+            logConsole(`[Tab] 切换左侧视图至: ${tabName}`);
+        }
+
+        function switchRightTab(tabName) {
+            state.activeRightTab = tabName;
+            
+            const tabTrace = document.getElementById('tab-right-trace');
+            const tabCode = document.getElementById('tab-right-code');
+            const tabGuide = document.getElementById('tab-right-guide');
+
+            const contentTrace = document.getElementById('content-right-trace');
+            const contentCode = document.getElementById('content-right-code');
+            const contentGuide = document.getElementById('content-right-guide');
+
+            const activeClass = "flex-1 py-3 text-center text-sm font-semibold rounded-xl transition-all text-indigo-400 bg-slate-900 border border-slate-800/80 min-w-[100px]";
+            const inactiveClass = "flex-1 py-3 text-center text-sm font-semibold rounded-xl transition-all text-slate-400 hover:text-slate-200 min-w-[100px]";
+
+            tabTrace.className = (tabName === 'trace') ? activeClass : inactiveClass;
+            tabCode.className = (tabName === 'code') ? activeClass : inactiveClass;
+            tabGuide.className = (tabName === 'guide') ? activeClass : inactiveClass;
+
+            contentTrace.className = (tabName === 'trace') ? "flex-1 p-5 overflow-y-auto space-y-5" : "hidden";
+            contentCode.className = (tabName === 'code') ? "flex-1 p-5 overflow-y-auto space-y-4" : "hidden";
+            contentGuide.className = (tabName === 'guide') ? "flex-1 p-5 overflow-y-auto space-y-4" : "hidden";
+            
+            logConsole(`[Tab] 切换右侧工具盘至: ${tabName}`);
+        }
+
+        // --- 动态 Headers 表单生成器代码 ---
+        function applyHeaderPreset() {
+            const presetKey = document.getElementById('sandbox-header-preset').value;
+            const headers = headerPresets[presetKey] || [];
+            
+            const container = document.getElementById('headers-list-container');
+            container.innerHTML = '';
+            
+            headers.forEach(h => {
+                addHeaderRow(h.key, h.value);
+            });
+            logConsole(`[Headers] 已应用 "${presetKey}" 请求头预设模板`);
+        }
+
+        function addHeaderRow(key = '', value = '') {
+            const container = document.getElementById('headers-list-container');
+            const rowDiv = document.createElement('div');
+            rowDiv.className = "flex gap-1.5 items-center header-row animate-fade-in";
+            
+            // 下拉匹配常用 Key 列表或自定义
+            let selectOptionsHtml = `<option value="">-- 自定义 Key --</option>`;
+            popularHeaderKeys.forEach(pKey => {
+                const selected = pKey === key ? 'selected' : '';
+                selectOptionsHtml += `<option value="${pKey}" ${selected}>${pKey}</option>`;
+            });
+
+            rowDiv.innerHTML = `
+                <!-- 预设选择器 -->
+                <select onchange="onHeaderKeySelect(this)" class="w-1/3 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none">
+                    ${selectOptionsHtml}
+                </select>
+                <!-- 手动输入 Key (若不在列表里) -->
+                <input type="text" placeholder="Key" value="${key}" 
+                    class="header-key-input w-1/4 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none placeholder-slate-600 ${popularHeaderKeys.includes(key) ? 'hidden' : ''}">
+                
+                <!-- Value 输入 -->
+                <input type="text" placeholder="Value" value="${value}" 
+                    class="header-val-input flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none placeholder-slate-600">
+                
+                <!-- 删除按钮 -->
+                <button onclick="removeHeaderRow(this)" class="p-1 hover:bg-rose-950/40 rounded border border-transparent hover:border-rose-800 text-rose-400 font-bold transition-all" title="删除当前字段">
+                    ✕
+                </button>
+            `;
+            container.appendChild(rowDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function removeHeaderRow(btn) {
+            btn.parentElement.remove();
+            logConsole("[Headers] 移除了一个 Header 字段");
+        }
+
+        function onHeaderKeySelect(selectEl) {
+            const row = selectEl.parentElement;
+            const inputKey = row.querySelector('.header-key-input');
+            if (selectEl.value === '') {
+                // 自定义，显示输入框以便手写
+                inputKey.classList.remove('hidden');
+                inputKey.focus();
+            } else {
+                // 选择已有预设，隐藏并同步值
+                inputKey.classList.add('hidden');
+                inputKey.value = selectEl.value;
+            }
+        }
+
+        // 读取 UI 面板当前配置的所有 Headers 字段
+        function getHeadersFromUI() {
+            const headers = {};
+            const rows = document.querySelectorAll('.header-row');
+            rows.forEach(row => {
+                const selectKey = row.querySelector('select').value;
+                const inputKey = row.querySelector('.header-key-input').value;
+                const val = row.querySelector('.header-val-input').value;
+                
+                const finalKey = selectKey || inputKey; // 如果没选择下拉，则用手写的key
+                if (finalKey && finalKey.trim()) {
+                    headers[finalKey.trim()] = val;
+                }
+            });
+            return headers;
+        }
+
+
+        // --- 动态 Body 模板与表单渲染引擎 ---
+        function applyBodyPreset() {
+            const presetKey = document.getElementById('sandbox-body-preset').value;
+            const template = bodyTemplates[presetKey];
+            
+            const formContainer = document.getElementById('body-form-fields-container');
+            formContainer.innerHTML = '';
+
+            if (!template || template.fields.length === 0) {
+                formContainer.innerHTML = `<div class="text-xs text-slate-500 italic text-center py-2">无需发送请求体 (或手动编辑下方原始字符串)</div>`;
+                document.getElementById('sandbox-body').value = '';
+                logConsole(`[Body] 切换至 "${presetKey}" 模板 (空请求体)`);
+                return;
+            }
+
+            // 动态绘制表单控件
+            template.fields.forEach(field => {
+                const formGroup = document.createElement('div');
+                formGroup.className = "space-y-1";
+
+                let inputHtml = '';
+                if (field.type === 'text') {
+                    inputHtml = `<input type="text" data-key="${field.key}" data-type="text" value="${field.default}" oninput="syncFormToRawBody()"
+                        class="body-field-input w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500">`;
+                } else if (field.type === 'number') {
+                    inputHtml = `<input type="number" data-key="${field.key}" data-type="number" value="${field.default}" oninput="syncFormToRawBody()"
+                        class="body-field-input w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500">`;
+                } else if (field.type === 'boolean') {
+                    const checked = field.default ? 'checked' : '';
+                    inputHtml = `
+                    <label class="inline-flex items-center gap-2 cursor-pointer mt-1">
+                        <input type="checkbox" data-key="${field.key}" data-type="boolean" ${checked} onchange="syncFormToRawBody()"
+                            class="body-field-input rounded bg-slate-950 border-slate-700 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+                        <span class="text-xs text-slate-300">是 (True) / 否 (False)</span>
+                    </label>`;
+                }
+
+                formGroup.innerHTML = `
+                    <label class="block text-[11px] font-medium text-slate-400">${field.label}</label>
+                    ${inputHtml}
+                `;
+                formContainer.appendChild(formGroup);
+            });
+
+            // 初始化同步，生成底层 Payload
+            syncFormToRawBody();
+            logConsole(`[Body] 应用 "${presetKey}" 请求体模板并生成配置表单`);
+        }
+
+        // 把渲染出的表单内所有字段同步到下方的 textarea 原生文本框中
+        function syncFormToRawBody() {
+            const presetKey = document.getElementById('sandbox-body-preset').value;
+            const template = bodyTemplates[presetKey];
+            if (!template) return;
+
+            const inputs = document.querySelectorAll('.body-field-input');
+            const data = {};
+
+            inputs.forEach(input => {
+                const key = input.getAttribute('data-key');
+                const type = input.getAttribute('data-type');
+                
+                let val;
+                if (type === 'boolean') {
+                    val = input.checked;
+                } else if (type === 'number') {
+                    val = Number(input.value);
+                } else {
+                    val = input.value;
+                }
+                data[key] = val;
+            });
+
+            const rawTextarea = document.getElementById('sandbox-body');
+            if (template.format === 'json') {
+                rawTextarea.value = JSON.stringify(data, null, 2);
+            } else if (template.format === 'urlencoded') {
+                const urlParams = new URLSearchParams();
+                for (const [k, v] of Object.entries(data)) {
+                    urlParams.append(k, v);
+                }
+                rawTextarea.value = urlParams.toString();
+            }
+        }
+
+        // 当请求方法更改时，自动做一点合理的辅助转换 (例如 GET 自动设为空)
+        function onMethodChange() {
+            const method = document.getElementById('sandbox-method').value;
+            const bodyWrapper = document.getElementById('sandbox-body-wrapper');
+            if (method === 'GET' || method === 'DELETE') {
+                document.getElementById('sandbox-body-preset').value = 'empty';
+                applyBodyPreset();
+                bodyWrapper.style.opacity = "0.5";
+            } else {
+                bodyWrapper.style.opacity = "1";
+            }
+            logConsole(`[Method] 方法变更为 ${method}`);
+        }
+
+        // 当用户手动修改 textarea 底层 payload 时的回调
+        function onRawBodyInput() {
+            // 不进行强制同步表单，允许用户在代码中自定义多余的高级 JSON 字段
+            logConsole(`[Body] 用户正在手动覆写编辑底层 HTTP Payload 字符串。`);
+        }
+
+        // 格式化 textarea 中的文本
+        function formatRawBody() {
+            const textarea = document.getElementById('sandbox-body');
+            try {
+                const parsed = JSON.parse(textarea.value);
+                textarea.value = JSON.stringify(parsed, null, 2);
+                showToast("JSON 格式化成功", "success");
+            } catch (err) {
+                showToast("当前不是标准的 JSON 格式，无法美化", "warning");
+            }
+        }
+
+
+        // --- 聊天面板行为与消息绘制 ---
+        function renderMessages() {
+            const container = document.getElementById('chat-messages');
+            container.innerHTML = '';
+
+            state.messages.forEach(msg => {
+                const isUser = msg.sender === 'user';
+                const isSystem = msg.sender === 'system';
+                
+                const wrapper = document.createElement('div');
+                wrapper.className = `flex items-start gap-2 ${isUser ? 'justify-end' : ''}`;
+
+                let senderTagClass = "bg-indigo-600/20 text-indigo-400 p-2 rounded-xl text-xs font-semibold";
+                let senderText = "后端服务";
+                if (isUser) {
+                    senderTagClass = "bg-emerald-600/20 text-emerald-400 p-2 rounded-xl text-xs font-semibold order-2";
+                    senderText = "我的前端";
+                } else if (isSystem) {
+                    senderTagClass = "bg-slate-800 text-slate-400 p-2 rounded-xl text-xs font-semibold";
+                    senderText = "系统";
+                }
+
+                const contentClass = isUser 
+                    ? "bg-indigo-600 border border-indigo-500 p-3 rounded-2xl rounded-tr-none max-w-[85%] text-sm text-white"
+                    : "bg-slate-900 border border-slate-800 p-3 rounded-2xl rounded-tl-none max-w-[85%] text-sm text-slate-300";
+
+                wrapper.innerHTML = `
+                    <div class="${senderTagClass}">${senderText}</div>
+                    <div class="${contentClass}">${msg.text}</div>
+                `;
+                container.appendChild(wrapper);
+            });
+            container.scrollTop = container.scrollHeight;
+        }
+
+        async function handleChatSubmit(event) {
+            event.preventDefault();
+            const input = document.getElementById('chat-input');
+            const messageText = input.value.trim();
+            if (!messageText) return;
+
+            // 1. 在UI渲染用户输入
+            state.messages.push({ sender: 'user', text: messageText });
+            renderMessages();
+            input.value = '';
+
+            // 更新代码示例，让它随着用户的消息发生字面内容映射，加深印象
+            updateCodeSnippet(messageText);
+
+            // 2. 构造 API 发射请求
+            const path = "/api/chat";
+            const reqHeaders = { 'Content-Type': 'application/json' };
+            const reqBodyObj = { message: messageText };
+
+            logConsole(`[API Request] 开始发送 POST /api/chat，荷载 payload: ${JSON.stringify(reqBodyObj)}`);
+            updateRequestTrace("POST", path, reqHeaders, reqBodyObj);
+
+            // 切换到追迹分析卡片
+            switchRightTab('trace');
+
+            const startTime = performance.now();
+
+            if (state.mode === 'mock') {
+                // --- 模拟调用模式 ---
+                simulateBackendResponse(messageText, startTime);
+            } else {
+                // --- 真机联调模式 ---
+                try {
+                    const targetUrl = window.location.origin.includes('localhost') 
+                        ? path 
+                        : `http://localhost:8080${path}`;
+
+                    const response = await fetch(targetUrl, {
+                        method: 'POST',
+                        headers: reqHeaders,
+                        body: JSON.stringify(reqBodyObj)
+                    });
+
+                    const latency = (performance.now() - startTime).toFixed(1);
+                    const resHeadersText = extractHeadersText(response.headers);
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        updateResponseTrace(response.status, `${latency}ms`, resHeadersText, `HTTP Error! ${errorText}`);
+                        logConsole(`[API Response] ⚠️ 后端返回了非 2xx 报错！状态码: ${response.status}`, true);
+                        showToast(`后端服务异常 (${response.status})`, "error");
+                        return;
+                    }
+
+                    const resData = await response.json();
+                    updateResponseTrace(200, `${latency}ms`, resHeadersText, resData);
+                    logConsole(`[API Response] ✅ 请求顺利完成！响应体为: ${JSON.stringify(resData)}`);
+
+                    // 渲染回复字段到气泡上
+                    const replyText = resData.reply || resData.response || JSON.stringify(resData);
+                    state.messages.push({ sender: 'assistant', text: replyText });
+                    renderMessages();
+                    showToast("与真实 Go 服务器通信成功", "success");
+
+                } catch (err) {
+                    const latency = (performance.now() - startTime).toFixed(1);
+                    updateResponseTrace("网络失败", `${latency}ms`, "---", `Error: ${err.message}`);
+                    logConsole(`[API Error] 网络联调遭遇阻碍！具体错误: ${err.message}`, true);
+                    
+                    if (window.location.protocol === 'file:') {
+                        document.getElementById('cors-warning-banner').classList.remove('hidden');
+                    }
+                    showToast("通信失败！检查 Go 服务开启或同源限制", "error");
+                }
+            }
+        }
+
+        // 模拟后台行为逻辑
+        function simulateBackendResponse(userMsg, startTime) {
+            showToast("本地模拟引擎处理中...", "info");
+            
+            setTimeout(() => {
+                const latency = (100 + Math.random() * 200).toFixed(1);
+                const mockHeaders = "Content-Type: application/json\nDate: " + new Date().toUTCString() + "\nServer: MockServer/1.0 (Go-Simulator)\nAccess-Control-Allow-Origin: *";
+                
+                let selectedReply = mockReplies[Math.floor(Math.random() * mockReplies.length)];
+                
+                if (userMsg.toLowerCase().includes('cors') || userMsg.includes('跨域')) {
+                    selectedReply = "噢！你问到最经典的 CORS 跨域问题了。看这里：因为这个网页当前没和你的 Go 后端运行在同一个端口（如 Go 运行在 8080），浏览器就会为了安全拦住请求。只要你让 Go 来当服务器加载这个网页，就彻底没有跨域烦恼啦！";
+                } else if (userMsg.toLowerCase().includes('go') || userMsg.includes('后端')) {
+                    selectedReply = "Go 1.22+ 最强之处就在于可以直接解析 `POST /api/chat`。不仅限制了必须是 POST 请求，还省去了你自己判断 `if r.Method != \"POST\"` 的多余步骤！";
+                }
+
+                const mockResBody = {
+                    reply: selectedReply,
+                    sender: "Go-Simulator",
+                    success: true
+                };
+
+                updateResponseTrace(200, `${latency}ms`, mockHeaders, mockResBody);
+                logConsole(`[API Response] ✅ [模拟模式] 构造响应。时延 ${latency}ms，响应荷载: ${JSON.stringify(mockResBody)}`);
+
+                state.messages.push({ sender: 'assistant', text: selectedReply });
+                renderMessages();
+                showToast("模拟应答已就绪", "success");
+            }, 800);
+        }
+
+
+        // --- 原始 Sandbox 真实触发 Fetch 调用 ---
+        async function triggerSandboxFetch() {
+            const method = document.getElementById('sandbox-method').value;
+            const path = document.getElementById('sandbox-url').value;
+            const bodyStr = document.getElementById('sandbox-body').value;
+
+            // 获取 UI 面板上的动态自定义 Headers
+            const reqHeaders = getHeadersFromUI();
+
+            logConsole(`[Sandbox Fetch] 发起 ${method} 请求至 ${path}`);
+            
+            let finalPayload = bodyStr;
+            // 尝试检测并验证底层发送体数据
+            if (method !== 'GET') {
+                try {
+                    finalPayload = JSON.parse(bodyStr);
+                } catch (e) {
+                    // 若解析 JSON 报错，则原样作为 Form/Text 格式发送
+                    finalPayload = bodyStr;
+                }
+            }
+
+            updateRequestTrace(method, path, reqHeaders, finalPayload);
+            switchRightTab('trace');
+
+            const startTime = performance.now();
+
+            if (state.mode === 'mock') {
+                // 模拟沙箱应答
+                setTimeout(() => {
+                    const latency = (50 + Math.random() * 50).toFixed(1);
+                    const mockHeaders = `Content-Type: ${reqHeaders['Content-Type'] || 'application/json'}\nDate: ${new Date().toUTCString()}\nServer: Go-Simulator`;
+                    const mockRes = {
+                        status: "Success",
+                        message: "沙箱模拟请求收到！这是模拟服务器，当前捕获了你定制的 Header 与数据结构。",
+                        echoed_headers: reqHeaders,
+                        echoed_payload: finalPayload
+                    };
+                    updateResponseTrace(200, `${latency}ms`, mockHeaders, mockRes);
+                    logConsole(`[Sandbox] Mock 响应：通信成功，返回 ${JSON.stringify(mockRes)}`);
+                    showToast("沙箱模拟成功", "success");
+                }, 500);
+            } else {
+                // 真实沙箱发送
+                try {
+                    const targetUrl = window.location.origin.includes('localhost') 
+                        ? path 
+                        : `http://localhost:8080${path}`;
+
+                    const fetchOptions = {
+                        method: method,
+                        headers: reqHeaders
+                    };
+                    
+                    if (method !== 'GET' && method !== 'HEAD' && bodyStr) {
+                        fetchOptions.body = bodyStr;
+                    }
+
+                    const response = await fetch(targetUrl, fetchOptions);
+                    const latency = (performance.now() - startTime).toFixed(1);
+                    const resHeadersText = extractHeadersText(response.headers);
+
+                    let resBody;
+                    try {
+                        resBody = await response.json();
+                    } catch (err) {
+                        resBody = await response.text();
+                    }
+
+                    updateResponseTrace(response.status, `${latency}ms`, resHeadersText, resBody);
+                    logConsole(`[Sandbox Live] 服务器成功应答。状态码: ${response.status}`);
+                    showToast(`沙箱真实请求成功 (${response.status})`, "success");
+
+                } catch (err) {
+                    const latency = (performance.now() - startTime).toFixed(1);
+                    updateResponseTrace("网络失败", `${latency}ms`, "---", `Error: ${err.message}`);
+                    logConsole(`[Sandbox Live Error] 请求崩溃: ${err.message}`, true);
+                    if (window.location.protocol === 'file:') {
+                        document.getElementById('cors-warning-banner').classList.remove('hidden');
+                    }
+                    showToast("沙箱通信失败", "error");
+                }
+            }
+        }
+
+        // --- 探针 UI 与日志更新辅助 ---
+        function updateRequestTrace(method, url, headers, body) {
+            document.getElementById('trace-req-method').innerText = method;
+            document.getElementById('trace-req-url').innerText = url;
+            
+            let headersStr = "";
+            for (const [k, v] of Object.entries(headers)) {
+                headersStr += `${k}: ${v}\n`;
+            }
+            document.getElementById('trace-req-headers').innerText = headersStr || "无";
+            
+            document.getElementById('trace-req-body').innerText = body 
+                ? (typeof body === 'object' ? JSON.stringify(body, null, 2) : body)
+                : "无 Payload (GET/空)";
+
+            // 状态重置
+            const traceInd = document.getElementById('trace-indicator');
+            traceInd.innerHTML = `<span class="h-2 w-2 rounded-full bg-amber-400 animate-pulse"></span> 正在请求中...`;
+            document.getElementById('trace-res-status').className = "font-mono ml-1 font-bold text-slate-500";
+            document.getElementById('trace-res-status').innerText = "等待中...";
+            document.getElementById('trace-res-time').innerText = "计算中...";
+            document.getElementById('trace-res-headers').innerText = "---";
+            document.getElementById('trace-res-body').innerText = "---";
+        }
+
+        function updateResponseTrace(status, time, headersText, body) {
+            const statusEl = document.getElementById('trace-res-status');
+            statusEl.innerText = status;
+            
+            if (status === 200 || status === "200") {
+                statusEl.className = "font-mono ml-1 font-bold text-emerald-400";
+            } else if (typeof status === 'number' && status >= 400) {
+                statusEl.className = "font-mono ml-1 font-bold text-rose-400";
+            } else {
+                statusEl.className = "font-mono ml-1 font-bold text-amber-400";
+            }
+
+            document.getElementById('trace-res-time').innerText = time;
+            document.getElementById('trace-res-headers').innerText = headersText || "无";
+            
+            document.getElementById('trace-res-body').innerText = typeof body === 'object' 
+                ? JSON.stringify(body, null, 2) 
+                : body;
+
+            const traceInd = document.getElementById('trace-indicator');
+            traceInd.innerHTML = `<span class="h-2 w-2 rounded-full bg-emerald-400"></span> 诊断完毕 (${status})`;
+        }
+
+        function updateCodeSnippet(userInput) {
+            const codePre = document.getElementById('code-snippet-pre');
+            const escapableMsg = userInput.replace(/"/g, '\\"');
+            
+            codePre.innerHTML = `
+// 这是一个通用的前端原生 fetch 调用方法，用于发送请求并解析 Go 端返回的 JSON 数据
+async function sendRequestToGoServer(messageContent) {
+    const url = '/api/chat'; // 对应 Go 中 http.HandleFunc("POST /api/chat", handleChat)
+
+    const payload = {
+        message: "${escapableMsg}" // <--- 动态映射当前你输入的这一句！
+    };
+
+    try {
+        const response = await fetch(url, {
+            method: 'POST', // 配合 Go 端路由匹配 POST 方法
+            headers: {
+                'Content-Type': 'application/json' // 告知服务器我们发送的是 JSON
+            },
+            body: JSON.stringify(payload) // 将 JS 对象序列化为 JSON 字符串
+        });
+
+        // 检查服务器 HTTP 响应状态码是否在 200-299 范围内
+        if (!response.ok) {
+            throw new Error(\`HTTP 报错！状态码: \${response.status}\`);
+        }
+
+        // 解析并读取服务器传回的 JSON 格式响应体
+        const data = await response.json();
+        console.log('接收到 Go 后端响应数据:', data);
+        return data;
+        
+    } catch (error) {
+        console.error('发生网络错误或解析错误:', error);
+        throw error;
+    }
+}
+            `.trim();
+        }
+
+        // 提取 Headers 的辅助函数
+        function extractHeadersText(headers) {
+            let headersText = "";
+            if (headers && typeof headers.forEach === 'function') {
+                headers.forEach((value, key) => {
+                    headersText += `${key}: ${value}\n`;
+                });
+            } else if (typeof headers === 'object') {
+                for (const [k, v] of Object.entries(headers)) {
+                    headersText += `${k}: ${v}\n`;
+                }
+            }
+            return headersText;
+        }
+
+        // 虚拟控制台打印
+        function logConsole(message, isError = false) {
+            const consolePanel = document.getElementById('trace-console');
+            const timePrefix = new Date().toLocaleTimeString();
+            const logItem = document.createElement('div');
+            
+            if (isError) {
+                logItem.className = "text-rose-400 font-semibold";
+                logItem.innerHTML = `<span class="text-slate-500">[${timePrefix}]</span> ⚠️ [Error] ${message}`;
+            } else {
+                logItem.className = "text-sky-300";
+                logItem.innerHTML = `<span class="text-slate-500">[${timePrefix}]</span> ${message}`;
+            }
+            
+            consolePanel.appendChild(logItem);
+            consolePanel.scrollTop = consolePanel.scrollHeight;
+        }
+
+        function clearConsoleLogs() {
+            document.getElementById('trace-console').innerHTML = `<span class="text-slate-500">[System] 控制台已清空。</span>`;
+        }
+
+        // 复制代码块
+        function copyCode() {
+            const codeText = document.getElementById('code-snippet-pre').innerText;
+            const textarea = document.createElement('textarea');
+            textarea.value = codeText;
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                showToast("代码已成功复制到剪切板！", "success");
+            } catch (err) {
+                showToast("复制失败，请手动框选复制代码", "error");
+            }
+            document.body.removeChild(textarea);
+        }
+
+        // 自定义 Toast 提示逻辑 (替代浏览器原生 alert)
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            let bgClass = "bg-slate-800 border-slate-700 text-slate-100";
+            if (type === 'success') bgClass = "bg-emerald-950 border-emerald-800 text-emerald-300";
+            if (type === 'error') bgClass = "bg-rose-950 border-rose-800 text-rose-300";
+            if (type === 'warning') bgClass = "bg-amber-950 border-amber-800 text-amber-300";
+
+            toast.className = `${bgClass} border p-3.5 rounded-xl shadow-xl flex items-center gap-2 text-xs font-semibold pointer-events-auto transition-all duration-300 transform translate-y-2 opacity-0`;
+            toast.innerHTML = `
+                <span>${type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️'}</span>
+                <span>${message}</span>
+            `;
+
+            container.appendChild(toast);
+            
+            // 动画淡入
+            setTimeout(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            }, 10);
+
+            // 3秒后淡出并销毁
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-1');
+                setTimeout(() => {
+                    toast.remove();
+                }, 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,280 @@
+{
+  "id": "farewell-poem",
+  "title": "告别诗",
+  "subtitle": "校园青春恋爱沉浸本",
+  "locale": "zh-CN",
+  "playerCount": 6,
+  "summary": "六位旧友在十年后的同学聚会重逢，回望校园、暗恋、错过与告别。",
+  "sourceRoot": "../../gbs",
+  "manualPath": "../../gbs/10-组织者手册-OCR.txt",
+  "theme": {
+    "title": "告别诗",
+    "subtitle": "把没说出口的话，交给重逢的黄昏。",
+    "background": "linear-gradient(135deg, #f6d365 0%, #fda085 38%, #6fb1fc 100%)",
+    "accent": "#d4485f",
+    "surface": "rgba(255,255,255,0.88)",
+    "text": "#25212a",
+    "muted": "#6a6170",
+    "font": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    "bgm": "",
+    "roleColors": {
+      "gu-yan": "#df6b45",
+      "lu-zeyuan": "#3267ad",
+      "su-cheng": "#d49b22",
+      "chu-yunge": "#b05b98",
+      "lin-xingluo": "#4d8b71",
+      "yu-xinle": "#c94d63"
+    }
+  },
+  "roles": [
+    {
+      "id": "gu-yan",
+      "name": "顾言",
+      "gender": "男",
+      "avatar": "顾",
+      "color": "#df6b45",
+      "publicIntro": "阳光开朗，实则害怕孤独；记忆里总有篮球场和橙花树。",
+      "scriptFile": "roles/gu-yan.md",
+      "sourcePath": "../../gbs/11-顾言-剧本-OCR.txt"
+    },
+    {
+      "id": "lu-zeyuan",
+      "name": "陆泽远",
+      "gender": "男",
+      "avatar": "陆",
+      "color": "#3267ad",
+      "publicIntro": "话少内向，擅长把关心藏在沉默里；关键词是天文与守护。",
+      "scriptFile": "roles/lu-zeyuan.md",
+      "sourcePath": "../../gbs/12-陆泽远-剧本-OCR.txt"
+    },
+    {
+      "id": "su-cheng",
+      "name": "苏橙",
+      "gender": "男",
+      "avatar": "苏",
+      "color": "#d49b22",
+      "publicIntro": "沉默、克制、默默守候；家与猪油拌饭是他最深的牵挂。",
+      "scriptFile": "roles/su-cheng.md",
+      "sourcePath": "../../gbs/13-苏橙-剧本-OCR.txt"
+    },
+    {
+      "id": "chu-yunge",
+      "name": "楚云歌",
+      "gender": "女",
+      "avatar": "楚",
+      "color": "#b05b98",
+      "publicIntro": "内向敏感，在菜市场和校园之间长大；歌声里藏着不敢说的话。",
+      "scriptFile": "roles/chu-yunge.md",
+      "sourcePath": "../../gbs/14-楚云歌-剧本-OCR.txt"
+    },
+    {
+      "id": "lin-xingluo",
+      "name": "林星落",
+      "gender": "女",
+      "avatar": "林",
+      "color": "#4d8b71",
+      "publicIntro": "习惯微笑和照顾他人；日记、糖纸和星空记录了她的心事。",
+      "scriptFile": "roles/lin-xingluo.md",
+      "sourcePath": "../../gbs/15-林星落-剧本-OCR.txt"
+    },
+    {
+      "id": "yu-xinle",
+      "name": "余心乐",
+      "gender": "女",
+      "avatar": "余",
+      "color": "#c94d63",
+      "publicIntro": "大大咧咧、像男孩子一样爽朗；杨枝甘露和向日葵是她的青春暗号。",
+      "scriptFile": "roles/yu-xinle.md",
+      "sourcePath": "../../gbs/16-余心乐-剧本-OCR.txt"
+    }
+  ],
+  "phases": [
+    {
+      "id": "questionnaire",
+      "title": "开场 / 调查问卷",
+      "kind": "opening",
+      "dmGoal": "欢迎玩家入场，建立十年后同学聚会的语境，并发放调查问卷。",
+      "waitForInput": true,
+      "clues": [
+        {
+          "id": "questionnaire",
+          "title": "调查问卷",
+          "path": "../../gbs/31-线索-调查问卷/调查问卷.txt",
+          "visibility": "public"
+        }
+      ]
+    },
+    {
+      "id": "role-books",
+      "title": "分本 / 座位",
+      "kind": "setup",
+      "dmGoal": "确认每位玩家的剧本角色，强调玩家显示身份与剧本角色身份分离。",
+      "waitForInput": true,
+      "privateText": {
+        "gu-yan": "你拿到的是顾言的剧本。你可以公开阳光的一面，但孤独感先留在心里。",
+        "lu-zeyuan": "你拿到的是陆泽远的剧本。少说一点，多观察林星落相关的细节。",
+        "su-cheng": "你拿到的是苏橙的剧本。家庭记忆很重，不要急着把所有委屈说出来。",
+        "chu-yunge": "你拿到的是楚云歌的剧本。敏感和自尊同时存在，发言可以克制。",
+        "lin-xingluo": "你拿到的是林星落的剧本。微笑是习惯，不代表你真的轻松。",
+        "yu-xinle": "你拿到的是余心乐的剧本。爽朗可以保护你，也会让你错过表达。"
+      }
+    },
+    {
+      "id": "prologue",
+      "title": "序幕",
+      "kind": "prologue",
+      "dmGoal": "带玩家回到校园重逢的第一幕，请每个人用一句话回应旧友。",
+      "waitForInput": true,
+      "clues": [
+        {
+          "id": "prologue-a",
+          "title": "序幕 A",
+          "path": "../../gbs/20-线索-序幕和小剧场/序幕A (1).txt",
+          "visibility": "public"
+        },
+        {
+          "id": "impression-gu",
+          "title": "顾言序幕印象",
+          "path": "../../gbs/21-线索-序幕印象/01序幕印象.txt",
+          "visibility": "role",
+          "roleIds": ["gu-yan"]
+        }
+      ]
+    },
+    {
+      "id": "act1-photos",
+      "title": "幕一 / 照片线索",
+      "kind": "clue",
+      "dmGoal": "发放照片线索，引导玩家讨论照片里的动作、视线和未说出口的心事。",
+      "waitForInput": true,
+      "clues": [
+        {
+          "id": "photo-14",
+          "title": "照片线索 14",
+          "path": "../../gbs/22-线索-照片第一轮/14第一幕 照片线索.txt",
+          "visibility": "public"
+        },
+        {
+          "id": "photo-24",
+          "title": "照片线索 24",
+          "path": "../../gbs/23-线索-照片第二轮/24第一幕 照片线索.txt",
+          "visibility": "public"
+        }
+      ]
+    },
+    {
+      "id": "act2-memories",
+      "title": "幕二 / 回忆",
+      "kind": "memory",
+      "dmGoal": "把讨论从照片推进到家庭、陪伴与错过。",
+      "waitForInput": true,
+      "clues": [
+        {
+          "id": "gu-memory-40",
+          "title": "顾言回忆 40",
+          "path": "../../gbs/24-线索-第二幕/40-顾言.txt",
+          "visibility": "role",
+          "roleIds": ["gu-yan"]
+        },
+        {
+          "id": "su-memory-42",
+          "title": "苏橙回忆 42",
+          "path": "../../gbs/24-线索-第二幕/42-苏橙.txt",
+          "visibility": "role",
+          "roleIds": ["su-cheng"]
+        }
+      ]
+    },
+    {
+      "id": "interactive",
+      "title": "传声筒 / 毕业考试",
+      "kind": "interaction",
+      "dmGoal": "进行传声筒或毕业考试互动，让玩家用轻松形式暴露真实心意。",
+      "waitForInput": true,
+      "clues": [
+        {
+          "id": "telephone-gu",
+          "title": "传声筒 - 顾言",
+          "path": "../../gbs/25-线索-传声筒/03-顾言.txt",
+          "visibility": "role",
+          "roleIds": ["gu-yan"]
+        },
+        {
+          "id": "exam-su",
+          "title": "毕业考试 - 苏橙",
+          "path": "../../gbs/26-线索-毕业考试/考试题目 苏橙.txt",
+          "visibility": "role",
+          "roleIds": ["su-cheng"]
+        }
+      ]
+    },
+    {
+      "id": "act3-truth",
+      "title": "幕三 / 真相",
+      "kind": "truth",
+      "dmGoal": "逐步打开真相线索，提醒玩家只讲当前已经知道的内容。",
+      "waitForInput": true,
+      "clues": [
+        {
+          "id": "truth-gu-52",
+          "title": "第三幕 - 顾言 52",
+          "path": "../../gbs/27-线索-第三幕/52-顾言.txt",
+          "visibility": "role",
+          "roleIds": ["gu-yan"]
+        },
+        {
+          "id": "truth-lin-78",
+          "title": "第三幕 - 林星落 78",
+          "path": "../../gbs/27-线索-第三幕/78-林星落.txt",
+          "visibility": "role",
+          "roleIds": ["lin-xingluo"]
+        },
+        {
+          "id": "deposit",
+          "title": "存款单",
+          "path": "../../gbs/28-线索-沉浸道具/存款单.txt",
+          "visibility": "public"
+        }
+      ]
+    },
+    {
+      "id": "act4-confession",
+      "title": "幕四 / 告白",
+      "kind": "confession",
+      "dmGoal": "发放告白卡，给每个人一次认真说出口的机会。",
+      "waitForInput": true,
+      "clues": [
+        {
+          "id": "confession-gu",
+          "title": "告白卡 - 顾言",
+          "path": "../../gbs/30-线索-告白卡/04-顾言.txt",
+          "visibility": "role",
+          "roleIds": ["gu-yan"]
+        },
+        {
+          "id": "confession-yu",
+          "title": "告白卡 - 余心乐",
+          "path": "../../gbs/30-线索-告白卡/01-余心乐.txt",
+          "visibility": "role",
+          "roleIds": ["yu-xinle"]
+        }
+      ]
+    },
+    {
+      "id": "ending",
+      "title": "结尾",
+      "kind": "ending",
+      "dmGoal": "收束所有告别，让玩家在重逢后完成释怀。",
+      "waitForInput": false,
+      "clues": [
+        {
+          "id": "act4-90",
+          "title": "第四幕 90",
+          "path": "../../gbs/29-线索-第四幕/90第四幕.txt",
+          "visibility": "public"
+        }
+      ]
+    }
+  ]
+}
+

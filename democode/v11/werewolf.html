@@ -1,0 +1,2709 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>雾镇夜谈</title>
+  <style>
+    :root {
+      --bg: #08090b;
+      --panel: rgba(18, 20, 24, 0.78);
+      --panel-strong: rgba(24, 26, 32, 0.92);
+      --line: rgba(234, 219, 184, 0.16);
+      --line-strong: rgba(234, 219, 184, 0.32);
+      --text: #f4ead6;
+      --muted: #b8aa91;
+      --dim: #746c62;
+      --gold: #d8ad62;
+      --rose: #c75d65;
+      --red: #8f313a;
+      --green: #6eb487;
+      --blue: #7da7cb;
+      --violet: #a98bc9;
+      --shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+      --radius: 8px;
+      --fast: 160ms ease;
+      --slow: 700ms cubic-bezier(.2, .75, .1, 1);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+      min-height: 100%;
+      color: var(--text);
+      font-family: ui-serif, "Noto Serif SC", "Songti SC", "SimSun", serif;
+      background: var(--bg);
+      overflow-x: hidden;
+    }
+
+    body {
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 18% 12%, rgba(174, 75, 92, .14), transparent 32%),
+        radial-gradient(circle at 82% 18%, rgba(87, 124, 161, .16), transparent 30%),
+        linear-gradient(140deg, #06070a 0%, #111116 46%, #060609 100%);
+    }
+
+    body[data-scene="day"] {
+      background:
+        radial-gradient(circle at 66% 7%, rgba(246, 193, 109, .22), transparent 28%),
+        radial-gradient(circle at 18% 20%, rgba(100, 143, 158, .16), transparent 34%),
+        linear-gradient(140deg, #101318 0%, #1b2023 52%, #0a0d0e 100%);
+    }
+
+    body[data-scene="judgement"] {
+      background:
+        radial-gradient(circle at 50% 4%, rgba(190, 61, 65, .24), transparent 30%),
+        radial-gradient(circle at 15% 90%, rgba(216, 173, 98, .12), transparent 25%),
+        linear-gradient(140deg, #080507 0%, #171015 52%, #070608 100%);
+    }
+
+    body[data-scene="end"] {
+      background:
+        radial-gradient(circle at 50% 16%, rgba(216, 173, 98, .25), transparent 26%),
+        linear-gradient(140deg, #08090b 0%, #14110e 100%);
+    }
+
+    button, select, textarea {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      color: inherit;
+      cursor: pointer;
+    }
+
+    button:disabled, select:disabled, textarea:disabled {
+      cursor: not-allowed;
+      opacity: .5;
+    }
+
+    ::selection {
+      background: rgba(216, 173, 98, .35);
+    }
+
+    .background-fx {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+      z-index: 0;
+    }
+
+    .fog {
+      position: absolute;
+      inset: -12vh -18vw;
+      opacity: .55;
+      filter: blur(18px);
+      background:
+        radial-gradient(ellipse at 12% 24%, rgba(220, 226, 219, .13), transparent 36%),
+        radial-gradient(ellipse at 70% 50%, rgba(190, 194, 210, .1), transparent 42%),
+        radial-gradient(ellipse at 30% 88%, rgba(210, 190, 172, .08), transparent 38%);
+      animation: fogDrift 26s linear infinite alternate;
+    }
+
+    .grain {
+      position: absolute;
+      inset: 0;
+      opacity: .13;
+      background-image: radial-gradient(circle, rgba(255,255,255,.28) 1px, transparent 1.2px);
+      background-size: 18px 18px;
+      mask-image: linear-gradient(to bottom, transparent, black 15%, black 85%, transparent);
+    }
+
+    .firefly {
+      position: absolute;
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: #f5d990;
+      box-shadow: 0 0 14px #f5d990;
+      opacity: .7;
+      animation: firefly 6s ease-in-out infinite;
+    }
+
+    .firefly:nth-child(3) { left: 12%; top: 22%; animation-delay: -1s; }
+    .firefly:nth-child(4) { left: 30%; top: 64%; animation-delay: -3s; }
+    .firefly:nth-child(5) { left: 74%; top: 30%; animation-delay: -2s; }
+    .firefly:nth-child(6) { left: 88%; top: 70%; animation-delay: -4s; }
+
+    .app {
+      position: relative;
+      z-index: 1;
+      height: 100vh;
+      height: 100dvh;
+      min-height: 0;
+      padding: 16px;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 14px;
+      overflow: hidden;
+    }
+
+    .topbar {
+      width: min(1640px, 100%);
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px;
+      background: rgba(10, 12, 15, .72);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    .brand {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .sigil {
+      width: 44px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(216, 173, 98, .45);
+      background: radial-gradient(circle at 50% 25%, rgba(216, 173, 98, .24), rgba(143, 49, 58, .18) 62%, rgba(0,0,0,.25));
+      border-radius: 50%;
+      box-shadow: 0 0 28px rgba(216, 173, 98, .18), inset 0 0 18px rgba(0,0,0,.45);
+      animation: sigilTurn 14s linear infinite;
+    }
+
+    .sigil::before {
+      content: "";
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--gold);
+      border-top-color: transparent;
+      transform: rotate(45deg);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: clamp(22px, 3vw, 34px);
+      line-height: 1;
+      letter-spacing: .08em;
+    }
+
+    .brand p {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      letter-spacing: .04em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .top-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .pill {
+      min-height: 38px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,.045);
+      color: var(--text);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .pill strong { color: var(--gold); font-weight: 700; }
+
+    .icon-button {
+      width: 38px;
+      height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      background: rgba(255,255,255,.06);
+      display: grid;
+      place-items: center;
+      transition: transform var(--fast), border-color var(--fast), background var(--fast);
+    }
+
+    .icon-button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      border-color: rgba(216, 173, 98, .55);
+      background: rgba(216, 173, 98, .14);
+    }
+
+    .shell {
+      width: min(1640px, 100%);
+      height: 100%;
+      min-height: 0;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 300px minmax(520px, 1fr) 340px;
+      gap: 14px;
+      overflow: hidden;
+    }
+
+    .panel {
+      min-height: 0;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      min-height: 52px;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255,255,255,.035);
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      font-size: 15px;
+      letter-spacing: .08em;
+      color: #fff3dc;
+    }
+
+    .micro {
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: .03em;
+    }
+
+    .cast-panel {
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+    }
+
+    .setup {
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .field-label {
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: .06em;
+    }
+
+    .role-select {
+      width: 100%;
+      height: 42px;
+      color: var(--text);
+      background: rgba(0,0,0,.34);
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius);
+      padding: 0 12px;
+      outline: none;
+    }
+
+    .role-select:focus {
+      border-color: rgba(216, 173, 98, .72);
+      box-shadow: 0 0 0 3px rgba(216, 173, 98, .12);
+    }
+
+    .primary {
+      min-height: 44px;
+      border-radius: var(--radius);
+      background: linear-gradient(135deg, #a6434d, #653247 52%, #274d5d);
+      border: 1px solid rgba(255,255,255,.16);
+      color: #fff7ea;
+      font-weight: 700;
+      letter-spacing: .06em;
+      box-shadow: 0 12px 26px rgba(143, 49, 58, .24);
+      transition: transform var(--fast), filter var(--fast);
+    }
+
+    .primary:hover:not(:disabled) {
+      transform: translateY(-1px);
+      filter: brightness(1.08);
+    }
+
+    .roster {
+      min-height: 0;
+      padding: 12px;
+      overflow: auto;
+      display: grid;
+      gap: 10px;
+    }
+
+    .person-card {
+      --accent: var(--gold);
+      display: grid;
+      grid-template-columns: 54px minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 9px;
+      border: 1px solid rgba(255,255,255,.08);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--radius);
+      background: linear-gradient(135deg, rgba(255,255,255,.07), rgba(255,255,255,.025));
+      transition: transform var(--fast), background var(--fast), border-color var(--fast);
+    }
+
+    .person-card.speaking {
+      background: rgba(216, 173, 98, .11);
+      border-color: rgba(216, 173, 98, .28);
+      transform: translateX(2px);
+      animation: speakingGlow 900ms ease-in-out infinite alternate;
+    }
+
+    .person-card.dead {
+      opacity: .52;
+      filter: grayscale(.7);
+    }
+
+    .portrait {
+      width: 54px;
+      height: 64px;
+      border-radius: 7px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,.18);
+      background: #15161a;
+      box-shadow: inset 0 0 20px rgba(0,0,0,.38);
+    }
+
+    .portrait svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .person-main {
+      min-width: 0;
+    }
+
+    .person-name {
+      font-size: 14px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .person-lore {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 12px rgba(110, 180, 135, .55);
+    }
+
+    .dead .status-dot {
+      background: #6f252d;
+      box-shadow: 0 0 12px rgba(143, 49, 58, .45);
+    }
+
+    .stage-panel {
+      height: 100%;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 238px minmax(0, 1fr) auto;
+      position: relative;
+    }
+
+    .scene {
+      position: relative;
+      overflow: hidden;
+      border-bottom: 1px solid var(--line);
+      background:
+        linear-gradient(to bottom, rgba(7,9,14,.1), rgba(7,9,14,.72)),
+        radial-gradient(circle at 50% 18%, rgba(240, 223, 171, .18), transparent 18%),
+        linear-gradient(180deg, #131927 0%, #141015 58%, #0a090b 100%);
+    }
+
+    .scene.day {
+      background:
+        linear-gradient(to bottom, rgba(255,255,255,.08), rgba(8,10,12,.62)),
+        radial-gradient(circle at 72% 18%, rgba(255, 207, 122, .26), transparent 18%),
+        linear-gradient(180deg, #25323e 0%, #2b2e2e 58%, #11100e 100%);
+    }
+
+    .scene.judgement {
+      background:
+        linear-gradient(to bottom, rgba(121,41,48,.18), rgba(8,8,10,.72)),
+        radial-gradient(circle at 50% 15%, rgba(221, 91, 91, .28), transparent 18%),
+        linear-gradient(180deg, #21131a 0%, #171015 58%, #090709 100%);
+    }
+
+    .moon {
+      position: absolute;
+      top: 24px;
+      left: 50%;
+      width: 70px;
+      height: 70px;
+      margin-left: -35px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 42% 38%, #fff4cd 0 12%, #d2c393 13% 48%, rgba(210,195,147,.15) 49% 70%, transparent 72%);
+      box-shadow: 0 0 36px rgba(255, 232, 175, .28);
+      transition: transform var(--slow), opacity var(--slow);
+    }
+
+    .scene.day .moon {
+      transform: translate(110px, -6px) scale(1.15);
+      opacity: .86;
+      background: radial-gradient(circle, #ffd27b 0 46%, rgba(255,210,123,.18) 48% 70%, transparent 72%);
+    }
+
+    .cloud {
+      position: absolute;
+      width: 180px;
+      height: 42px;
+      border-radius: 999px;
+      background: rgba(225, 225, 222, .08);
+      filter: blur(2px);
+      animation: cloud 20s linear infinite;
+    }
+
+    .cloud.one { top: 42px; left: -190px; }
+    .cloud.two { top: 92px; left: 58%; animation-duration: 28s; opacity: .55; }
+
+    .village {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 138px;
+    }
+
+    .hills {
+      position: absolute;
+      left: -5%;
+      right: -5%;
+      bottom: 0;
+      height: 90px;
+      background:
+        radial-gradient(ellipse at 20% 100%, #171b19 0 34%, transparent 35%),
+        radial-gradient(ellipse at 55% 100%, #1e201b 0 40%, transparent 41%),
+        radial-gradient(ellipse at 88% 100%, #171816 0 36%, transparent 37%);
+    }
+
+    .forest {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 35px;
+      height: 84px;
+      background:
+        linear-gradient(135deg, transparent 0 47%, #080b0a 48% 52%, transparent 53%) 0 0 / 36px 76px repeat-x,
+        linear-gradient(45deg, transparent 0 47%, #0d1110 48% 52%, transparent 53%) 18px 8px / 42px 80px repeat-x;
+      opacity: .9;
+    }
+
+    .houses {
+      position: absolute;
+      left: 8%;
+      right: 8%;
+      bottom: 16px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      opacity: .95;
+    }
+
+    .house {
+      position: relative;
+      width: 58px;
+      height: 44px;
+      background: #16100e;
+      border: 1px solid rgba(216,173,98,.12);
+      box-shadow: inset 0 0 16px rgba(0,0,0,.65);
+    }
+
+    .house::before {
+      content: "";
+      position: absolute;
+      left: -7px;
+      right: -7px;
+      top: -22px;
+      height: 25px;
+      background: #241415;
+      clip-path: polygon(50% 0, 100% 100%, 0 100%);
+    }
+
+    .house::after {
+      content: "";
+      position: absolute;
+      width: 9px;
+      height: 12px;
+      right: 10px;
+      bottom: 16px;
+      background: #d8ad62;
+      box-shadow: 0 0 12px rgba(216,173,98,.45);
+      animation: candle 1.8s ease-in-out infinite alternate;
+    }
+
+    .house.tall { height: 68px; width: 48px; }
+    .house.small { height: 34px; width: 52px; opacity: .8; }
+
+    .creature {
+      position: absolute;
+      color: rgba(255, 238, 195, .72);
+      text-shadow: 0 0 12px rgba(216,173,98,.32);
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .bat {
+      top: 34px;
+      left: 18%;
+      font-size: 22px;
+      animation: batFly 8s ease-in-out infinite;
+    }
+
+    .owl {
+      right: 13%;
+      bottom: 80px;
+      font-size: 24px;
+      animation: blink 4s infinite;
+    }
+
+    .cat {
+      left: 25%;
+      bottom: 15px;
+      font-size: 20px;
+      animation: catWalk 9s ease-in-out infinite alternate;
+    }
+
+    .pumpkins {
+      position: absolute;
+      left: 18px;
+      bottom: 15px;
+      display: flex;
+      gap: 4px;
+      font-size: 18px;
+      filter: drop-shadow(0 0 10px rgba(231, 133, 57, .45));
+    }
+
+    .stage-status {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      top: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+      z-index: 2;
+    }
+
+    .phase-card {
+      max-width: min(420px, 70%);
+      padding: 12px 14px;
+      border: 1px solid rgba(255,255,255,.16);
+      border-radius: var(--radius);
+      background: rgba(7, 9, 12, .62);
+      backdrop-filter: blur(12px);
+    }
+
+    .phase-card h2 {
+      margin: 0;
+      font-size: clamp(18px, 2vw, 26px);
+      letter-spacing: .06em;
+    }
+
+    .phase-card p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .round-orb {
+      width: 76px;
+      height: 76px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      border: 1px solid rgba(216, 173, 98, .42);
+      background: radial-gradient(circle, rgba(216,173,98,.18), rgba(0,0,0,.3) 64%);
+      box-shadow: inset 0 0 22px rgba(0,0,0,.45), 0 0 24px rgba(216,173,98,.16);
+      color: var(--gold);
+      font-weight: 800;
+    }
+
+    .log {
+      height: 100%;
+      min-height: 0;
+      padding: 16px;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(0,0,0,.06), rgba(0,0,0,.18));
+      background-size: 42px 42px, auto;
+      scroll-behavior: smooth;
+    }
+
+    .empty-log {
+      height: 100%;
+      min-height: 260px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      text-align: center;
+      border: 1px dashed rgba(234, 219, 184, .18);
+      border-radius: var(--radius);
+      background: rgba(255,255,255,.025);
+    }
+
+    .empty-log strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--text);
+      font-size: 18px;
+      letter-spacing: .05em;
+    }
+
+    .line {
+      --accent: var(--gold);
+      display: grid;
+      grid-template-columns: 48px minmax(0, 680px) 1fr;
+      gap: 10px;
+      align-items: end;
+      margin: 12px 0;
+      animation: messageIn 420ms ease both;
+    }
+
+    .line.me {
+      grid-template-columns: 1fr minmax(0, 680px) 48px;
+    }
+
+    .line.me .mini-portrait { grid-column: 3; }
+    .line.me .bubble { grid-column: 2; justify-self: end; }
+
+    .line.private .bubble {
+      border-color: rgba(169, 139, 201, .38);
+      background: linear-gradient(135deg, rgba(64, 46, 83, .78), rgba(22, 20, 28, .9));
+    }
+
+    .mini-portrait {
+      width: 48px;
+      height: 56px;
+      border-radius: 7px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,.16);
+      background: rgba(0,0,0,.3);
+    }
+
+    .bubble {
+      max-width: 100%;
+      border: 1px solid rgba(255,255,255,.12);
+      border-left: 3px solid var(--accent);
+      border-radius: 8px;
+      padding: 10px 12px 11px;
+      background: linear-gradient(135deg, rgba(29, 33, 39, .9), rgba(13, 14, 18, .9));
+      box-shadow: 0 14px 28px rgba(0,0,0,.22);
+    }
+
+    .me .bubble {
+      border-left-width: 1px;
+      border-right: 3px solid var(--gold);
+      background: linear-gradient(135deg, rgba(61, 44, 57, .94), rgba(26, 25, 35, .96));
+    }
+
+    .speaker {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 6px;
+      color: var(--gold);
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: .04em;
+    }
+
+    .speaker small {
+      color: var(--muted);
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .speech-text {
+      color: #f3ead9;
+      font-size: 15px;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .system-line {
+      margin: 14px auto;
+      max-width: 760px;
+      padding: 11px 14px;
+      border: 1px solid rgba(216, 173, 98, .2);
+      border-radius: var(--radius);
+      background: rgba(216, 173, 98, .08);
+      color: #eadbbf;
+      text-align: center;
+      line-height: 1.6;
+      animation: messageIn 420ms ease both;
+    }
+
+    .composer {
+      border-top: 1px solid var(--line);
+      background: rgba(9, 10, 12, .86);
+      padding: 12px;
+    }
+
+    .prompt {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .prompt-text {
+      min-height: 36px;
+      display: flex;
+      align-items: center;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .counter {
+      color: var(--dim);
+      font-size: 12px;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin: 0 0 10px;
+    }
+
+    .chip {
+      min-height: 30px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(216, 173, 98, .24);
+      background: rgba(216, 173, 98, .08);
+      color: #eadbbf;
+      font-size: 12px;
+      transition: transform var(--fast), background var(--fast);
+    }
+
+    .chip:hover {
+      transform: translateY(-1px);
+      background: rgba(216, 173, 98, .16);
+    }
+
+    .input-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 96px;
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    textarea {
+      resize: none;
+      min-height: 58px;
+      max-height: 118px;
+      width: 100%;
+      color: var(--text);
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius);
+      background: rgba(0,0,0,.28);
+      padding: 10px 12px;
+      line-height: 1.45;
+      outline: none;
+    }
+
+    textarea:focus {
+      border-color: rgba(216, 173, 98, .72);
+      box-shadow: 0 0 0 3px rgba(216, 173, 98, .1);
+    }
+
+    .send {
+      border-radius: var(--radius);
+      background: linear-gradient(135deg, #d8ad62, #9c5965);
+      color: #17100c;
+      font-weight: 900;
+      letter-spacing: .06em;
+    }
+
+    .info-panel {
+      --whisper-height: clamp(170px, 26vh, 360px);
+      display: grid;
+      grid-template-rows: auto auto auto var(--whisper-height) minmax(0, 1fr) auto;
+      min-height: 0;
+    }
+
+    .identity {
+      padding: 14px;
+      border-bottom: 1px solid var(--line);
+      display: grid;
+      gap: 12px;
+    }
+
+    .identity-card {
+      position: relative;
+      overflow: hidden;
+      min-height: 122px;
+      border: 1px solid rgba(216, 173, 98, .2);
+      border-radius: var(--radius);
+      background:
+        radial-gradient(circle at 88% 20%, rgba(216, 173, 98, .18), transparent 25%),
+        linear-gradient(135deg, rgba(255,255,255,.07), rgba(255,255,255,.025));
+      padding: 14px;
+    }
+
+    .identity-card::after {
+      content: "";
+      position: absolute;
+      right: -28px;
+      bottom: -34px;
+      width: 128px;
+      height: 128px;
+      border: 1px solid rgba(216, 173, 98, .18);
+      border-radius: 50%;
+      box-shadow: inset 0 0 24px rgba(216, 173, 98, .06);
+    }
+
+    .identity-title {
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: .08em;
+    }
+
+    .identity-role {
+      margin-top: 8px;
+      font-size: 24px;
+      font-weight: 900;
+      letter-spacing: .05em;
+    }
+
+    .identity-note {
+      position: relative;
+      z-index: 1;
+      margin-top: 10px;
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 13px;
+    }
+
+    .team-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
+    .task {
+      padding: 14px;
+      border-bottom: 1px solid var(--line);
+      display: grid;
+      gap: 9px;
+    }
+
+    .task strong {
+      color: #fff1d4;
+      font-size: 14px;
+    }
+
+    .task p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .whisper-panel {
+      min-height: 0;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(135deg, rgba(72, 47, 88, .16), rgba(255,255,255,.025));
+      position: relative;
+      display: grid;
+      grid-template-rows: 12px auto minmax(0, 1fr);
+      overflow: hidden;
+    }
+
+    .whisper-resize-handle {
+      height: 12px;
+      cursor: ns-resize;
+      display: grid;
+      place-items: center;
+      touch-action: none;
+      background: linear-gradient(180deg, rgba(255,255,255,.04), transparent);
+    }
+
+    .whisper-resize-handle::before {
+      content: "";
+      width: 54px;
+      height: 3px;
+      border-radius: 999px;
+      background: rgba(216, 173, 98, .42);
+      box-shadow: 0 0 12px rgba(216, 173, 98, .12);
+    }
+
+    .whisper-panel.resizing,
+    .whisper-panel.resizing * {
+      user-select: none;
+    }
+
+    .whisper-head {
+      min-height: 38px;
+      padding: 6px 12px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .whisper-head strong {
+      color: #efe2ff;
+      font-size: 14px;
+      letter-spacing: .06em;
+    }
+
+    .whisper-count {
+      color: var(--violet);
+      font-size: 12px;
+    }
+
+    .whisper-log {
+      min-height: 0;
+      padding: 10px 12px 12px;
+      overflow: auto;
+      display: grid;
+      align-content: start;
+      gap: 8px;
+      overscroll-behavior: contain;
+    }
+
+    .whisper-empty {
+      min-height: 68px;
+      display: grid;
+      place-items: center;
+      color: var(--dim);
+      border: 1px dashed rgba(169, 139, 201, .2);
+      border-radius: var(--radius);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .whisper-item {
+      padding: 9px 10px;
+      border: 1px solid rgba(169, 139, 201, .22);
+      border-left: 3px solid var(--violet);
+      border-radius: var(--radius);
+      background: rgba(28, 22, 36, .72);
+      animation: messageIn 320ms ease both;
+    }
+
+    .whisper-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 5px;
+      color: #d9c6ef;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .whisper-meta span:last-child {
+      color: var(--muted);
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .whisper-text {
+      color: #efe8f8;
+      font-size: 13px;
+      line-height: 1.55;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+
+    .clues {
+      min-height: 0;
+      padding: 12px;
+      overflow: auto;
+      display: grid;
+      align-content: start;
+      gap: 9px;
+    }
+
+    .clue {
+      padding: 10px;
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: var(--radius);
+      background: rgba(255,255,255,.04);
+      color: #ddd0b9;
+      font-size: 13px;
+      line-height: 1.5;
+      animation: messageIn 360ms ease both;
+    }
+
+    .rules {
+      padding: 12px 14px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .phase-curtain {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      pointer-events: none;
+      opacity: 0;
+      transform: scale(1.03);
+      background:
+        radial-gradient(circle at 50% 45%, rgba(216, 173, 98, .16), transparent 24%),
+        rgba(4, 5, 7, .72);
+      transition: opacity 420ms ease, transform 720ms ease;
+      backdrop-filter: blur(8px);
+    }
+
+    .phase-curtain.show {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    .curtain-card {
+      min-width: min(520px, calc(100vw - 36px));
+      padding: 28px;
+      border: 1px solid rgba(216, 173, 98, .35);
+      border-radius: var(--radius);
+      background: rgba(13, 14, 18, .88);
+      text-align: center;
+      box-shadow: 0 28px 90px rgba(0,0,0,.65);
+    }
+
+    .curtain-card div:first-child {
+      color: var(--gold);
+      font-size: 13px;
+      letter-spacing: .16em;
+    }
+
+    .curtain-card h2 {
+      margin: 10px 0 0;
+      font-size: clamp(28px, 6vw, 54px);
+      letter-spacing: .08em;
+    }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      z-index: 30;
+      display: none;
+      place-items: center;
+      padding: 18px;
+      background: rgba(0,0,0,.7);
+      backdrop-filter: blur(10px);
+    }
+
+    .modal.open { display: grid; }
+
+    .reveal {
+      width: min(720px, 100%);
+      max-height: min(680px, calc(100vh - 40px));
+      overflow: auto;
+      border: 1px solid rgba(216,173,98,.35);
+      border-radius: var(--radius);
+      background: #111216;
+      box-shadow: var(--shadow);
+    }
+
+    .reveal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .reveal-head h2 {
+      margin: 0;
+      letter-spacing: .08em;
+    }
+
+    .reveal-grid {
+      padding: 16px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .reveal-card {
+      padding: 12px;
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: var(--radius);
+      background: rgba(255,255,255,.045);
+    }
+
+    .toast-wrap {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      z-index: 40;
+      display: grid;
+      gap: 8px;
+      width: min(360px, calc(100vw - 32px));
+    }
+
+    .toast {
+      padding: 11px 12px;
+      border: 1px solid rgba(216, 173, 98, .24);
+      border-radius: var(--radius);
+      background: rgba(18, 20, 24, .96);
+      color: #f4ead6;
+      box-shadow: 0 18px 42px rgba(0,0,0,.4);
+      animation: messageIn 240ms ease both;
+    }
+
+    @media (max-width: 1180px) {
+      .shell {
+        grid-template-columns: 260px minmax(0, 1fr);
+      }
+      .info-panel {
+        grid-column: 1 / -1;
+        --whisper-height: 220px;
+        grid-template-rows: auto auto auto var(--whisper-height) minmax(180px, 1fr) auto;
+      }
+      .info-panel .clues {
+        max-height: 220px;
+      }
+      .whisper-log {
+        max-height: none;
+      }
+    }
+
+    @media (max-width: 760px) {
+      body {
+        height: auto;
+        min-height: 100dvh;
+        overflow-y: auto;
+      }
+      .app {
+        height: auto;
+        min-height: 100dvh;
+        padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+        gap: 8px;
+        overflow: visible;
+      }
+      .topbar {
+        grid-template-columns: 1fr;
+        gap: 8px;
+        padding: 8px;
+        position: sticky;
+        top: 0;
+        z-index: 12;
+      }
+      .brand {
+        gap: 8px;
+      }
+      .sigil {
+        width: 34px;
+        height: 34px;
+        flex: 0 0 34px;
+      }
+      .brand h1 {
+        font-size: 21px;
+      }
+      .brand p {
+        font-size: 11px;
+        line-height: 1.35;
+        max-height: 30px;
+      }
+      .top-actions {
+        width: 100%;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 36px 36px;
+        justify-content: stretch;
+        gap: 6px;
+      }
+      .pill {
+        min-height: 34px;
+        padding: 0 8px;
+        font-size: 12px;
+        min-width: 0;
+      }
+      .icon-button {
+        width: 36px;
+        height: 36px;
+      }
+      .shell {
+        grid-template-columns: 1fr;
+        height: auto;
+        overflow: visible;
+        gap: 10px;
+      }
+      .stage-panel {
+        grid-row: 1;
+        height: calc(100dvh - 102px);
+        min-height: 540px;
+        max-height: 760px;
+        grid-template-rows: 128px minmax(0, 1fr) auto;
+      }
+      .scene {
+        min-height: 0;
+      }
+      .moon {
+        width: 48px;
+        height: 48px;
+        margin-left: -24px;
+        top: 18px;
+      }
+      .village {
+        height: 92px;
+      }
+      .forest {
+        bottom: 22px;
+        height: 58px;
+      }
+      .hills {
+        height: 56px;
+      }
+      .houses {
+        left: 6%;
+        right: 6%;
+        bottom: 10px;
+      }
+      .house {
+        width: 42px;
+        height: 32px;
+      }
+      .house.tall { height: 48px; width: 38px; }
+      .house.small { height: 26px; width: 38px; }
+      .stage-status {
+        left: 8px;
+        right: 8px;
+        top: 8px;
+      }
+      .phase-card {
+        max-width: calc(100% - 58px);
+        padding: 8px 10px;
+      }
+      .phase-card h2 {
+        font-size: 17px;
+      }
+      .phase-card p {
+        margin-top: 4px;
+        font-size: 11px;
+        line-height: 1.35;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .round-orb {
+        width: 50px;
+        height: 50px;
+        font-size: 13px;
+      }
+      .log {
+        height: auto;
+        min-height: 0;
+        padding: 10px;
+      }
+      .cast-panel { grid-row: 2; max-height: none; }
+      .info-panel { grid-row: 3; }
+      .info-panel {
+        --whisper-height: 260px;
+        grid-template-rows: auto auto auto var(--whisper-height) minmax(180px, auto) auto;
+      }
+      .panel-head {
+        min-height: 42px;
+        padding: 10px 12px;
+      }
+      .setup {
+        padding: 10px;
+        gap: 7px;
+      }
+      .field-label {
+        font-size: 11px;
+      }
+      .role-select {
+        height: 36px;
+        font-size: 13px;
+      }
+      .primary {
+        min-height: 40px;
+      }
+      .roster {
+        grid-template-columns: 1fr 1fr;
+        max-height: 280px;
+        overflow: auto;
+        gap: 8px;
+      }
+      .person-card {
+        grid-template-columns: 42px minmax(0, 1fr);
+        padding: 7px;
+        gap: 8px;
+      }
+      .person-card .status-dot { display: none; }
+      .portrait { width: 42px; height: 50px; }
+      .person-name {
+        font-size: 13px;
+      }
+      .person-lore {
+        font-size: 11px;
+        -webkit-line-clamp: 1;
+      }
+      .line, .line.me {
+        grid-template-columns: 34px minmax(0, 1fr);
+        gap: 8px;
+        margin: 9px 0;
+      }
+      .line.me .mini-portrait { grid-column: 1; }
+      .line.me .bubble { grid-column: 2; justify-self: stretch; }
+      .mini-portrait {
+        width: 34px;
+        height: 42px;
+      }
+      .bubble {
+        padding: 8px 9px;
+      }
+      .speaker {
+        font-size: 12px;
+      }
+      .speech-text {
+        font-size: 14px;
+        line-height: 1.55;
+      }
+      .composer {
+        padding: 8px;
+      }
+      .prompt {
+        margin-bottom: 6px;
+        gap: 6px;
+      }
+      .prompt-text {
+        min-height: 28px;
+        font-size: 12px;
+      }
+      .counter {
+        font-size: 11px;
+      }
+      .chips {
+        max-height: 66px;
+        overflow: auto;
+        margin-bottom: 8px;
+      }
+      .chip {
+        min-height: 28px;
+        font-size: 12px;
+      }
+      .input-row {
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+      textarea {
+        min-height: 52px;
+        max-height: 84px;
+        padding: 8px 10px;
+        font-size: 14px;
+      }
+      .send {
+        min-height: 40px;
+      }
+      .identity {
+        padding: 10px;
+        gap: 8px;
+      }
+      .identity-card {
+        min-height: 96px;
+        padding: 10px;
+      }
+      .identity-role {
+        font-size: 20px;
+      }
+      .identity-note,
+      .task p,
+      .rules {
+        font-size: 12px;
+      }
+      .task {
+        padding: 10px;
+      }
+      .whisper-head {
+        min-height: 34px;
+        padding: 4px 10px 0;
+      }
+      .whisper-log,
+      .clues {
+        padding: 8px 10px 10px;
+      }
+      .reveal-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 460px) {
+      .roster {
+        grid-template-columns: 1fr 1fr;
+      }
+      .brand p {
+        display: none;
+      }
+      .topbar {
+        gap: 6px;
+      }
+      .top-actions {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 34px 34px;
+      }
+      .pill {
+        min-height: 32px;
+        font-size: 11px;
+      }
+      .icon-button {
+        width: 34px;
+        height: 34px;
+      }
+      .stage-panel {
+        height: calc(100dvh - 88px);
+        min-height: 520px;
+        grid-template-rows: 112px minmax(0, 1fr) auto;
+      }
+      .scene {
+        min-height: 0;
+      }
+      .phase-card p {
+        display: none;
+      }
+      .person-card {
+        grid-template-columns: 36px minmax(0, 1fr);
+        min-height: 54px;
+      }
+      .portrait {
+        width: 36px;
+        height: 44px;
+      }
+      .person-lore {
+        display: none;
+      }
+      .composer {
+        padding-bottom: max(8px, env(safe-area-inset-bottom));
+      }
+    }
+
+    @keyframes fogDrift {
+      from { transform: translate3d(-2%, -1%, 0) scale(1); }
+      to { transform: translate3d(3%, 2%, 0) scale(1.06); }
+    }
+
+    @keyframes firefly {
+      0%, 100% { transform: translate(0, 0); opacity: .25; }
+      35% { transform: translate(32px, -18px); opacity: .82; }
+      70% { transform: translate(-18px, 22px); opacity: .45; }
+    }
+
+    @keyframes sigilTurn {
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes speakingGlow {
+      from { box-shadow: 0 0 0 rgba(216,173,98,0); }
+      to { box-shadow: 0 0 22px rgba(216,173,98,.18); }
+    }
+
+    @keyframes cloud {
+      to { transform: translateX(calc(100vw + 280px)); }
+    }
+
+    @keyframes candle {
+      from { opacity: .55; }
+      to { opacity: 1; }
+    }
+
+    @keyframes batFly {
+      0%, 100% { transform: translate(0,0) rotate(-8deg); }
+      50% { transform: translate(180px, 28px) rotate(10deg); }
+    }
+
+    @keyframes catWalk {
+      from { transform: translateX(0); }
+      to { transform: translateX(95px); }
+    }
+
+    @keyframes blink {
+      0%, 92%, 100% { opacity: 1; }
+      95% { opacity: .25; }
+    }
+
+    @keyframes messageIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body data-scene="night">
+  <div class="background-fx" aria-hidden="true">
+    <div class="fog"></div>
+    <div class="grain"></div>
+    <div class="firefly"></div>
+    <div class="firefly"></div>
+    <div class="firefly"></div>
+    <div class="firefly"></div>
+  </div>
+
+  <div class="phase-curtain" id="phase-curtain" aria-hidden="true">
+    <div class="curtain-card">
+      <div>SCENE SHIFT</div>
+      <h2 id="curtain-title">雾镇入席</h2>
+    </div>
+  </div>
+
+  <main class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="sigil" aria-hidden="true"></div>
+        <div>
+          <h1 id="brand-title">雾镇夜谈</h1>
+          <p id="connection">等待入席。局域网访问时，请用本机 IP 加 8080 端口打开。</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <div class="pill"><span id="phase-label">阶段</span> <strong id="top-phase">未开始</strong></div>
+        <div class="pill"><span id="alive-label">幸存</span> <strong id="alive-count">8</strong><span>/ 8</span></div>
+        <button class="icon-button" id="music-btn" title="切换氛围声" onclick="toggleMusic()">♪</button>
+        <button class="icon-button" id="reset-btn" title="重置界面" onclick="resetGame()">↺</button>
+      </div>
+    </header>
+
+    <section class="shell">
+      <aside class="panel cast-panel">
+        <div class="panel-head">
+          <h2 id="cast-title">入席者</h2>
+          <span class="micro" id="roster-note">雾中八席</span>
+        </div>
+        <div class="setup">
+          <label class="field-label" id="language-label" for="language-select">界面与发言语言</label>
+          <select id="language-select" class="role-select" onchange="setLanguage(this.value)">
+            <option value="zh-CN">简体中文</option>
+            <option value="ja-JP">日本語</option>
+          </select>
+          <label class="field-label" id="role-label" for="role-select">你的隐秘倾向</label>
+          <select id="role-select" class="role-select">
+            <option value="">让命运安排</option>
+            <option value="werewolf">月痕继承者</option>
+            <option value="seer">烛火读者</option>
+            <option value="witch">药瓶看守</option>
+            <option value="hunter">银弹守誓者</option>
+            <option value="villager">无秘术村民</option>
+          </select>
+          <label class="field-label" id="wolf-rounds-label" for="wolf-rounds">夜间秘语轮数</label>
+          <select id="wolf-rounds" class="role-select">
+            <option value="1">1 轮：更快</option>
+            <option value="2" selected>2 轮：标准</option>
+            <option value="3">3 轮：更充分</option>
+            <option value="4">4 轮：慢节奏</option>
+            <option value="5">5 轮：长夜</option>
+          </select>
+          <label class="field-label" id="day-rounds-label" for="day-rounds">白昼议事轮数</label>
+          <select id="day-rounds" class="role-select">
+            <option value="1">1 轮：快速投票</option>
+            <option value="2">2 轮：短议事</option>
+            <option value="3" selected>3 轮：标准</option>
+            <option value="4">4 轮：充分交锋</option>
+            <option value="5">5 轮：长议事</option>
+          </select>
+          <label class="field-label" id="temperature-label" for="ai-temperature">AI 发言温度</label>
+          <select id="ai-temperature" class="role-select">
+            <option value="0.2">0.2：冷静克制</option>
+            <option value="0.5">0.5：谨慎</option>
+            <option value="0.8" selected>0.8：标准</option>
+            <option value="1.0">1.0：戏剧化</option>
+            <option value="1.2">1.2：更发散</option>
+          </select>
+          <button class="primary" id="start-btn" onclick="startGame()">入席开局</button>
+        </div>
+        <div class="roster" id="roster"></div>
+      </aside>
+
+      <section class="panel stage-panel">
+        <div class="scene" id="scene">
+          <div class="moon"></div>
+          <div class="cloud one"></div>
+          <div class="cloud two"></div>
+          <div class="stage-status">
+            <div class="phase-card">
+              <h2 id="phase-title">雾还没有散开</h2>
+              <p id="phase-help">选择倾向后开始。你可以公开扮演任何村民身份，真实能力由开局分配决定。</p>
+            </div>
+            <div class="round-orb" id="round-orb">R0</div>
+          </div>
+          <div class="village" aria-hidden="true">
+            <div class="hills"></div>
+            <div class="forest"></div>
+            <div class="houses">
+              <div class="house small"></div>
+              <div class="house"></div>
+              <div class="house tall"></div>
+              <div class="house"></div>
+              <div class="house small"></div>
+            </div>
+            <div class="pumpkins"><span>✦</span><span>✧</span><span>✦</span></div>
+            <div class="creature bat">⌁</div>
+            <div class="creature owl">◉</div>
+            <div class="creature cat">♞</div>
+          </div>
+        </div>
+
+        <div class="log" id="log">
+          <div class="empty-log" id="empty-log">
+            <div>
+              <strong id="empty-log-title">剧情记录会出现在这里</strong>
+              <span id="empty-log-text">发言不会把页面无限拉长；这里会独立滚动。</span>
+            </div>
+          </div>
+        </div>
+
+        <form class="composer" onsubmit="sendInput(event)">
+          <div class="prompt">
+            <div class="prompt-text" id="prompt-text">尚未轮到你。观察人物、关系和村中的异常。</div>
+            <div class="counter" id="counter">0 / 260</div>
+          </div>
+          <div class="chips" id="candidates"></div>
+          <div class="input-row">
+            <textarea id="input" maxlength="260" disabled placeholder="等待雾镇把问题递到你手里..." oninput="updateCounter()"></textarea>
+            <button class="send" id="send-btn" disabled type="submit">送出</button>
+          </div>
+        </form>
+      </section>
+
+      <aside class="panel info-panel">
+        <div class="panel-head">
+          <h2 id="notes-title">手记</h2>
+          <span class="micro" id="clock-note">无钟声</span>
+        </div>
+        <div class="identity">
+          <div class="identity-card">
+            <div class="identity-title" id="identity-title">你的真实能力</div>
+            <div class="identity-role" id="my-role">未揭示</div>
+            <div class="identity-note" id="my-role-note">开局后才会写入。公开身份可以是你选择的村民人设，不等于真实能力。</div>
+          </div>
+          <div>
+            <div class="field-label" id="teammates-label">已知同伴</div>
+            <div class="team-list" id="teammates"><span class="chip">暂无</span></div>
+          </div>
+        </div>
+        <div class="task">
+          <strong id="task-title">当前目标</strong>
+          <p id="task-text">先入席。之后系统会把当前可做的事情和候选名字放在这里。</p>
+        </div>
+        <div class="whisper-panel">
+          <div class="whisper-resize-handle" id="whisper-resize-handle" title="上下拖动调整雾镜高度" aria-label="上下拖动调整雾镜高度"></div>
+          <div class="whisper-head">
+            <strong id="whisper-title">雾镜旁听</strong>
+            <span class="whisper-count" id="whisper-count">0 条</span>
+          </div>
+          <div class="whisper-log" id="wolf-whispers">
+            <div class="whisper-empty" id="whisper-empty">所有私密发言会记录在这里。</div>
+          </div>
+        </div>
+        <div class="clues" id="clues"></div>
+        <div class="rules" id="rules-text">
+          隐式规则：黑夜各自行动，白昼公开讨论并指认；药瓶和银弹只在对应情境可用。角色真实能力只对本人揭示，其他人的真相到终局再公开。
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <div class="modal" id="reveal-modal">
+    <div class="reveal">
+      <div class="reveal-head">
+        <h2 id="reveal-title">终局揭幕</h2>
+        <button class="icon-button" onclick="closeReveal()">×</button>
+      </div>
+      <div class="reveal-grid" id="reveal-grid"></div>
+    </div>
+  </div>
+
+  <div class="toast-wrap" id="toasts"></div>
+
+  <script>
+    let i18nPack = {};
+    let currentLanguage = localStorage.getItem("werewolfLanguage") || "zh-CN";
+
+    const publicPlayers = [
+      { id: 1, name: "钟匠赫尔", lore: "修钟塔的寡言老人，知道每家灯灭的时刻。", accent: "#d8ad62", hair: "#c7b48f", cloth: "#35414d", prop: "clock" },
+      { id: 2, name: "药师薇拉", lore: "替村民调药，也替亡者清洗最后的伤口。", accent: "#6eb487", hair: "#3d322a", cloth: "#315244", prop: "vial" },
+      { id: 3, name: "守墓人洛林", lore: "从不离开墓园太久，记得每一次新土的味道。", accent: "#a98bc9", hair: "#2d2c35", cloth: "#3e354f", prop: "spade" },
+      { id: 4, name: "铁匠巴伦", lore: "掌管炉火与门闩，手上常有旧伤和铁锈。", accent: "#c75d65", hair: "#2b211c", cloth: "#5c3331", prop: "hammer" },
+      { id: 5, name: "猎犬师诺克", lore: "常在林线巡夜，能分辨泥地上的脚步轻重。", accent: "#7da7cb", hair: "#1f2426", cloth: "#2f4658", prop: "hound" },
+      { id: 6, name: "修女伊芙", lore: "守着小礼拜堂，温和到让人忘记她也会恐惧。", accent: "#e6d7b5", hair: "#241f23", cloth: "#5d5b63", prop: "cross" },
+      { id: 7, name: "磨坊女艾达", lore: "送面粉经过每条巷子，听过太多窗后的低语。", accent: "#d09268", hair: "#8a6240", cloth: "#6d4635", prop: "wheat" },
+      { id: 8, name: "旅人", lore: "雾夜抵达的外乡人，公开来历由你亲口决定。", accent: "#f0c987", hair: "#3b2b24", cloth: "#51405b", prop: "lantern", isHuman: true }
+    ];
+
+    const roleLabels = {
+      werewolf: ["月痕继承者", "影中同盟", "夜里知道同伴。你们要在雾里商议目标，但公开时仍只是村民。"],
+      seer: ["烛火读者", "守镇者", "每夜可凝视一人，看见对方是否带着月痕。"],
+      witch: ["药瓶看守", "守镇者", "你有一瓶复苏药和一瓶凋零药，各只能使用一次。"],
+      hunter: ["银弹守誓者", "守镇者", "若被白昼审判带走，可以在离开前射出银弹。"],
+      villager: ["无秘术村民", "守镇者", "你没有秘术，必须靠观察、关系和发言活到晨光。"]
+    };
+
+    const cnRoleMap = {
+      "狼人": "月痕继承者",
+      "预言家": "烛火读者",
+      "女巫": "药瓶看守",
+      "猎人": "银弹守誓者",
+      "平民": "无秘术村民",
+      "村民": "无秘术村民"
+    };
+
+    const phaseMap = {
+      intro: ["雾镇入席", "每个人公开自己的村中身份、性格和关系。真实能力不会写在脸上。", "night"],
+      night_wolves: ["月痕低语", "影中的人可以私下商议。若你听不见，说明那段话不属于你。", "night"],
+      night_seer: ["烛火神谕", "烛火只照亮一个名字。", "night"],
+      night_witch: ["药瓶低语", "复苏与凋零都需要明确的决心。", "night"],
+      day_announce: ["晨钟", "雾退后，村口会留下结果。", "day"],
+      day_discuss: ["白昼议事", "回应最近的发言，追问矛盾、恐惧和沉默。", "day"],
+      day_vote: ["审判钟", "每名幸存者必须指认一个名字。", "judgement"],
+      day_announce_vote: ["审判落槌", "被指认最多的人会离开雾镇。", "judgement"],
+      hunter_shoot: ["银弹诀别", "离开前只剩一次选择。", "judgement"],
+      end: ["终局揭幕", "所有秘密回到桌面。", "end"]
+    };
+
+    let players = clonePlayers();
+    let running = false;
+    let streamController = null;
+    let activeSpeakers = new Set();
+    let currentPromptPhase = "";
+    let currentActionKind = "";
+    let clueCount = 0;
+    let whisperCount = 0;
+    const bgmTracks = [
+      "/static/clean_A_Porcelain_Game.mp3",
+      "/static/clean_Lament_for_the_Stone_Hall.mp3",
+      "/static/clean_Throne_of_Granite.mp3"
+    ];
+    const bgmVersion = "20260630-clean";
+    let bgmAudio = null;
+    let bgmTrackIndex = 0;
+    let audioCtx = null;
+    let audioNodes = [];
+    let bellTimer = null;
+    let musicOn = false;
+
+    initWhisperResize();
+    initI18n();
+
+    function initWhisperResize() {
+      const panel = document.querySelector(".info-panel");
+      const whisper = document.querySelector(".whisper-panel");
+      const handle = document.getElementById("whisper-resize-handle");
+      if (!panel || !whisper || !handle) return;
+
+      const saved = Number(localStorage.getItem("werewolfWhisperHeight") || 0);
+      if (saved) setWhisperHeight(saved);
+
+      let startY = 0;
+      let startHeight = 0;
+
+      handle.addEventListener("pointerdown", event => {
+        startY = event.clientY;
+        startHeight = whisper.getBoundingClientRect().height;
+        whisper.classList.add("resizing");
+        handle.setPointerCapture(event.pointerId);
+        event.preventDefault();
+      });
+
+      handle.addEventListener("pointermove", event => {
+        if (!whisper.classList.contains("resizing")) return;
+        setWhisperHeight(startHeight - (event.clientY - startY));
+      });
+
+      handle.addEventListener("pointerup", event => {
+        if (!whisper.classList.contains("resizing")) return;
+        whisper.classList.remove("resizing");
+        handle.releasePointerCapture(event.pointerId);
+        localStorage.setItem("werewolfWhisperHeight", String(Math.round(whisper.getBoundingClientRect().height)));
+      });
+
+      handle.addEventListener("pointercancel", () => {
+        whisper.classList.remove("resizing");
+      });
+
+      window.addEventListener("resize", () => {
+        setWhisperHeight(whisper.getBoundingClientRect().height);
+      });
+
+      function setWhisperHeight(rawHeight) {
+        const isMobile = window.matchMedia("(max-width: 760px)").matches;
+        const panelHeight = panel.getBoundingClientRect().height || window.innerHeight;
+        const min = isMobile ? 180 : 150;
+        const max = Math.max(min, Math.min(isMobile ? 520 : 520, panelHeight * 0.68));
+        const next = Math.max(min, Math.min(max, Number(rawHeight) || min));
+        panel.style.setProperty("--whisper-height", `${Math.round(next)}px`);
+      }
+    }
+
+    async function initI18n() {
+      try {
+        const res = await fetch("/static/i18n-werewolf.json", { cache: "no-store" });
+        if (res.ok) i18nPack = await res.json();
+      } catch (err) {
+        console.warn("i18n load failed", err);
+      }
+      if (!i18nPack[currentLanguage]) currentLanguage = "zh-CN";
+      document.getElementById("language-select").value = currentLanguage;
+      applyLanguage();
+      renderRoster();
+      renderClue(tr("messages.initialClue", "村庄关系已经写入每个人的背景，但真实能力仍由开局分配。"));
+    }
+
+    function setLanguage(lang) {
+      if (!i18nPack[lang]) lang = "zh-CN";
+      currentLanguage = lang;
+      localStorage.setItem("werewolfLanguage", currentLanguage);
+      applyLanguage();
+    }
+
+    function langPack() {
+      return i18nPack[currentLanguage] || i18nPack["zh-CN"] || {};
+    }
+
+    function tr(path, fallback = "") {
+      const parts = path.split(".");
+      let cur = langPack();
+      for (const part of parts) {
+        if (!cur || typeof cur !== "object" || !(part in cur)) return fallback;
+        cur = cur[part];
+      }
+      return typeof cur === "string" ? cur : fallback;
+    }
+
+    function fmtText(template, vars = {}) {
+      return String(template || "").replace(/\{(\w+)\}/g, (_, key) => vars[key] ?? "");
+    }
+
+    function applyLanguage() {
+      const ui = langPack().ui || {};
+      setText("brand-title", ui.brandTitle);
+      setText("connection", ui.connectionIdle);
+      setText("phase-label", ui.phaseLabel);
+      setText("alive-label", ui.aliveLabel);
+      setText("cast-title", ui.castTitle);
+      setText("roster-note", ui.rosterNote);
+      setText("language-label", ui.languageLabel);
+      setText("role-label", ui.roleLabel);
+      setText("wolf-rounds-label", ui.wolfRoundsLabel);
+      setText("day-rounds-label", ui.dayRoundsLabel);
+      setText("temperature-label", ui.temperatureLabel);
+      setText("start-btn", ui.start);
+      setText("phase-title", ui.phaseTitleIdle);
+      setText("phase-help", ui.phaseHelpIdle);
+      setText("empty-log-title", ui.emptyLogTitle);
+      setText("empty-log-text", ui.emptyLogText);
+      setText("prompt-text", ui.promptIdle);
+      setText("send-btn", ui.send);
+      setText("notes-title", ui.notesTitle);
+      setText("clock-note", ui.clockIdle);
+      setText("identity-title", ui.identityTitle);
+      setText("my-role", ui.identityUnknown);
+      setText("my-role-note", ui.identityNote);
+      setText("teammates-label", ui.teammates);
+      setText("task-title", ui.taskTitle);
+      setText("task-text", ui.taskText);
+      setText("whisper-title", ui.whisperTitle);
+      setText("whisper-empty", ui.whisperEmpty);
+      setText("rules-text", ui.rules);
+      setText("reveal-title", ui.revealTitle);
+      document.getElementById("input").placeholder = ui.inputWaiting || "等待雾镇把问题递到你手里...";
+      document.getElementById("top-phase").textContent = ui.notStarted || "未开始";
+      localizeSelectOptions();
+      renderRoster();
+    }
+
+    function setText(id, value) {
+      const el = document.getElementById(id);
+      if (el && value) el.textContent = value;
+    }
+
+    function localizeSelectOptions() {
+      const rolePack = getRoleLabels();
+      const roleSelect = document.getElementById("role-select");
+      const roleOrder = ["", "werewolf", "seer", "witch", "hunter", "villager"];
+      roleOrder.forEach((value, idx) => {
+        const opt = roleSelect.options[idx];
+        if (!opt) return;
+        opt.textContent = value ? rolePack[value]?.[0] || opt.textContent : tr("ui.roleAuto", opt.textContent);
+      });
+      const rounds = langPack().options?.wolfRounds || [];
+      [...document.getElementById("wolf-rounds").options].forEach((opt, idx) => {
+        if (rounds[idx]) opt.textContent = rounds[idx];
+      });
+      const dayRounds = langPack().options?.dayRounds || [];
+      [...document.getElementById("day-rounds").options].forEach((opt, idx) => {
+        if (dayRounds[idx]) opt.textContent = dayRounds[idx];
+      });
+      const temps = langPack().options?.temperatures || [];
+      [...document.getElementById("ai-temperature").options].forEach((opt, idx) => {
+        if (temps[idx]) opt.textContent = temps[idx];
+      });
+    }
+
+    function emptyLogHtml() {
+      return `<div class="empty-log" id="empty-log"><div><strong id="empty-log-title">${escapeHtml(tr("ui.emptyLogTitle", "剧情记录会出现在这里"))}</strong><span id="empty-log-text">${escapeHtml(tr("ui.emptyLogText", "发言不会把页面无限拉长；这里会独立滚动。"))}</span></div></div>`;
+    }
+
+    function whisperEmptyHtml() {
+      return `<div class="whisper-empty" id="whisper-empty">${escapeHtml(tr("ui.whisperEmpty", "所有私密发言会记录在这里。"))}</div>`;
+    }
+
+    function clonePlayers() {
+      return publicPlayers.map(p => ({ ...p, alive: true, role: "", roleName: "", team: "", teamName: "" }));
+    }
+
+    function renderRoster() {
+      const box = document.getElementById("roster");
+      box.innerHTML = "";
+      for (const p of players) {
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = `person-card${p.alive ? "" : " dead"}${activeSpeakers.has(p.name) ? " speaking" : ""}`;
+        card.style.setProperty("--accent", p.accent || "#d8ad62");
+        card.onclick = () => fillCandidate(p.name);
+        card.innerHTML = `
+          <div class="portrait">${avatarSvg(p)}</div>
+          <div class="person-main">
+            <div class="person-name">${escapeHtml(p.name)}</div>
+            <div class="person-lore">${escapeHtml(p.lore || "")}</div>
+          </div>
+          <div class="status-dot" title="${p.alive ? "仍在雾中" : "已离席"}"></div>
+        `;
+        box.appendChild(card);
+      }
+      document.getElementById("alive-count").textContent = String(players.filter(p => p.alive).length);
+    }
+
+    function avatarSvg(p) {
+      const idx = Math.max(0, publicPlayers.findIndex(x => x.name === p.name));
+      const skin = ["#c69b7a", "#b98466", "#d3aa84", "#a8755f", "#c09074", "#d6b99b", "#b98258", "#cfa07c"][idx % 8];
+      const hair = p.hair || "#2d2522";
+      const cloth = p.cloth || "#3d3d46";
+      const accent = p.accent || "#d8ad62";
+      const dead = p.alive ? "" : `<path d="M18 18 L102 132 M102 18 L18 132" stroke="rgba(235,235,235,.65)" stroke-width="7" stroke-linecap="round"/>`;
+      const prop = {
+        clock: `<circle cx="92" cy="104" r="11" fill="none" stroke="${accent}" stroke-width="3"/><path d="M92 98v7l5 3" stroke="${accent}" stroke-width="2" fill="none"/>`,
+        vial: `<path d="M88 95h13l-3 30H91z" fill="${accent}" opacity=".8"/><path d="M91 93h7v-9h-7z" fill="#ddd0b9"/>`,
+        spade: `<path d="M92 86v40" stroke="${accent}" stroke-width="4"/><path d="M82 90c4-15 17-15 21 0c-4 10-17 10-21 0z" fill="${accent}"/>`,
+        hammer: `<path d="M84 88l28 28" stroke="${accent}" stroke-width="5"/><path d="M82 82h26v10H82z" fill="${accent}"/>`,
+        hound: `<path d="M82 112c8-16 25-15 30 0c-9 5-20 5-30 0z" fill="${accent}" opacity=".8"/><circle cx="91" cy="106" r="3" fill="#111"/>`,
+        cross: `<path d="M94 84v42M82 98h24" stroke="${accent}" stroke-width="5" stroke-linecap="round"/>`,
+        wheat: `<path d="M93 86v42M93 101c-17-6-15-18 0-15M93 111c16-6 15-18 0-15" stroke="${accent}" stroke-width="3" fill="none"/>`,
+        lantern: `<path d="M84 91h22l-3 34H87z" fill="rgba(240,201,135,.35)" stroke="${accent}" stroke-width="3"/><path d="M89 91c1-11 12-11 13 0" stroke="${accent}" stroke-width="3" fill="none"/>`
+      }[p.prop || "lantern"];
+      return `
+        <svg viewBox="0 0 120 150" role="img" aria-label="${escapeAttr(p.name)}">
+          <defs>
+            <linearGradient id="bg${p.id}" x1="0" x2="1" y1="0" y2="1">
+              <stop stop-color="${accent}" stop-opacity=".45"/>
+              <stop offset=".58" stop-color="#15171d"/>
+              <stop offset="1" stop-color="#090a0d"/>
+            </linearGradient>
+          </defs>
+          <rect width="120" height="150" fill="url(#bg${p.id})"/>
+          <circle cx="34" cy="30" r="22" fill="rgba(255,237,188,.16)"/>
+          <path d="M20 142c4-35 24-51 40-51s36 16 40 51z" fill="${cloth}"/>
+          <path d="M39 60c-5-24 8-39 25-39s30 16 25 39c-4 18-11 31-25 31S43 78 39 60z" fill="${skin}"/>
+          <path d="M37 59c-3-28 11-45 29-45c19 0 31 16 28 45c-9-13-25-18-55-11z" fill="${hair}"/>
+          <path d="M48 64c4 4 8 4 12 0M70 64c4 4 8 4 12 0" stroke="#2a1816" stroke-width="3" stroke-linecap="round"/>
+          <path d="M58 78c5 3 11 3 16 0" stroke="#703f3f" stroke-width="3" stroke-linecap="round" fill="none"/>
+          <path d="M39 116c14 11 36 11 50 0" stroke="${accent}" stroke-width="4" stroke-linecap="round" opacity=".9"/>
+          ${prop || ""}
+          ${dead}
+        </svg>
+      `;
+    }
+
+    async function startGame() {
+      if (running) return;
+      resetUiForStart();
+      running = true;
+      setControls(true);
+      streamController = new AbortController();
+      const role = document.getElementById("role-select").value;
+      const wolfRounds = document.getElementById("wolf-rounds").value || "2";
+      const dayRounds = document.getElementById("day-rounds").value || "3";
+      const temperature = document.getElementById("ai-temperature").value || "0.8";
+      const language = document.getElementById("language-select").value || currentLanguage;
+      const params = new URLSearchParams();
+      if (role) params.set("role", role);
+      params.set("wolfRounds", wolfRounds);
+      params.set("dayRounds", dayRounds);
+      params.set("temperature", temperature);
+      params.set("language", language);
+      const url = `/api/werewolf/stream?${params.toString()}`;
+      const rolePack = getRoleLabels();
+      renderClue(role ? fmtText(tr("messages.roleRequested", "你请求命运偏向：{role}。"), { role: rolePack[role]?.[0] || role }) : tr("messages.roleAuto", "你让命运自行分配真实能力。"));
+      renderClue(fmtText(tr("messages.wolfRounds", "夜间秘语轮数：{value}。"), { value: wolfRounds }));
+      renderClue(fmtText(tr("messages.dayRounds", "白昼议事轮数：{value}。最后一轮结束后进入审判。"), { value: dayRounds }));
+      renderClue(fmtText(tr("messages.temperature", "AI 发言温度：{value}。主持人命令翻译固定为 0。"), { value: temperature }));
+      renderClue(tr("messages.languageClue", "语言：简体中文。"));
+      setConnection(tr("messages.connectionConnecting", "正在连接雾镇钟塔..."));
+      try {
+        const response = await fetch(url, { signal: streamController.signal });
+        if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
+        setConnection(tr("messages.connectionReady", "钟塔已连通，等待发言。"));
+        await readSse(response.body.getReader());
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          const msg = fmtText(tr("messages.connectFailed", "连接失败：{message}"), { message: err.message });
+          toast(msg);
+          addSystem(msg);
+        }
+      } finally {
+        running = false;
+        setControls(false);
+      }
+    }
+
+    async function readSse(reader) {
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split("\n\n");
+        buffer = frames.pop() || "";
+        for (const raw of frames) {
+          const data = raw.split("\n")
+            .filter(line => line.trim().startsWith("data:"))
+            .map(line => line.replace(/^data:\s*/, ""))
+            .join("\n");
+          if (!data) continue;
+          try {
+            await handleFrame(JSON.parse(data));
+          } catch (err) {
+            console.error("SSE frame parse failed", err, data);
+          }
+        }
+      }
+    }
+
+    async function handleFrame(frame) {
+      switch (frame.type) {
+        case "role":
+          applyMyRole(frame);
+          break;
+        case "state":
+          applyState(frame);
+          if (frame.phase) updatePhase(frame.phase, frame.round);
+          break;
+        case "phase":
+          updatePhase(frame.phase, frame.round, frame.actionKind, frame.candidates || []);
+          await pause(360);
+          break;
+        case "announce":
+          addSystem(frame.text || "");
+          renderClue(frame.text || "");
+          await pause(520);
+          break;
+        case "speech":
+          addSpeech(frame);
+          await pause(420);
+          break;
+        case "prompt":
+          unlockInput(frame);
+          break;
+        case "reveal":
+          showReveal(frame.text || "");
+          break;
+        case "done":
+          finishGame(frame.winner || "");
+          break;
+        case "error":
+          toast(frame.message || tr("messages.error", "发生错误"));
+          addSystem(frame.message || tr("messages.error", "发生错误"));
+          break;
+      }
+    }
+
+    function applyMyRole(frame) {
+      const role = normalizeRole(frame.role, frame.roleName);
+      const me = players.find(p => p.isHuman);
+      if (me) {
+        me.role = frame.role || "";
+        me.roleName = role.label;
+        me.team = frame.team || "";
+        me.teamName = role.team;
+      }
+      document.getElementById("my-role").textContent = role.label;
+      document.getElementById("my-role-note").textContent = role.note;
+      const teammates = Array.isArray(frame.teammates) ? frame.teammates : [];
+      const box = document.getElementById("teammates");
+      box.innerHTML = "";
+      if (teammates.length === 0) {
+        box.innerHTML = `<span class="chip">${escapeHtml(tr("ui.none", "暂无"))}</span>`;
+      } else {
+        for (const mate of teammates) {
+          const span = document.createElement("button");
+          span.type = "button";
+          span.className = "chip";
+          span.textContent = mate;
+          span.onclick = () => fillCandidate(mate);
+          box.appendChild(span);
+        }
+      }
+      const note = role.team === (getRoleLabels().werewolf?.[1] || "影中同盟") ? tr("messages.teammatesNote", "同伴已写入手记。") : tr("messages.roleNote", "不要把公开人设和真实能力混为一谈。");
+      renderClue(fmtText(tr("messages.yourRole", "你的真实能力：{role}。{note}"), { role: role.label, note }));
+      renderRoster();
+    }
+
+    function applyState(frame) {
+      if (Array.isArray(frame.players)) {
+        for (const next of frame.players) {
+          let p = players.find(x => x.name === next.name);
+          if (!p) {
+            p = { id: players.length + 1, name: next.name, lore: tr("messages.fallbackPlayerLore", "雾中来客"), accent: "#d8ad62", alive: true };
+            players.push(p);
+          }
+          p.alive = next.alive !== false;
+          if (next.isHuman) {
+            p.isHuman = true;
+            if (next.role) p.role = next.role;
+            if (next.roleName) p.roleName = displayRoleName(next.roleName);
+            if (next.team) p.team = next.team;
+            if (next.teamName) p.teamName = next.teamName;
+          }
+        }
+      }
+      if (typeof frame.alive === "number") {
+        document.getElementById("alive-count").textContent = String(frame.alive);
+      }
+      renderRoster();
+    }
+
+    function normalizeRole(role, roleName) {
+      const known = getRoleLabels()[role];
+      if (known) return { label: known[0], team: known[1], note: known[2] };
+      const label = displayRoleName(roleName || role || "无秘术村民");
+      const villager = getRoleLabels().villager || ["无秘术村民", "守镇者", "真实能力已经揭示给你，但不要强迫公开身份等同于真实能力。"];
+      return { label, team: villager[1], note: villager[2] };
+    }
+
+    function displayRoleName(name) {
+      return getRoleMap()[name] || name || tr("ui.identityUnknown", "未揭示");
+    }
+
+    function getRoleLabels() {
+      return langPack().roleLabels || roleLabels;
+    }
+
+    function getRoleMap() {
+      return langPack().roleMap || cnRoleMap;
+    }
+
+    function getPhaseMap() {
+      return langPack().phaseMap || phaseMap;
+    }
+
+    function localizedPrompt(frame) {
+      const candidates = Array.isArray(frame.candidates) ? frame.candidates : [];
+      const cand = candidates.length ? fmtText(tr("messages.targetPrefix", "可提及：{names}。"), { names: candidates.join("、") }) : "";
+      const task = langPack().tasks?.[frame.actionKind || ""];
+      if (task) return `${task[0]}：${fmtText(task[1], { candidates: cand })}`;
+      return getPhaseMap()[frame.phase]?.[1] || tr("messages.yourTurn", "轮到你回应。");
+    }
+
+    function updatePhase(phase, round, actionKind = "", candidates = []) {
+      const phases = getPhaseMap();
+      const info = phases[phase] || [phase || tr("messages.unknownPhase", "未知阶段"), tr("messages.unknownPhaseHelp", "雾镇暂时没有说明。"), "night"];
+      document.getElementById("top-phase").textContent = info[0];
+      document.getElementById("phase-title").textContent = info[0];
+      document.getElementById("phase-help").textContent = info[1];
+      document.getElementById("round-orb").textContent = `R${round || 0}`;
+      document.getElementById("clock-note").textContent = round ? fmtText(tr("messages.round", "第 {round} 夜/日"), { round }) : tr("ui.clockIdle", "无钟声");
+      document.body.dataset.scene = info[2];
+      const scene = document.getElementById("scene");
+      scene.className = `scene ${info[2]}`;
+      currentActionKind = actionKind || "";
+      updateTask(phase, actionKind, candidates);
+      showCurtain(info[0]);
+    }
+
+    function updateTask(phase, actionKind, candidates) {
+      const title = document.getElementById("task-title");
+      const text = document.getElementById("task-text");
+      const cand = Array.isArray(candidates) && candidates.length ? fmtText(tr("messages.targetPrefix", "可提及：{names}。"), { names: candidates.join("、") }) : "";
+      const taskPack = langPack().tasks || {};
+      const next = taskPack[actionKind]
+        ? [taskPack[actionKind][0], fmtText(taskPack[actionKind][1], { candidates: cand })]
+        : [tr("ui.taskTitle", "当前目标"), getPhaseMap()[phase]?.[1] || tr("ui.taskText", "观察局势，等待轮到你。")];
+      title.textContent = next[0];
+      text.textContent = next[1];
+    }
+
+    function showCurtain(title) {
+      const curtain = document.getElementById("phase-curtain");
+      document.getElementById("curtain-title").textContent = title;
+      curtain.classList.add("show");
+      window.clearTimeout(showCurtain.timer);
+      showCurtain.timer = window.setTimeout(() => curtain.classList.remove("show"), 720);
+    }
+
+    function addSpeech(frame) {
+      const from = frame.from || tr("messages.fallbackVoice", "雾镇");
+      const visibleTo = Array.isArray(frame.visibleTo) ? frame.visibleTo : [];
+      const me = players.find(p => p.isHuman) || { name: "旅人" };
+      const p = players.find(x => x.name === from) || { id: 99, name: from, lore: tr("messages.fallbackVoice", "雾镇"), accent: "#d8ad62", alive: true, prop: "lantern" };
+      if (isPrivateWhisper(visibleTo)) {
+        recordPrivateWhisper(frame, visibleTo);
+      }
+      if (visibleTo.length && !visibleTo.includes(me.name)) {
+        return;
+      }
+      clearEmptyLog();
+      const isMe = p.isHuman || from === me.name;
+      const isPrivate = visibleTo.length > 0;
+      activeSpeakers.add(from);
+      renderRoster();
+      window.setTimeout(() => {
+        activeSpeakers.delete(from);
+        renderRoster();
+      }, 1200);
+
+      const row = document.createElement("div");
+      row.className = `line${isMe ? " me" : ""}${isPrivate ? " private" : ""}`;
+      row.style.setProperty("--accent", p.accent || "#d8ad62");
+      row.innerHTML = `
+        <div class="mini-portrait">${avatarSvg(p)}</div>
+        <article class="bubble">
+          <div class="speaker">
+            <span>${escapeHtml(from)}</span>
+            <small>${escapeHtml(isPrivate ? tr("messages.private", "秘语") : tr("messages.public", "公开"))}</small>
+          </div>
+          <div class="speech-text">${escapeHtml(frame.text || "")}</div>
+        </article>
+      `;
+      document.getElementById("log").appendChild(row);
+      scrollLog();
+    }
+
+    function isPrivateWhisper(visibleTo) {
+      return Array.isArray(visibleTo) && visibleTo.length > 0;
+    }
+
+    function recordPrivateWhisper(frame, visibleTo) {
+      const box = document.getElementById("wolf-whispers");
+      const empty = document.getElementById("whisper-empty");
+      if (empty) empty.remove();
+      whisperCount += 1;
+      document.getElementById("whisper-count").textContent = fmtText(tr("messages.whisperCount", "{count} 条"), { count: whisperCount });
+      const item = document.createElement("div");
+      item.className = "whisper-item";
+      item.innerHTML = `
+        <div class="whisper-meta">
+          <span>${escapeHtml(frame.from || tr("messages.fallbackWhisper", "雾中低语"))}</span>
+          <span>${escapeHtml(visibleTo.join("、"))}</span>
+        </div>
+        <div class="whisper-text">${escapeHtml(frame.text || "")}</div>
+      `;
+      box.prepend(item);
+    }
+
+    function addSystem(text) {
+      if (!text) return;
+      clearEmptyLog();
+      const el = document.createElement("div");
+      el.className = "system-line";
+      el.textContent = text;
+      document.getElementById("log").appendChild(el);
+      scrollLog();
+    }
+
+    function renderClue(text) {
+      if (!text) return;
+      clueCount += 1;
+      const el = document.createElement("div");
+      el.className = "clue";
+      el.textContent = `${String(clueCount).padStart(2, "0")} · ${text}`;
+      document.getElementById("clues").prepend(el);
+    }
+
+    function unlockInput(frame) {
+      currentPromptPhase = frame.phase || "";
+      currentActionKind = frame.actionKind || "";
+      document.getElementById("prompt-text").textContent = currentLanguage === "zh-CN" ? (frame.message || tr("messages.yourTurn", "轮到你回应。")) : localizedPrompt(frame);
+      document.getElementById("input").disabled = false;
+      document.getElementById("send-btn").disabled = false;
+      document.getElementById("input").placeholder = placeholderFor(currentActionKind);
+      renderCandidateChips(frame.candidates || []);
+      updateTask(frame.phase, frame.actionKind, frame.candidates || []);
+      document.getElementById("input").focus();
+      renderClue(tr("messages.yourTurnClue", "轮到你回应。候选名字已放在输入框上方，可点选填入。"));
+    }
+
+    function placeholderFor(kind) {
+      return langPack().placeholders?.[kind] || langPack().placeholders?.default || "用雾镇中的身份和语气回应最近发言...";
+    }
+
+    function lockInput() {
+      document.getElementById("input").disabled = true;
+      document.getElementById("send-btn").disabled = true;
+      document.getElementById("prompt-text").textContent = tr("messages.sent", "回应已送出，等待雾镇继续。");
+      document.getElementById("candidates").innerHTML = "";
+      updateCounter();
+    }
+
+    function renderCandidateChips(candidates) {
+      const box = document.getElementById("candidates");
+      box.innerHTML = "";
+      for (const name of candidates) {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "chip";
+        chip.textContent = name;
+        chip.onclick = () => fillCandidate(name);
+        box.appendChild(chip);
+      }
+    }
+
+    function fillCandidate(name) {
+      const input = document.getElementById("input");
+      if (input.disabled) return;
+      const text = input.value.trim();
+      input.value = text ? `${text} ${name}` : name;
+      input.focus();
+      updateCounter();
+    }
+
+    async function sendInput(event) {
+      event.preventDefault();
+      const input = document.getElementById("input");
+      const text = input.value.trim();
+      if (!text) return;
+      lockInput();
+      input.value = "";
+      try {
+        const response = await fetch("/api/werewolf/input", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text })
+        });
+        if (!response.ok) throw new Error(await response.text());
+      } catch (err) {
+        toast(fmtText(tr("messages.sendFailed", "发送失败：{message}"), { message: err.message }));
+        document.getElementById("input").disabled = false;
+        document.getElementById("send-btn").disabled = false;
+      }
+    }
+
+    function showReveal(text) {
+      const grid = document.getElementById("reveal-grid");
+      grid.innerHTML = "";
+      const parts = String(text || "").split(/[；;\n]/).map(x => x.trim()).filter(Boolean);
+      for (const part of parts) {
+        const clean = part.replace(/\(([^)]+)\)/g, (_, role) => `（${displayRoleName(role)}）`);
+        const card = document.createElement("div");
+        card.className = "reveal-card";
+        card.textContent = clean;
+        grid.appendChild(card);
+      }
+      document.getElementById("reveal-modal").classList.add("open");
+    }
+
+    function closeReveal() {
+      document.getElementById("reveal-modal").classList.remove("open");
+    }
+
+    function finishGame(winner) {
+      lockInput();
+      document.body.dataset.scene = "end";
+      document.getElementById("scene").className = "scene day";
+      const label = winner === "werewolf" ? tr("messages.finalWerewolf", "月痕笼罩雾镇") : tr("messages.finalVillage", "晨光回到雾镇");
+      const text = fmtText(tr("messages.final", "终局：{label}"), { label });
+      addSystem(text);
+      renderClue(text);
+      setConnection(tr("messages.gameEnded", "本局结束。"));
+    }
+
+    function resetUiForStart() {
+      players = clonePlayers();
+      activeSpeakers.clear();
+      clueCount = 0;
+      whisperCount = 0;
+      document.getElementById("log").innerHTML = emptyLogHtml();
+      document.getElementById("clues").innerHTML = "";
+      document.getElementById("wolf-whispers").innerHTML = whisperEmptyHtml();
+      document.getElementById("whisper-count").textContent = fmtText(tr("messages.whisperCount", "{count} 条"), { count: 0 });
+      document.getElementById("my-role").textContent = tr("ui.identityUnknown", "未揭示");
+      document.getElementById("my-role-note").textContent = tr("ui.identityNote", "开局后才会写入。公开身份可以是你选择的村民人设，不等于真实能力。");
+      document.getElementById("teammates").innerHTML = `<span class="chip">${escapeHtml(tr("ui.none", "暂无"))}</span>`;
+      document.getElementById("prompt-text").textContent = tr("ui.promptIdle", "尚未轮到你。观察人物、关系和村中的异常。");
+      document.getElementById("input").value = "";
+      document.getElementById("candidates").innerHTML = "";
+      updateCounter();
+      renderRoster();
+      renderClue(tr("messages.newGame", "新局开始。人物关系已就位，真实能力等待钟声揭示。"));
+      updatePhase("intro", 0);
+    }
+
+    function resetGame() {
+      if (streamController) streamController.abort();
+      running = false;
+      setControls(false);
+      lockInput();
+      resetUiForStart();
+      setConnection(tr("messages.connectionReset", "界面已重置。"));
+    }
+
+    function setControls(isRunning) {
+      document.getElementById("start-btn").disabled = isRunning;
+      document.getElementById("language-select").disabled = isRunning;
+      document.getElementById("role-select").disabled = isRunning;
+      document.getElementById("wolf-rounds").disabled = isRunning;
+      document.getElementById("day-rounds").disabled = isRunning;
+      document.getElementById("ai-temperature").disabled = isRunning;
+    }
+
+    function setConnection(text) {
+      document.getElementById("connection").textContent = text;
+    }
+
+    function updateCounter() {
+      const input = document.getElementById("input");
+      document.getElementById("counter").textContent = `${input.value.length} / ${input.maxLength}`;
+    }
+
+    function clearEmptyLog() {
+      const empty = document.getElementById("empty-log");
+      if (empty) empty.remove();
+    }
+
+    function scrollLog() {
+      const log = document.getElementById("log");
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function toast(text) {
+      const wrap = document.getElementById("toasts");
+      const el = document.createElement("div");
+      el.className = "toast";
+      el.textContent = text;
+      wrap.appendChild(el);
+      window.setTimeout(() => el.remove(), 4200);
+    }
+
+    async function toggleMusic() {
+      if (musicOn) {
+        stopMusic();
+      } else {
+        await startMusic();
+      }
+    }
+
+    async function startMusic(attempt = 0) {
+      stopMusic(false);
+      const track = `${bgmTracks[bgmTrackIndex % bgmTracks.length]}?v=${bgmVersion}`;
+      const audio = document.createElement("audio");
+      bgmAudio = audio;
+      audio.src = track;
+      audio.preload = "auto";
+      audio.volume = 0.42;
+      audio.loop = false;
+      audio.setAttribute("playsinline", "");
+      audio.style.display = "none";
+      document.body.appendChild(audio);
+      audio.onended = () => {
+        if (!musicOn || bgmAudio !== audio) return;
+        bgmTrackIndex = (bgmTrackIndex + 1) % bgmTracks.length;
+        startMusic().catch(() => fallbackToGeneratedAmbience(audio, "ended-next-failed"));
+      };
+      audio.onerror = () => {
+        tryNextBgmOrFallback(audio, attempt, "media-error");
+      };
+      try {
+        audio.load();
+        await audio.play();
+        musicOn = true;
+        const btn = document.getElementById("music-btn");
+        btn.textContent = "♫";
+        btn.title = "关闭背景音乐";
+        toast("背景音乐已开启");
+      } catch (err) {
+        tryNextBgmOrFallback(audio, attempt, err?.name || "play-rejected");
+      }
+    }
+
+    function tryNextBgmOrFallback(audio, attempt, reason) {
+      if (audio && bgmAudio !== audio) return;
+      console.warn("BGM track failed", { src: audio?.currentSrc || audio?.src, reason, code: audio?.error?.code });
+      if (bgmAudio) {
+        bgmAudio.onended = null;
+        bgmAudio.onerror = null;
+        bgmAudio.pause();
+        bgmAudio.remove();
+        bgmAudio = null;
+      }
+      if (attempt + 1 < bgmTracks.length) {
+        bgmTrackIndex = (bgmTrackIndex + 1) % bgmTracks.length;
+        startMusic(attempt + 1);
+        return;
+      }
+      fallbackToGeneratedAmbience(null, reason);
+    }
+
+    async function fallbackToGeneratedAmbience(audio, reason = "") {
+      if (audio && bgmAudio !== audio) return;
+      if (bgmAudio) {
+        bgmAudio.onended = null;
+        bgmAudio.onerror = null;
+        bgmAudio.pause();
+        bgmAudio.remove();
+        bgmAudio = null;
+      }
+      try {
+        await startGeneratedAmbience(true);
+      } catch (_) {
+        musicOn = false;
+        const btn = document.getElementById("music-btn");
+        btn.textContent = "♪";
+        btn.title = "开启背景音乐";
+        toast(`浏览器未能开启音频${reason ? "：" + reason : ""}`);
+      }
+    }
+
+    async function startGeneratedAmbience(showFallbackToast = false) {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      await audioCtx.resume();
+      const master = audioCtx.createGain();
+      master.gain.value = 0.055;
+      master.connect(audioCtx.destination);
+
+      const hum = audioCtx.createOscillator();
+      hum.type = "sine";
+      hum.frequency.value = 55;
+      const humGain = audioCtx.createGain();
+      humGain.gain.value = 0.55;
+      hum.connect(humGain).connect(master);
+      hum.start();
+
+      const fifth = audioCtx.createOscillator();
+      fifth.type = "triangle";
+      fifth.frequency.value = 82.4;
+      const fifthGain = audioCtx.createGain();
+      fifthGain.gain.value = 0.18;
+      fifth.connect(fifthGain).connect(master);
+      fifth.start();
+
+      const noise = audioCtx.createBufferSource();
+      const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 3, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * 0.12;
+      noise.buffer = buffer;
+      noise.loop = true;
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.value = 760;
+      const noiseGain = audioCtx.createGain();
+      noiseGain.gain.value = 0.12;
+      noise.connect(filter).connect(noiseGain).connect(master);
+      noise.start();
+
+      audioNodes = [master, hum, fifth, noise];
+      bellTimer = window.setInterval(playBell, 7200);
+      playBell();
+      musicOn = true;
+      const btn = document.getElementById("music-btn");
+      btn.textContent = "♫";
+      btn.title = "关闭氛围声";
+      toast(showFallbackToast ? "音频文件无法播放，已切换合成氛围声" : "氛围声已开启");
+    }
+
+    function playBell() {
+      if (!audioCtx || !musicOn) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(220, audioCtx.currentTime + 1.2);
+      gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.13, audioCtx.currentTime + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 1.6);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 1.7);
+    }
+
+    function stopMusic(showToast = true) {
+      if (bgmAudio) {
+        bgmAudio.onended = null;
+        bgmAudio.onerror = null;
+        bgmAudio.pause();
+        bgmAudio.remove();
+        bgmAudio = null;
+      }
+      if (bellTimer) window.clearInterval(bellTimer);
+      bellTimer = null;
+      for (const node of audioNodes) {
+        try {
+          if (node.stop) node.stop();
+          if (node.disconnect) node.disconnect();
+        } catch (_) {}
+      }
+      audioNodes = [];
+      musicOn = false;
+      const btn = document.getElementById("music-btn");
+      btn.textContent = "♪";
+      btn.title = "开启背景音乐";
+      if (showToast) toast("背景音乐已关闭");
+    }
+
+    function pause(ms) {
+      return new Promise(resolve => window.setTimeout(resolve, ms));
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/`/g, "&#96;");
+    }
+  </script>
+</body>
+</html>
