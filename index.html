@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏛️ 元老院 · Senatus Populusque Romanus</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        neo: {
+                            alabaster: '#FAF9F6', // 极雅象牙白
+                            parchment: '#F5F3ED', // 古朴羊皮纸
+                            gold: '#D4C3B3',      // 香槟柔金
+                            goldDark: '#9E8B7A',  // 雅致青铜
+                            slate: '#3A3836',     // 雕刻石板灰
+                            silver: '#EBEAE6',    // 亮银灰
+                            cato: '#FAF4F4',      // 加图浅粉边卡
+                            caesar: '#FAF7F2',    // 凯撒浅金边卡
+                            cicero: '#F4F7F9'     // 西塞罗浅蓝边卡
+                        }
+                    },
+                    fontFamily: {
+                        serif: ['Georgia', 'Garamond', 'Palatino', 'PMingLiU', 'serif']
+                    },
+                    boxShadow: {
+                        'neo': '0 10px 30px -5px rgba(212, 195, 179, 0.15), 0 2px 10px -2px rgba(212, 195, 179, 0.1)',
+                        'neo-in': 'inset 0 2px 8px 0 rgba(212, 195, 179, 0.08)'
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        /* 新古典主义极致柔和背景 */
+        body {
+            background-color: #FAF9F6;
+            background-image: 
+                radial-gradient(circle at 10% 10%, rgba(212, 195, 179, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 90% 90%, rgba(212, 195, 179, 0.12) 0%, transparent 50%);
+            background-attachment: fixed;
+        }
+
+        /* 极致奢华细线雕花边框 (Neoclassical Line Art) */
+        .neo-fine-border {
+            border: 1px solid rgba(212, 195, 179, 0.5);
+            position: relative;
+        }
+        .neo-fine-border::after {
+            content: '';
+            position: absolute;
+            top: 3px; left: 3px; right: 3px; bottom: 3px;
+            border: 1px solid rgba(212, 195, 179, 0.25);
+            pointer-events: none;
+        }
+
+        /* 纤细、高雅的定制滚动条 */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(245, 243, 237, 0.5);
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(212, 195, 179, 0.6);
+            border-radius: 2px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(158, 139, 122, 0.8);
+        }
+
+        /* 雅致渐变背景纹 */
+        .neo-shimmer {
+            background: linear-gradient(135deg, #FAF9F6 0%, #F5F3ED 100%);
+        }
+
+        /* 气泡平滑浮入动画 */
+        @keyframes subtleFadeUp {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .animate-subtle-up {
+            animation: subtleFadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+    </style>
+    <!-- 引入 marked.js 用于解析 Markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        marked.setOptions({
+            breaks: true,
+            gfm: true
+        });
+    </script>
+    <style>
+        .speech-text strong { font-weight: 700; color: #1c1917; }
+        .speech-text p { margin-bottom: 0.5rem; }
+        .speech-text p:last-child { margin-bottom: 0; }
+        .speech-text ul { list-style-type: disc; margin-left: 1.25rem; margin-bottom: 0.5rem; }
+        .speech-text ol { list-style-type: decimal; margin-left: 1.25rem; margin-bottom: 0.5rem; }
+    </style>
+</head>
+<body class="text-neo-slate min-h-screen flex flex-col font-sans selection:bg-neo-gold selection:text-neo-slate">
+
+    <!-- 顶部极简奢华 neoclassical Header -->
+    <header class="w-full bg-[#FAF9F6] border-b border-neo-gold/40 shadow-sm relative shrink-0">
+        <!-- 顶级金色装饰细梁 -->
+        <div class="h-1 bg-gradient-to-r from-neo-gold/20 via-neo-gold to-neo-gold/20 w-full"></div>
+        
+        <div class="max-w-7xl mx-auto px-6 py-4 flex flex-col items-center justify-center relative">
+            
+            <!-- 极简双细线金饰 -->
+            <div class="text-center">
+                <div class="flex items-center justify-center space-x-3 mb-1">
+                    <!-- 左侧精细桂冠线饰 -->
+                    <span class="hidden sm:inline-block text-neo-goldDark">
+                        <svg class="w-10 h-6" viewBox="0 0 50 20" fill="none" stroke="currentColor" stroke-width="1.2">
+                            <path d="M5 10 C 15 2, 35 2, 45 10" />
+                            <path d="M8 8 L12 6 M18 6 L22 4 M28 6 L32 4 M38 8 L42 6" />
+                        </svg>
+                    </span>
+                    
+                    <h1 class="font-serif text-2xl md:text-3xl font-bold tracking-widest text-neo-slate uppercase">
+                        元 老 院 <span class="text-neo-goldDark/70 font-light mx-1">·</span> <span class="font-light tracking-wide text-neo-goldDark">Senatus Populusque Romanus</span>
+                    </h1>
+
+                    <!-- 右侧精细桂冠线饰 -->
+                    <span class="hidden sm:inline-block text-neo-goldDark">
+                        <svg class="w-10 h-6 transform scale-x-[-1]" viewBox="0 0 50 20" fill="none" stroke="currentColor" stroke-width="1.2">
+                            <path d="M5 10 C 15 2, 35 2, 45 10" />
+                            <path d="M8 8 L12 6 M18 6 L22 4 M28 6 L32 4 M38 8 L42 6" />
+                        </svg>
+                    </span>
+                </div>
+                <p class="text-[10px] md:text-xs font-serif tracking-[0.25em] text-neo-goldDark font-semibold uppercase opacity-80">
+                    CONSILIUM PUBLICUM REI PUBLICAE ROMANAE — 智者思辨 · 罗马荣光
+                </p>
+            </div>
+            
+        </div>
+    </header>
+
+    <!-- 主体内容容器：黄金分割两栏布局 -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 flex flex-col lg:flex-row gap-6 overflow-hidden">
+        
+        <!-- 左侧：议题输入与辩论演武（大议事殿 - 2/3宽度） -->
+        <div class="flex-1 flex flex-col gap-5 overflow-hidden">
+            
+            <!-- 议题配置区（极简精制卡片） -->
+            <section class="bg-white rounded-lg p-5 shadow-neo border border-neo-gold/30 relative">
+                <!-- 右上角雅致几何纹 -->
+                <div class="absolute top-0 right-0 w-12 h-12 border-t border-r border-neo-gold/30 rounded-tr-lg m-2 pointer-events-none"></div>
+                
+                <div class="flex flex-col md:flex-row gap-4 items-end relative z-10">
+                    <!-- 议题输入 -->
+                    <div class="flex-1 w-full">
+                        <label for="topicInput" class="block text-[10px] font-bold uppercase tracking-[0.2em] text-neo-goldDark mb-2 font-serif">
+                            🏛️ 请输入辩论议题 (Topic of Debate)
+                        </label>
+                        <div class="relative">
+                            <input type="text" id="topicInput" 
+                                class="w-full bg-neo-alabaster border border-neo-gold/40 rounded px-4 py-2.5 text-sm text-neo-slate placeholder-stone-400 focus:outline-none focus:ring-1 focus:ring-neo-goldDark focus:border-neo-goldDark transition shadow-neo-in"
+                                placeholder="请输入国家之核心关切..."
+                                value="是否应当在内战后立刻推行土地法改革，将平民领地归还人民？">
+                        </div>
+                    </div>
+                    
+                    <!-- 轮数与启动按钮 -->
+                    <div class="flex gap-3 w-full md:w-auto shrink-0">
+                        <div class="w-24">
+                            <label for="roundsSelect" class="block text-[10px] font-bold uppercase tracking-[0.2em] text-neo-goldDark mb-2 font-serif">
+                                辩论轮数
+                            </label>
+                            <select id="roundsSelect" 
+                                class="w-full bg-neo-alabaster border border-neo-gold/40 rounded px-3 py-2.5 text-sm text-neo-slate focus:outline-none focus:ring-1 focus:ring-neo-goldDark focus:border-neo-goldDark transition shadow-neo-in">
+                                <option value="2">2 轮</option>
+                                <option value="3" selected>3 轮</option>
+                                <option value="4">4 轮</option>
+                                <option value="5">5 轮</option>
+                            </select>
+                        </div>
+                        
+                        <div class="flex-1 md:flex-none">
+                            <label class="block text-[10px] font-bold uppercase tracking-wider text-transparent mb-2 pointer-events-none">操作</label>
+                            <button id="summonBtn" 
+                                class="w-full md:w-auto bg-gradient-to-b from-[#F2ECE4] to-[#DDD2C4] hover:from-[#EAE1D5] hover:to-[#CFBFA9] text-neo-slate px-6 py-2.5 rounded font-serif font-bold text-xs shadow-md border border-neo-gold/60 transition active:scale-95 flex items-center justify-center space-x-2 tracking-widest">
+                                <span>🏛️</span>
+                                <span>召集元老议事</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 模式切换与高级设置 -->
+                <div class="mt-4 pt-3 border-t border-neo-gold/20 flex flex-wrap justify-between items-center gap-2 text-[11px] text-neo-goldDark font-medium">
+                    <div class="flex items-center space-x-4">
+                        <span class="opacity-80">运行模式：</span>
+                        <label class="inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="modeToggle" class="sr-only peer" checked>
+                            <div class="relative w-9 h-5 bg-stone-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-stone-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-neo-goldDark"></div>
+                            <span class="ms-2 text-neo-slate" id="modeLabel">模拟运行 (Mock Mode)</span>
+                        </label>
+                    </div>
+                    <div class="flex items-center gap-1 opacity-90">
+                        <span>API 端点:</span>
+                        <code class="bg-neo-parchment px-2 py-0.5 rounded font-mono font-bold text-stone-600" id="endpointCode">
+                            LOCAL SIMULATOR (No server needed)
+                        </code>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 辩论记录区 -->
+            <section class="flex-1 bg-white rounded-lg shadow-neo border border-neo-gold/30 flex flex-col overflow-hidden relative">
+                <!-- 顶部双色细金条饰 -->
+                <div class="h-[2px] bg-gradient-to-r from-neo-gold/10 via-neo-gold to-neo-gold/10 w-full"></div>
+                
+                <!-- 辩论标题动态面板 -->
+                <div class="bg-[#FCFAF7] px-5 py-3.5 border-b border-neo-gold/20 flex items-center justify-between shrink-0">
+                    <div class="flex items-center space-x-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-neo-gold border border-white shadow-sm" id="statusIndicator"></span>
+                        <span class="text-[10px] font-serif uppercase tracking-[0.2em] font-bold text-neo-goldDark">当前议席</span>
+                    </div>
+                    <h2 class="text-xs font-semibold truncate max-w-sm sm:max-w-lg font-serif text-neo-slate tracking-wide" id="currentTopicDisplay">
+                        (等待公民递交陈情...)
+                    </h2>
+                    <button id="clearBtn" class="text-[10px] font-bold text-neo-goldDark hover:text-neo-slate transition underline tracking-wider">
+                        清空大理石板
+                    </button>
+                </div>
+
+                <!-- 辩论发言气泡流容器 -->
+                <div id="debateStream" class="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar bg-[#FCFBF9]">
+                    <!-- 初始引导 -->
+                    <div id="emptyState" class="h-full flex flex-col items-center justify-center text-center py-12 text-stone-400">
+                        <span class="text-4xl mb-4 opacity-40">📜</span>
+                        <p class="font-serif italic text-sm text-neo-goldDark tracking-wider">“雄辩乃自由国家之最高艺术。” — 西塞罗</p>
+                        <p class="text-[11px] max-w-md mt-2 text-stone-400 leading-relaxed">
+                            请在上方输入共和国之议题，点击“召集元老议事”。<br>对话将由公民代表起草陈情案切入，再由元老各席展开激荡交锋。
+                        </p>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- 右侧：公民发言与统计（公民陈情阁 - 1/3宽度） -->
+        <div class="w-full lg:w-80 shrink-0 flex flex-col gap-5 overflow-hidden">
+            
+            <!-- 公民发言/插话卡片 -->
+            <section class="bg-white p-5 rounded-lg shadow-neo border border-neo-gold/30 relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-12 h-12 border-t border-r border-neo-gold/20 rounded-tr-lg m-2 pointer-events-none"></div>
+                
+                <h3 class="font-serif text-sm font-bold text-neo-slate mb-1.5 flex items-center gap-2">
+                    <span class="text-neo-goldDark">📢</span> 公民陈情阁 (Petition Center)
+                </h3>
+                <p class="text-[11px] text-stone-400 leading-relaxed mb-4">
+                    罗马自由平民可在辩论如火如荼时向议堂递交“紧急陈情书”。元老们会在当前轮次审议结束后，针对陈情进行公开裁断。
+                </p>
+
+                <!-- 插话输入 -->
+                <div class="space-y-3 relative z-10">
+                    <textarea id="interruptionInput" rows="3" 
+                        class="w-full bg-neo-alabaster border border-neo-gold/40 rounded p-2.5 text-xs text-neo-slate placeholder-stone-400 focus:outline-none focus:ring-1 focus:ring-neo-goldDark focus:border-neo-goldDark transition resize-none shadow-neo-in"
+                        placeholder="例如：'诸位尊敬的元老！平民在歉收年中已经难以为继，罗马城墙外的土地绝不能沦为权贵的私产！'"></textarea>
+                    
+                    <button id="petitionBtn" disabled
+                        class="w-full bg-gradient-to-b from-white to-[#F5F3ED] hover:from-[#FAF9F6] hover:to-[#EBE8DF] text-neo-slate py-2 px-4 rounded font-serif font-bold text-[11px] shadow-sm border border-neo-gold/50 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed tracking-widest uppercase">
+                        📢 呈交紧急陈情 (Interruption)
+                    </button>
+                </div>
+                
+                <!-- 当前待发插话状态 -->
+                <div id="pendingInterruptionBadge" class="hidden mt-3 p-2 bg-neo-parchment border border-neo-gold/30 rounded text-[11px] text-neo-goldDark flex items-center justify-between animate-subtle-up">
+                    <span class="truncate"><strong>待呈递:</strong> <span id="pendingText" class="italic"></span></span>
+                    <button id="cancelPendingBtn" class="text-red-700 hover:text-red-900 ml-2 font-bold font-serif shrink-0">✕ 撤回</button>
+                </div>
+            </section>
+
+            <!-- 统计分析卡片 -->
+            <section class="bg-white p-5 rounded-lg shadow-neo border border-neo-gold/30">
+                <h3 class="font-serif text-sm font-bold text-neo-slate mb-3 flex items-center gap-2 border-b border-neo-gold/20 pb-2">
+                    <span class="text-neo-goldDark">📊</span> 议事堂实况 (Aura Stats)
+                </h3>
+                
+                <div class="grid grid-cols-2 lg:grid-cols-1 gap-3 text-xs">
+                    <!-- 累计 Token -->
+                    <div class="p-2.5 bg-neo-alabaster rounded border border-neo-gold/20 shadow-neo-in">
+                        <span class="text-stone-400 block text-[10px] uppercase font-bold tracking-wider mb-0.5">累计估算 Token</span>
+                        <span class="text-base font-bold text-neo-slate font-mono" id="statTokens">0</span>
+                    </div>
+                    
+                    <!-- 辩论轮次进度 -->
+                    <div class="p-2.5 bg-neo-alabaster rounded border border-neo-gold/20 shadow-neo-in">
+                        <span class="text-stone-400 block text-[10px] uppercase font-bold tracking-wider mb-0.5">辩论审议进度</span>
+                        <span class="text-base font-bold text-neo-slate font-serif" id="statRounds">0 / 0</span>
+                    </div>
+
+                    <!-- 角色统计 -->
+                    <div class="p-2.5 bg-neo-alabaster rounded border border-neo-gold/20 shadow-neo-in col-span-2 lg:col-span-1">
+                        <span class="text-stone-400 block text-[10px] uppercase font-bold tracking-wider mb-1.5">当堂发言席位</span>
+                        <div class="space-y-2 mt-1" id="speakerStatsContainer">
+                            <span class="text-xs text-stone-400 italic">尚无元老发言</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 政策手册速查卡片 (Neoclassical Quote Box) -->
+            <section class="bg-neo-shimmer p-4 rounded-lg shadow-sm border border-neo-gold/20 text-xs text-center relative">
+                <div class="text-neo-gold text-lg leading-none absolute top-2 left-2 font-serif">“</div>
+                <p class="text-stone-500 italic leading-relaxed px-4 py-2 font-serif">
+                    “法律应当具备恒常的理性，而不夹杂个体的欲望。元老院之言即代表祖宗的智慧与共和国的根本利益。”
+                </p>
+                <div class="text-neo-gold text-lg leading-none absolute bottom-1 right-2 font-serif">”</div>
+                <div class="mt-1 text-[9px] text-neo-goldDark font-serif tracking-widest uppercase">
+                    — 《十二铜表法》精要 · SPQR
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- 底部状态栏 -->
+    <footer class="bg-white border-t border-neo-gold/30 py-3 px-6 text-center shrink-0">
+        <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px]">
+            <p class="text-stone-400">
+                元老院极简大理石终端 v9.5 — 新古典美学艺术设计
+            </p>
+            <div class="flex items-center space-x-2">
+                <span class="text-stone-400 font-bold uppercase tracking-wider">STATUS:</span>
+                <span id="globalStatus" class="font-serif font-bold px-3 py-0.5 rounded bg-neo-parchment text-neo-goldDark border border-neo-gold/30 shadow-inner">
+                    休会中 (IDLE)
+                </span>
+            </div>
+        </div>
+    </footer>
+
+    <!-- 全局轻量通知提示 -->
+    <div id="toast" class="fixed bottom-16 right-4 bg-neo-slate text-neo-alabaster text-xs px-4 py-2.5 rounded shadow-lg transition-all duration-300 transform translate-y-12 opacity-0 pointer-events-none z-50 flex items-center gap-2 border border-neo-gold/30">
+        <span id="toastIcon">🛡️</span>
+        <span id="toastMsg" class="font-serif">提示内容</span>
+    </div>
+
+    <!-- 页面核心逻辑 -->
+    <script>
+        // 1. 预定义发言元老颜色调色板 (映射 agent 名字 -> 卡片风格，极致柔和浅色调)
+        const agentColors = [
+            { 
+                bg: 'bg-[#FAF5F5]/80', 
+                border: 'border-[#EAD3D3]', 
+                text: 'text-[#7A4B4B]', 
+                badge: 'bg-[#F2E4E4] text-[#7A4B4B]',
+                borderLeft: 'border-l-4 border-l-[#D99A9A]',
+                avatar: '🌹' 
+            },
+            { 
+                bg: 'bg-[#FAF8F5]/80', 
+                border: 'border-[#EADEC3]', 
+                text: 'text-[#7A613B]', 
+                badge: 'bg-[#F2EBDA] text-[#7A613B]',
+                borderLeft: 'border-l-4 border-l-[#D9C49A]',
+                avatar: '🦅' 
+            },
+            { 
+                bg: 'bg-[#F4F7F9]/80', 
+                border: 'border-[#CBE0EC]', 
+                text: 'text-[#3B5C7A]', 
+                badge: 'bg-[#E5EEF4] text-[#3B5C7A]',
+                borderLeft: 'border-l-4 border-l-[#9ABED9]',
+                avatar: '⚖️' 
+            },
+            { 
+                bg: 'bg-[#F5FAF6]/80', 
+                border: 'border-[#CCE6D5]', 
+                text: 'text-[#3B7A50]', 
+                badge: 'bg-[#E5F2EA] text-[#3B7A50]',
+                borderLeft: 'border-l-4 border-l-[#9AD9AD]',
+                avatar: '🌾' 
+            },
+            { 
+                bg: 'bg-[#FAF6FC]/80', 
+                border: 'border-[#E5D7EC]', 
+                text: 'text-[#6A4B7A]', 
+                badge: 'bg-[#F2E5F4] text-[#6A4B7A]',
+                borderLeft: 'border-l-4 border-l-[#C79AD9]',
+                avatar: '🍇' 
+            }
+        ];
+
+        // 默认市民(插话)颜色 (典雅浅紫边条)
+        const citizenColor = {
+            bg: 'bg-[#F9F7FC]/90',
+            border: 'border-[#E2D5F0]',
+            text: 'text-[#58397A]',
+            badge: 'bg-[#F1E9FA] text-[#58397A]',
+            borderLeft: 'border-l-4 border-l-[#B89AD9]',
+            avatar: '📢'
+        };
+
+        // 动态分配颜色缓存，确保同名总是同色
+        const agentColorMap = new Map();
+        let colorCounter = 0;
+
+        function getAgentColor(agentName) {
+            if (agentName === '公民' || agentName === '【公民】') {
+                return citizenColor;
+            }
+            if (!agentColorMap.has(agentName)) {
+                const color = agentColors[colorCounter % agentColors.length];
+                agentColorMap.set(agentName, color);
+                colorCounter++;
+            }
+            return agentColorMap.get(agentName);
+        }
+
+        // DOM 元素获取
+        const topicInput = document.getElementById('topicInput');
+        const roundsSelect = document.getElementById('roundsSelect');
+        const summonBtn = document.getElementById('summonBtn');
+        const modeToggle = document.getElementById('modeToggle');
+        const modeLabel = document.getElementById('modeLabel');
+        const endpointCode = document.getElementById('endpointCode');
+        const debateStream = document.getElementById('debateStream');
+        const emptyState = document.getElementById('emptyState');
+        const currentTopicDisplay = document.getElementById('currentTopicDisplay');
+        const clearBtn = document.getElementById('clearBtn');
+        const statusIndicator = document.getElementById('statusIndicator');
+        const globalStatus = document.getElementById('globalStatus');
+        
+        // 插话/陈情相关
+        const interruptionInput = document.getElementById('interruptionInput');
+        const petitionBtn = document.getElementById('petitionBtn');
+        const pendingInterruptionBadge = document.getElementById('pendingInterruptionBadge');
+        const pendingText = document.getElementById('pendingText');
+        const cancelPendingBtn = document.getElementById('cancelPendingBtn');
+
+        // 统计数据
+        const statTokens = document.getElementById('statTokens');
+        const statRounds = document.getElementById('statRounds');
+        // 全局运行变量
+        let isDebating = false;
+        let currentMaxRounds = 3;
+        let currentRoundNum = 0;
+        let totalEstimatedTokens = 0;
+        let activeController = null; 
+        let pendingInterruption = ""; 
+
+        // 各人发言统计字典（动态，元老名字运行时自动添加）
+        const speakerCounts = {};
+
+        // 轻量提示
+        function showToast(msg, icon = "🛡️") {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMsg').innerText = msg;
+            document.getElementById('toastIcon').innerText = icon;
+            toast.classList.remove('translate-y-12', 'opacity-0', 'pointer-events-none');
+            toast.classList.add('translate-y-0', 'opacity-100');
+            setTimeout(() => {
+                toast.classList.add('translate-y-12', 'opacity-0', 'pointer-events-none');
+                toast.classList.remove('translate-y-0', 'opacity-100');
+            }, 3000);
+        }
+
+        // 切换模式
+        modeToggle.addEventListener('change', () => {
+            if (modeToggle.checked) {
+                modeLabel.innerText = "模拟运行 (Mock Mode)";
+                endpointCode.innerText = "LOCAL SIMULATOR (No server needed)";
+                endpointCode.classList.replace('text-[#3B7A50]', 'text-stone-600');
+            } else {
+                modeLabel.innerText = "本地接口模式 (Live API)";
+                endpointCode.innerText = "POST /api/council/stream";
+                endpointCode.classList.replace('text-stone-600', 'text-[#3B7A50]');
+            }
+        });
+
+        // 拂拭大理石记录板
+        clearBtn.addEventListener('click', () => {
+            if (isDebating) {
+                showToast("辩论正处于交锋阶段，无法拂拭大理石议事板！", "🏛️");
+                return;
+            }
+            debateStream.innerHTML = '';
+            debateStream.appendChild(emptyState);
+            emptyState.style.display = 'flex';
+            currentTopicDisplay.innerText = "(等待公民递交陈情...)";
+            totalEstimatedTokens = 0;
+            currentRoundNum = 0;
+            statTokens.innerText = "0";
+            statRounds.innerText = "0 / 0";
+            Object.keys(speakerCounts).forEach(k => speakerCounts[k] = 0);
+            updateSpeakerCounters();
+            showToast("元老院辩论记录大理石板已清空拂拭完毕。", "🧹");
+        });
+
+        function updateSpeakerCounters() {
+            // 动态渲染所有元老的发言统计
+            let html = '';
+            for (const [name, count] of Object.entries(speakerCounts)) {
+                if (name === '公民' || name === '【公民】' || name === '🏛️ 传令官') continue;
+                const c = getAgentColor(name);
+                html += `<div class="flex justify-between items-center text-xs"><span class="${c.text}">${c.avatar} ${name}</span><span class="font-mono text-stone-500">${count} 次</span></div>`;
+            }
+            const statsContainer = document.getElementById('speakerStatsContainer');
+            if (statsContainer) statsContainer.innerHTML = html || '<span class="text-xs text-stone-400 italic">尚无元老发言</span>';
+        }
+
+        // 渲染发言气泡
+        function appendSpeechBubble(agent, text, isFinal = false, targetId = null) {
+            emptyState.style.display = 'none';
+            const color = getAgentColor(agent);
+            
+            // 计算 token 增长
+            if (!isFinal) {
+                totalEstimatedTokens += Math.floor(text.length * 1.5);
+                statTokens.innerText = totalEstimatedTokens;
+            }
+
+            // 发言次数计数
+            if (isFinal) {
+                speakerCounts[agent] = (speakerCounts[agent] || 0) + 1;
+                updateSpeakerCounters();
+            }
+
+            // 流式实时更新内容
+            if (targetId) {
+                const existingBubble = document.getElementById(targetId);
+                if (existingBubble) {
+                    const textEl = existingBubble.querySelector('.speech-text');
+                    if (textEl) {
+                        textEl.innerHTML = marked.parse(text || "");
+                    }
+                    debateStream.scrollTop = debateStream.scrollHeight;
+                    return;
+                }
+            }
+
+            // 新增发言卡片 (新古典浅色卡片)
+            const bubbleId = targetId || `bubble-${Date.now()}-${Math.floor(Math.random()*1000)}`;
+            const bubbleDiv = document.createElement('div');
+            bubbleDiv.id = bubbleId;
+            bubbleDiv.className = `p-4 rounded-lg border ${color.border} ${color.bg} ${color.borderLeft} shadow-sm animate-subtle-up relative transition-all duration-300 hover:shadow-md`;
+            
+            const isCitizen = (agent === '公民' || agent === '【公民】');
+            const badgeClass = color.badge;
+
+            bubbleDiv.innerHTML = `
+                <div class="flex items-center justify-between mb-2 pb-1.5 border-b border-stone-200/40">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs">${color.avatar}</span>
+                        <span class="font-serif font-bold text-xs ${color.text} tracking-wide">${agent}</span>
+                        <span class="text-[9px] uppercase tracking-[0.2em] px-1.5 py-0.5 rounded font-bold ${badgeClass}">
+                            ${isCitizen ? 'CITIZEN' : 'SENATOR'}
+                        </span>
+                    </div>
+                    <span class="text-[9px] text-stone-400 font-mono font-medium">${new Date().toLocaleTimeString()}</span>
+                </div>
+                <div class="speech-text text-xs leading-relaxed text-neo-slate font-sans tracking-wide">${marked.parse(text || "")}</div>
+            `;
+
+            debateStream.appendChild(bubbleDiv);
+            debateStream.scrollTo({
+                top: debateStream.scrollHeight,
+                behavior: 'smooth'
+            });
+
+            return bubbleId;
+        }
+
+        // 渲染轮次分界线
+        function appendRoundSeparator(roundNum) {
+            emptyState.style.display = 'none';
+            currentRoundNum = roundNum;
+            statRounds.innerText = `${currentRoundNum} / ${currentMaxRounds}`;
+
+            const sepDiv = document.createElement('div');
+            sepDiv.className = "flex items-center justify-center my-6 animate-subtle-up";
+            sepDiv.innerHTML = `
+                <div class="flex-1 border-t border-dashed border-neo-gold/40"></div>
+                <div class="mx-4 flex items-center space-x-2 text-neo-goldDark font-serif text-[10px] uppercase tracking-[0.25em] font-extrabold">
+                    <span>🏛️</span>
+                    <span>第 ${roundNum} 轮 审议开启</span>
+                    <span>🏛️</span>
+                </div>
+                <div class="flex-1 border-t border-dashed border-neo-gold/40"></div>
+            `;
+            debateStream.appendChild(sepDiv);
+            
+            debateStream.scrollTo({
+                top: debateStream.scrollHeight,
+                behavior: 'smooth'
+            });
+        }
+
+        // 递交插话/陈情
+        petitionBtn.addEventListener('click', () => {
+            const content = interruptionInput.value.trim();
+            if (!content) return;
+
+            pendingInterruption = content;
+            interruptionInput.value = "";
+            
+            pendingText.innerText = content;
+            pendingInterruptionBadge.classList.remove('hidden');
+            
+            showToast("公民陈情书已被执政官记录，在当前轮次闭幕后将立刻呈递元老审读！", "📜");
+            petitionBtn.disabled = true;
+        });
+
+        // 撤回插话
+        cancelPendingBtn.addEventListener('click', () => {
+            pendingInterruption = "";
+            pendingInterruptionBadge.classList.add('hidden');
+            petitionBtn.disabled = !isDebating;
+            showToast("紧急陈情书已从执政官案头撤回。", "🛡️");
+        });
+
+        // 控制面板开关状态
+        function setDebateState(running) {
+            isDebating = running;
+            if (running) {
+                summonBtn.innerHTML = `<span>⏳</span> <span>正在雄辩中...</span>`;
+                summonBtn.className = "w-full md:w-auto bg-gradient-to-b from-white to-neo-parchment text-neo-goldDark px-6 py-2.5 rounded font-serif font-bold text-xs shadow border border-neo-gold/30 transition flex items-center justify-center space-x-2 tracking-widest";
+                statusIndicator.classList.replace('bg-neo-gold', 'bg-[#D99A9A]');
+                globalStatus.innerText = "辩论激荡中 (DEBATING)";
+                globalStatus.className = "font-serif font-bold px-3 py-0.5 rounded bg-[#FAF4F4] text-[#7A4B4B] border border-[#EAD3D3] shadow-inner";
+                
+                petitionBtn.disabled = false;
+            } else {
+                summonBtn.innerHTML = `<span>🏛️</span> <span>召集元老议事</span>`;
+                summonBtn.className = "w-full md:w-auto bg-gradient-to-b from-[#F2ECE4] to-[#DDD2C4] hover:from-[#EAE1D5] hover:to-[#CFBFA9] text-neo-slate px-6 py-2.5 rounded font-serif font-bold text-xs shadow-md border border-neo-gold/60 transition active:scale-95 flex items-center justify-center space-x-2 tracking-widest";
+                statusIndicator.classList.replace('bg-[#D99A9A]', 'bg-neo-gold');
+                globalStatus.innerText = "议会休会中 (IDLE)";
+                globalStatus.className = "font-serif font-bold px-3 py-0.5 rounded bg-neo-parchment text-neo-goldDark border border-neo-gold/30 shadow-inner";
+                
+                petitionBtn.disabled = true;
+                pendingInterruptionBadge.classList.add('hidden');
+                pendingInterruption = "";
+            }
+        }
+
+        // 点击主控按钮
+        summonBtn.addEventListener('click', async () => {
+            if (isDebating) {
+                if (activeController) activeController.abort();
+                setDebateState(false);
+                showToast("大立法官敲击木槌，宣布元老院休会审议中止！", "🔨");
+                return;
+            }
+
+            const topic = topicInput.value.trim();
+            if (!topic) {
+                showToast("请先在执政官的羊皮纸上书写一项议题！", "✍️");
+                return;
+            }
+
+            // 清理与初始化
+            debateStream.innerHTML = '';
+            emptyState.style.display = 'none';
+            currentTopicDisplay.innerText = topic;
+            totalEstimatedTokens = 0;
+            statTokens.innerText = "0";
+            currentMaxRounds = parseInt(roundsSelect.value);
+            statRounds.innerText = `0 / ${currentMaxRounds}`;
+            Object.keys(speakerCounts).forEach(k => speakerCounts[k] = 0);
+            updateSpeakerCounters();
+
+            setDebateState(true);
+            showToast("圣火已熊熊燃烧，公民首发陈情入场！", "📜");
+
+            // 📢 极其重要：根据需求，首发必须是公民陈述背景！
+            appendSpeechBubble(
+                "【公民】", 
+                `诸位受神明庇佑、高尚而智慧的元老！身为罗马自由平民的民意代表，我在此怀着最崇高的敬意，向神圣的元老院正式呈交全罗马平民最急切的哀鸣与陈情：\n\n“${topic}”\n\n平民乃共和国征战之羽翼，亦是罗马万世之根基。恳请诸位大立法官与元老贤达展开公开听证与辩论，为我们指明未来之路！`, 
+                true
+            );
+
+            // 根据模式执行
+            if (modeToggle.checked) {
+                // 模拟运行 (Mock Engine) - 给公民发言1.8秒阅读余地，然后开始元老激辩
+                setTimeout(() => {
+                    if (isDebating) runMockDebate(topic, currentMaxRounds);
+                }, 1800);
+            } else {
+                // 本地 API 模式 (SSE 交互)
+                await startRealSSEDebate(topic, currentMaxRounds);
+            }
+        });
+
+        // API 实时连接逻辑
+        async function startRealSSEDebate(topic, maxRounds) {
+            activeController = new AbortController();
+            const { signal } = activeController;
+
+            try {
+                const response = await fetch('/api/council/stream', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        topic: topic,
+                        maxRounds: maxRounds,
+                        interruption: pendingInterruption
+                    }),
+                    signal
+                });
+
+                if (!response.ok) {
+                    throw new Error(`连接元老院失败 (Status: ${response.status})`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder("utf-8");
+                let buffer = "";
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop();
+
+                    for (const line of lines) {
+                        const cleanLine = line.trim();
+                        if (!cleanLine) continue;
+
+                        if (cleanLine.startsWith("data: ")) {
+                            const dataStr = cleanLine.slice(6);
+                            if (dataStr === '[DONE]') {
+                                handleSSEFrame({ type: 'done' });
+                                break;
+                            }
+                            try {
+                                const parsed = JSON.parse(dataStr);
+                                handleSSEFrame(parsed);
+                            } catch (err) {
+                                console.warn("解析元老院大理石流失败：", err);
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    console.log("用户强行终止辩论。");
+                } else {
+                    console.error("API 异常: ", err);
+                    showToast(`元老院回廊发生震颤 (API 异常): ${err.message}`, "⛈️");
+                    setDebateState(false);
+                    appendSpeechBubble("🏛️ 传令官", `报告执政官，因道路坍塌阻隔（API连接失败），辩论未能顺利终结。请检查后端 /api/council/stream。`, true);
+                }
+            }
+        }
+
+        let currentSpeechBubbleId = null;
+        let lastAgentName = "";
+
+        function handleSSEFrame(frame) {
+            switch (frame.type) {
+                case "topic":
+                    currentTopicDisplay.innerText = frame.text;
+                    break;
+                case "round":
+                    appendRoundSeparator(frame.round);
+                    currentSpeechBubbleId = null;
+                    lastAgentName = "";
+                    break;
+                case "speech":
+                    if (frame.agent !== lastAgentName) {
+                        currentSpeechBubbleId = appendSpeechBubble(frame.agent, frame.text, true);
+                        lastAgentName = frame.agent;
+                    } else {
+                        appendSpeechBubble(frame.agent, frame.text, false, currentSpeechBubbleId);
+                    }
+                    break;
+                case "done":
+                    showToast("元老会审议共识结案，传令官宣布鸣金闭会！", "🕊️");
+                    setDebateState(false);
+                    break;
+            }
+        }
+
+        // 【全新古典高品格模拟辩论演武引擎】
+        function runMockDebate(topic, maxRounds) {
+            let round = 1;
+            let speakerIdx = 0;
+            
+            const senators = [
+                {
+                    name: '加图',
+                    avatar: '🌹',
+                    generateOpinion: (t, hasInter) => {
+                        let text = `尊敬的执政官，高贵的同僚们！针对方才公民提出的“${t}”，老臣绝不允许我们在数典忘祖的狂妄中前行！罗马之壮阔，并非凭借无度的变革，而是依托于先人神圣而坚不可摧的法统守望 (Mos Maiorum)！`;
+                        if (hasInter) {
+                            text += `\n此外，针对刚才突如其来的‘市民陈情’，哼！平民的温饱固然需要恤问，但国家的坚固依靠的是严明法治，而绝不是对暴民街头喧嚣的惊慌妥协！若肆意瓜分公有遗产，无异于毁我社稷之精骨！`;
+                        } else {
+                            text += ` 如果我们因为一时的怜悯而对祖宗的成法予以肢解，这就是将共和国最坚固的盾牌拆解为烧柴！守旧制，国则得永昌。`;
+                        }
+                        text += ` 并且，吾辈重申：迦太基必须毁灭 (Ceterum censeo Carthaginem esse delendam)！`;
+                        return text;
+                    }
+                },
+                {
+                    name: '凯撒',
+                    avatar: '🦅',
+                    generateOpinion: (t, hasInter) => {
+                        let text = `哈哈，慷慨的加图，你的袍泽上总是布满了古旧的灰尘！关于公民所提之“${t}”，时代的车轮发出雷鸣，抱着昔日的枯骨大谈坚守，才是对元老院职责最不可原谅的逃避！战袍染血的百夫长、辛勤耕作的自耕农，他们正是为了罗马的生命力而战。`;
+                        if (hasInter) {
+                            text += `\n对于刚才那声穿透神庙的哀求，我感同身受！如果那些为共和国血战沙场的士兵回到家乡却流离失所，而我们的权贵却在奢华的别墅中沉沦，罗马终将自掘坟墓！土地法改革必须推行，掷地有声！`;
+                        } else {
+                            text += ` 伟业绝不属于那些驻足畏缩的人。当我们跨过变革之河时，罗马才能浴火重生。`;
+                        }
+                        text += ` 骰子已经掷下 (Alea iacta est)，让我们用勇气与公义卫冕罗马！`;
+                        return text;
+                    }
+                },
+                {
+                    name: '西塞罗',
+                    avatar: '⚖️',
+                    generateOpinion: (t, hasInter) => {
+                        let text = `诸位同僚，两党交恶之火几乎要灼伤神庙的梁柱，请熄灭你们的私愤！关于“${t}”，加图执于古法而凯撒急于利民，各执一端，终将使台伯河两岸沦为撕裂。我们必须重新构筑各阶级的神圣和谐 (Concordia Ordinum)，以中道引领罗马。`;
+                        if (hasInter) {
+                            text += `\n至于突发的平民陈情，其情可怜，其言却偏执。没收贵族土地是粗暴的掠夺，而不施援手亦是残忍的渎职。为此，我建议设立‘平民赎买法案’：由国库低息划拨银两，在自愿原则下对闲置土地予以补偿性赎买！`;
+                        } else {
+                            text += ` 我们唯有秉持自然法之崇高正义，于法治与理性之中，克制私欲，方能得两党和谐之至美。`;
+                        }
+                        text += ` 呜呼！这是何等堕落的时代！这是何等颓废的风气！(O tempora, o mores!) 让我们重拾宽容，罗马方能免于自我毁灭。`;
+                        return text;
+                    }
+                }
+            ];
+
+            appendRoundSeparator(round);
+
+            function nextSpeaker() {
+                if (!isDebating) return;
+
+                if (speakerIdx >= senators.length) {
+                    // 查看本轮是否有“挂起”的公民紧急插话
+                    if (pendingInterruption) {
+                        const savedInterruption = pendingInterruption;
+                        pendingInterruption = ""; 
+                        pendingInterruptionBadge.classList.add('hidden');
+                        
+                        setTimeout(() => {
+                            if (!isDebating) return;
+                            // 公民插话作为新一轮对话前的触点出现
+                            appendSpeechBubble("【公民】", `（紧急在堂前伏地大呼）诸位高尚的元老！请垂听平民最后的陈情！${savedInterruption}`, true);
+                            
+                            petitionBtn.disabled = false;
+                            round++;
+                            if (round > maxRounds) {
+                                finishDebate();
+                            } else {
+                                speakerIdx = 0;
+                                setTimeout(() => {
+                                    if (!isDebating) return;
+                                    appendRoundSeparator(round);
+                                    // 开启下一轮，元老发言中会对刚才插话进行强烈反响
+                                    setTimeout(() => startSpeech(true), 1500); 
+                                }, 2000);
+                            }
+                        }, 1200);
+                        return;
+                    }
+
+                    // 正常晋级下一轮
+                    round++;
+                    if (round > maxRounds) {
+                        finishDebate();
+                        return;
+                    } else {
+                        speakerIdx = 0;
+                        setTimeout(() => {
+                            if (!isDebating) return;
+                            appendRoundSeparator(round);
+                            setTimeout(() => startSpeech(false), 1500);
+                        }, 2000);
+                        return;
+                    }
+                }
+
+                startSpeech(false);
+            }
+
+            function startSpeech(hasInter) {
+                if (!isDebating) return;
+                const sen = senators[speakerIdx];
+                const fullText = sen.generateOpinion(topic, hasInter);
+                
+                let currentLen = 0;
+                const bubbleId = appendSpeechBubble(sen.name, "", false);
+                
+                // 模拟打字机流式输出
+                const timer = setInterval(() => {
+                    if (!isDebating) {
+                        clearInterval(timer);
+                        return;
+                    }
+                    currentLen += Math.floor(Math.random() * 4) + 3;
+                    if (currentLen >= fullText.length) {
+                        currentLen = fullText.length;
+                        clearInterval(timer);
+                        
+                        appendSpeechBubble(sen.name, fullText.slice(0, currentLen), true, bubbleId);
+                        speakerIdx++;
+                        setTimeout(nextSpeaker, 2000);
+                    } else {
+                        appendSpeechBubble(sen.name, fullText.slice(0, currentLen), false, bubbleId);
+                    }
+                }, 35);
+            }
+
+            function finishDebate() {
+                showToast("元老会演练辩论结束，执政官收起法典！", "🕊️");
+                setDebateState(false);
+            }
+
+            // 首位元老在公民开场陈情后接手辩驳
+            setTimeout(() => {
+                startSpeech(false);
+            }, 1000);
+        }
+    </script>
+</body>
+</html>

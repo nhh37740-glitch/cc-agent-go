@@ -8,8 +8,8 @@
 
 ## 当前进度
 
-- 已完成：Demo v0–v10
-- 进行中：v11 狼人杀聊天室，以及将硬编码行动重构为结构化 `tool_use`
+- 已完成：Demo v0–v10；v10 核心 Agent 已迁移至仓库根目录
+- 后续：v11 狼人杀仅在 `feature/v11-werewolf` 分支继续，不进入主线 Agent 服务
 - 项目看板：[cc-agent-go Project](https://github.com/users/nhh37740-glitch/projects/1/views/1)
 
 ## 技术约束

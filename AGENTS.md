@@ -174,7 +174,7 @@ if err := action(); err != nil {
 
 ## 7. 版本追踪
 
-**当前版本：v11 🚧**
+**当前主线：v10 ✅（已迁移至仓库根目录）；v11 ⏸（后续在 `feature/v11-werewolf` 分支继续）**
 
 | 版本 | 新 Go 概念 | 涉及文件 | 状态 |
 | :--- | :--- | :--- | :--- |
@@ -189,7 +189,7 @@ if err := action(); err != nil {
 | v8 | `os.Getenv`、`os/exec`（`exec.CommandContext`）、`context.WithTimeout`、`strings.Fields` | `democode/v7/config/config.go`、`democode/v7/tool/bash.go` | ✅ |
 | v9 | `os.ReadDir`、`strings.HasSuffix`、`strings.TrimSuffix`、`sort.Strings`、结构体切片 + JSON 序列化、SSE 流式推送（复习）、路由整合（v7+council 共用 8080） | `democode/v9/main.go`、`democode/v9/service/council.go`、`democode/v9/personalities/*.md` | ✅ |
 | v10 | `strings.SplitN`（限制分割次数）、`json.Unmarshal`（从 `[]byte` 解析 JSON）、`strings.TrimPrefix`、`log` 包（`log.Printf` 写 stderr，无缓冲）、Tool 接口实现复习（再写一个 Tool 实现巩固接口概念） | `democode/v10/tool/skill.go`、`democode/v10/tool/create_skill.go`、`democode/v10/main.go` | ✅ |
-| v11 | `chan string` 阻塞等待（复习 goroutine）、`log.New` 自定义日志、SSE 帧协议、游戏状态机模式、`VisibleTo` 可见性过滤、昵称→人格动态映射 | `democode/v11/main.go`、`democode/v11/game/werewolf.go`、`democode/v11/service/room.go`、`democode/v11/service/memory.go`、`democode/v11/werewolf.html`、`democode/v11/personalities/werewolf/*.md` | 🚧 |
+| v11 | `chan string` 阻塞等待（复习 goroutine）、`log.New` 自定义日志、SSE 帧协议、游戏状态机模式、`VisibleTo` 可见性过滤、昵称→人格动态映射 | `democode/v11/main.go`、`democode/v11/game/werewolf.go`、`democode/v11/service/room.go`、`democode/v11/service/memory.go`、`democode/v11/werewolf.html`、`democode/v11/personalities/werewolf/*.md` | ⏸ 后续在 `feature/v11-werewolf` 分支继续 |
 
 v9 新功能：元老院多 Agent 辩论，回合制发言，SSE 流式推送，公民插话，配置化人格 MD 文件。
 v10 新功能：Skill 系统 —— `activate_skill` 工具动态加载 skill prompt，`create_skill` 工具创建新 skill，skill 文件存于 `workspace/skills/`。`Description()` 每次扫目录自动发现新 skill，Execute() 按文件名匹配。Agent 可用 bash 工具增删 skill 文件，无需重启服务。
