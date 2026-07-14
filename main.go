@@ -369,7 +369,7 @@ func main() {
 	http.HandleFunc("POST /api/council", handleCouncil)
 	http.HandleFunc("POST /api/council/stream", handleCouncilStream)
 	http.HandleFunc("GET /council", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "index.html")
+		http.ServeFile(w, r, "council.html")
 	})
 	http.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "index.html")
