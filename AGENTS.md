@@ -201,3 +201,8 @@ v9 新功能：元老院多 Agent 辩论，回合制发言，SSE 流式推送，
 v10 新功能：Skill 系统 —— `activate_skill` 工具动态加载 skill prompt，`create_skill` 工具创建新 skill，skill 文件存于 `workspace/skills/`。`Description()` 每次扫目录自动发现新 skill，Execute() 按文件名匹配。Agent 可用 bash 工具增删 skill 文件，无需重启服务。
 
 每个版本完成后：将对应行状态更新为 ✅，并更新上方的 "当前版本" 字段。
+
+## 问题处理原则
+
+- 遇到失败、权限不足或工具能力受限时，先基于可验证证据分析原因、边界与可选解决路径，再提出替代方案。
+- 不以“换一个工具”代替根因分析；分析过程也是本项目的教学内容。
