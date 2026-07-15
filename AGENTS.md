@@ -68,7 +68,7 @@ curl "http://localhost:8080/api/chat/stream?message=你好"
 
 ## 4. 架构契约
 
-### 最终目录结构（v11）
+### 主线目标目录结构（v11）
 
 ```
 cc-agent-go/
@@ -84,10 +84,7 @@ cc-agent-go/
 │   ├── store.go             # 会话 JSON 文件读写 + 超长对话压缩
 │   ├── council.go           # 元老院多 Agent 辩论
 │   ├── stream.go            # SSE 流式推送
-│   ├── room.go              # 狼人杀房间消息持久化（VisibleTo 可见性）
-│   └── memory.go            # 狼人杀记忆管理（FilterMessages + BuildSystemPrompt）
-├── game/
-│   └── werewolf.go          # 狼人杀引擎：Phase/Role/State，阶段流转，行动记录，胜负判定
+│   └── trace.go             # Trace/Span 记录、错误分类与敏感信息脱敏
 ├── tool/
 │   ├── tool.go              # Tool 接口定义（隐式实现）
 │   ├── bash.go              # 白名单命令执行 + 30 秒超时
@@ -96,7 +93,6 @@ cc-agent-go/
 │   ├── registry.go          # 工具注册表：map[string]Tool
 │   └── validator.go         # 路径安全检查：resolve → Clean → HasPrefix
 ├── personalities/           # 元老人格 .md 文件
-│   └── werewolf/            # 狼人杀角色人格（werewolf_a/b, seer, witch, hunter, villager_a/b/c）
 ├── workspace/               # 运行时生成
 │   ├── memory/
 │   │   └── AGENT.MD         # Agent 长期记忆
@@ -104,7 +100,8 @@ cc-agent-go/
 │   │   └── _template.md
 │   └── data/
 │       └── sessions/        # 会话 JSON 持久化
-└── logs/                    # 运行日志
+└── logs/
+    └── traces/              # 每次 Agent 运行的 JSONL Trace
 ```
 
 ### Go 编码规则
@@ -174,7 +171,7 @@ if err := action(); err != nil {
 
 ## 7. 版本追踪
 
-**当前主线：v10 ✅（已迁移至仓库根目录）；v11 ⏸（后续在 `feature/v11-werewolf` 分支继续）**
+**当前主线：v11 🚧 Agent Trace、结构化日志、错误分类与运行回放**
 
 | 版本 | 新 Go 概念 | 涉及文件 | 状态 |
 | :--- | :--- | :--- | :--- |
@@ -189,11 +186,16 @@ if err := action(); err != nil {
 | v8 | `os.Getenv`、`os/exec`（`exec.CommandContext`）、`context.WithTimeout`、`strings.Fields` | `democode/v7/config/config.go`、`democode/v7/tool/bash.go` | ✅ |
 | v9 | `os.ReadDir`、`strings.HasSuffix`、`strings.TrimSuffix`、`sort.Strings`、结构体切片 + JSON 序列化、SSE 流式推送（复习）、路由整合（v7+council 共用 8080） | `democode/v9/main.go`、`democode/v9/service/council.go`、`democode/v9/personalities/*.md` | ✅ |
 | v10 | `strings.SplitN`（限制分割次数）、`json.Unmarshal`（从 `[]byte` 解析 JSON）、`strings.TrimPrefix`、`log` 包（`log.Printf` 写 stderr，无缓冲）、Tool 接口实现复习（再写一个 Tool 实现巩固接口概念） | `democode/v10/tool/skill.go`、`democode/v10/tool/create_skill.go`、`democode/v10/main.go` | ✅ |
-| v11 | `chan string` 阻塞等待（复习 goroutine）、`log.New` 自定义日志、SSE 帧协议、游戏状态机模式、`VisibleTo` 可见性过滤、昵称→人格动态映射 | `democode/v11/main.go`、`democode/v11/game/werewolf.go`、`democode/v11/service/room.go`、`democode/v11/service/memory.go`、`democode/v11/werewolf.html`、`democode/v11/personalities/werewolf/*.md` | ⏸ 后续在 `feature/v11-werewolf` 分支继续 |
+| v11 | `context.Context` 传递 Trace ID、HTTP middleware、`slog.With`、`time.Duration`、自定义错误类型、JSONL | `main.go`、`service/trace.go`、`logs/traces/` | 🚧 |
+| v12 | 表驱动测试、测试替身、确定性回放、评分器与回归数据集 | `eval/`、`service/*_test.go` | ⏳ |
+| v13 | Guardrails、Tool 权限等级、人工审批、暂停与恢复、幂等性 | `service/approval.go`、`tool/policy.go` | ⏳ |
+| v14 | JSON-RPC 2.0、MCP lifecycle、Tools/Resources/Prompts、STDIO 与 Streamable HTTP | `mcp/` | ⏳ |
+| v15 | checkpoint、任务状态机、取消、超时、重试与后台任务 | `service/workflow.go` | ⏳ |
+| v16 | Agent Card、A2A 任务协议、跨 Agent 通信与受控并行 | `a2a/` | ⏳ |
 
 v9 新功能：元老院多 Agent 辩论，回合制发言，SSE 流式推送，公民插话，配置化人格 MD 文件。
 v10 新功能：Skill 系统 —— `activate_skill` 工具动态加载 skill prompt，`create_skill` 工具创建新 skill，skill 文件存于 `workspace/skills/`。`Description()` 每次扫目录自动发现新 skill，Execute() 按文件名匹配。Agent 可用 bash 工具增删 skill 文件，无需重启服务。
-v11 新功能：狼人杀聊天室 —— 8 人局（7 AI + 1 人类），纯 Go 引擎驱动阶段流转，SSE 实时流推送，昵称伪装隐藏角色，VisibleTo 字段实现狼人/预言家/女巫私密消息，独立中性头像 Web UI。**待重构：引擎硬编码字符串匹配 → tool_use 结构化行动。**
+v11 主线目标：每次 Agent 请求生成 Trace ID，记录模型调用、工具调用、耗时、token、错误分类和最终状态，并支持按 Trace 回放问题链路。狼人杀实验仅保留在 `feature/v11-werewolf` 分支。
 
 每个版本完成后：将对应行状态更新为 ✅，并更新上方的 "当前版本" 字段。
 

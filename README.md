@@ -9,8 +9,11 @@
 ## 当前进度
 
 - 已完成：Demo v0–v10；v10 核心 Agent 已迁移至仓库根目录
-- 后续：v11 狼人杀仅在 `feature/v11-werewolf` 分支继续，不进入主线 Agent 服务
+- 当前主线：v11 Agent Trace、结构化日志、错误分类与运行回放
+- 后续路线：Eval → Guardrails/HITL → MCP → Durable Workflow → A2A
+- 狼人杀实验仅保留在 `feature/v11-werewolf` 分支，不进入主线 Agent 服务
 - 项目看板：[cc-agent-go Project](https://github.com/users/nhh37740-glitch/projects/1/views/1)
+- 详细路线：[ROADMAP.md](ROADMAP.md)
 
 ## 技术约束
 
