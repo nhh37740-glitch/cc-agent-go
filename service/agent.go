@@ -3,7 +3,7 @@ package service
 import (
 	"crypto/rand"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 
 	"cc-agent-go/config"
@@ -40,7 +40,8 @@ func Run(userMessage string, conversationId string, systemPrompt string,
 	// 加载历史消息（新会话返回空切片）
 	oldMessages, err := store.LoadMessages(conversationId)
 	if err != nil {
-		return "", conversationId, fmt.Errorf("加载历史消息失败: %w", err)
+		return "", conversationId, NewAppError(ErrorStorageRead,
+			"store.LoadMessages", 0, err)
 	}
 
 	// 构建本轮用户消息
@@ -55,8 +56,12 @@ func Run(userMessage string, conversationId string, systemPrompt string,
 	history := append(oldMessages, userMsg)
 
 	tools := registry.GetDefinitions()
-	log.Printf("[Agent] conv=%s, 历史消息=%d, 工具数=%d",
-		conversationId, len(oldMessages), len(tools))
+	slog.Info("Agent 非流式请求开始",
+		"component", "agent",
+		"operation", "service.Run",
+		"conversation_id", conversationId,
+		"history_messages", len(oldMessages),
+		"tool_count", len(tools))
 
 	// 记录本轮新增的消息（用于保存）
 	var newMessages []model.Message
@@ -74,9 +79,22 @@ func Run(userMessage string, conversationId string, systemPrompt string,
 
 		totalOutputTokens += resp.OutputTokens
 
-		log.Printf("[Agent] round=%d, text=%d chars, toolCalls=%d", round+1, len(resp.Text), len(resp.ToolCalls))
+		slog.Info("Agent 模型调用完成",
+			"component", "agent",
+			"operation", "service.Run",
+			"conversation_id", conversationId,
+			"round", round+1,
+			"text_length", len(resp.Text),
+			"tool_call_count", len(resp.ToolCalls),
+			"input_tokens", resp.InputTokens,
+			"output_tokens", resp.OutputTokens)
 		for _, tc := range resp.ToolCalls {
-			log.Printf("[Agent]   tool_use: %s(%v)", tc.Name, tc.Input)
+			slog.Info("Agent 请求执行工具",
+				"component", "agent",
+				"operation", "registry.Execute",
+				"conversation_id", conversationId,
+				"round", round+1,
+				"tool_name", tc.Name)
 		}
 
 		// 没有工具调用 → 模型给了最终回复
@@ -90,15 +108,24 @@ func Run(userMessage string, conversationId string, systemPrompt string,
 			newMessages = append(newMessages, assistantMsg)
 
 			// 保存本轮对话到文件
-			log.Printf("[Agent] 保存会话: conv=%s, newMessages=%d, totalOutputTokens=%d\n",
-				conversationId, len(newMessages), totalOutputTokens)
+			slog.Info("保存 Agent 会话",
+				"component", "storage",
+				"operation", "store.AppendTurnWithCompression",
+				"conversation_id", conversationId,
+				"new_messages", len(newMessages),
+				"output_tokens", totalOutputTokens)
 			saveErr := store.AppendTurnWithCompression(
 				conversationId, newMessages, totalOutputTokens,
 				cfg.CompressionThreshold,
 				makeCompressor(cfg, tools),
 			)
 			if saveErr != nil {
-				log.Printf("[Agent] 保存会话失败: %v\n", saveErr)
+				slog.Error("保存 Agent 会话失败",
+					"component", "storage",
+					"operation", "store.AppendTurnWithCompression",
+					"conversation_id", conversationId,
+					"error_kind", ErrorStorageWrite,
+					"error", saveErr)
 			}
 
 			return resp.Text, conversationId, nil
@@ -127,6 +154,14 @@ func Run(userMessage string, conversationId string, systemPrompt string,
 		for _, tc := range resp.ToolCalls {
 			result, execErr := registry.Execute(tc.Name, tc.Input)
 			if execErr != nil {
+				slog.Warn("工具执行失败，错误将交给下一轮模型调用",
+					"component", "tool",
+					"operation", "registry.Execute",
+					"conversation_id", conversationId,
+					"round", round+1,
+					"tool_name", tc.Name,
+					"error_kind", ErrorTool,
+					"error", execErr)
 				result = fmt.Sprintf("工具执行错误: %v", execErr)
 			}
 			// 超长结果截断，防止撑爆上下文
@@ -146,7 +181,9 @@ func Run(userMessage string, conversationId string, systemPrompt string,
 		// 工具结果只进 history，不进 newMessages
 	}
 
-	return "", conversationId, fmt.Errorf("达到最大工具调用轮数 %d，模型仍未给出最终回复", maxRounds)
+	return "", conversationId, NewAppError(ErrorAgentLimit,
+		"service.Run", 0,
+		fmt.Errorf("达到最大工具调用轮数 %d，模型仍未给出最终回复", maxRounds))
 }
 
 // RunStream 和 Run 逻辑一致，区别是用 ChatStream 替代 Chat，
@@ -161,9 +198,14 @@ func RunStream(userMessage string, conversationId string, systemPrompt string,
 
 	oldMessages, err := store.LoadMessages(conversationId)
 	if err != nil {
-		return "", conversationId, fmt.Errorf("加载历史消息失败: %w", err)
+		return "", conversationId, NewAppError(ErrorStorageRead,
+			"store.LoadMessages", 0, err)
 	}
-	log.Printf("[Agent] RunStream conv=%s loadedOld=%d\n", conversationId, len(oldMessages))
+	slog.Info("Agent 流式请求开始",
+		"component", "agent",
+		"operation", "service.RunStream",
+		"conversation_id", conversationId,
+		"history_messages", len(oldMessages))
 
 	userMsg := model.Message{
 		Role:    "user",
@@ -185,9 +227,22 @@ func RunStream(userMessage string, conversationId string, systemPrompt string,
 
 		totalOutputTokens += resp.OutputTokens
 
-		log.Printf("[Agent] round=%d, text=%d chars, toolCalls=%d", round+1, len(resp.Text), len(resp.ToolCalls))
+		slog.Info("Agent 流式模型调用完成",
+			"component", "agent",
+			"operation", "service.RunStream",
+			"conversation_id", conversationId,
+			"round", round+1,
+			"text_length", len(resp.Text),
+			"tool_call_count", len(resp.ToolCalls),
+			"input_tokens", resp.InputTokens,
+			"output_tokens", resp.OutputTokens)
 		for _, tc := range resp.ToolCalls {
-			log.Printf("[Agent]   tool_use: %s(%v)", tc.Name, tc.Input)
+			slog.Info("Agent 请求执行工具",
+				"component", "agent",
+				"operation", "registry.Execute",
+				"conversation_id", conversationId,
+				"round", round+1,
+				"tool_name", tc.Name)
 		}
 
 		if len(resp.ToolCalls) == 0 {
@@ -204,7 +259,12 @@ func RunStream(userMessage string, conversationId string, systemPrompt string,
 				makeCompressor(cfg, tools),
 			)
 			if saveErr != nil {
-				log.Printf("[Agent] 保存会话失败: %v\n", saveErr)
+				slog.Error("保存 Agent 会话失败",
+					"component", "storage",
+					"operation", "store.AppendTurnWithCompression",
+					"conversation_id", conversationId,
+					"error_kind", ErrorStorageWrite,
+					"error", saveErr)
 			}
 
 			return resp.Text, conversationId, nil
@@ -231,6 +291,14 @@ func RunStream(userMessage string, conversationId string, systemPrompt string,
 		for _, tc := range resp.ToolCalls {
 			result, execErr := registry.Execute(tc.Name, tc.Input)
 			if execErr != nil {
+				slog.Warn("工具执行失败，错误将交给下一轮模型调用",
+					"component", "tool",
+					"operation", "registry.Execute",
+					"conversation_id", conversationId,
+					"round", round+1,
+					"tool_name", tc.Name,
+					"error_kind", ErrorTool,
+					"error", execErr)
 				result = fmt.Sprintf("工具执行错误: %v", execErr)
 			}
 			if len(result) > maxToolResult {
@@ -249,7 +317,9 @@ func RunStream(userMessage string, conversationId string, systemPrompt string,
 		// 工具结果只进 history，不进 newMessages
 	}
 
-	return "", conversationId, fmt.Errorf("达到最大工具调用轮数 %d", maxRounds)
+	return "", conversationId, NewAppError(ErrorAgentLimit,
+		"service.RunStream", 0,
+		fmt.Errorf("达到最大工具调用轮数 %d", maxRounds))
 }
 
 // ========================================================================

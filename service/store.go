@@ -3,7 +3,7 @@ package service
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -400,8 +400,15 @@ func (s *Store) AppendTurnWithCompression(conversationId string, newMessages []m
 
 	newRunningTotal := existing.RunningTotalTokens + totalOutputTokens
 
-	log.Printf("[Store] AppendTurnWithCompression: conv=%s, existingMsgs=%d, newMsgs=%d, oldTokens=%d, newTokens=%d, threshold=%d\n",
-		conversationId, len(existing.Messages), len(newMessages), existing.RunningTotalTokens, totalOutputTokens, threshold)
+	slog.Info("准备追加会话消息",
+		"component", "storage",
+		"operation", "store.AppendTurnWithCompression",
+		"conversation_id", conversationId,
+		"existing_messages", len(existing.Messages),
+		"new_messages", len(newMessages),
+		"old_tokens", existing.RunningTotalTokens,
+		"new_tokens", totalOutputTokens,
+		"compression_threshold", threshold)
 
 	// handled 标记：压缩成功时为 true，跳过下面的普通追加逻辑
 	handled := false
@@ -411,7 +418,12 @@ func (s *Store) AppendTurnWithCompression(conversationId string, newMessages []m
 		summaryText, compressErr := compressor(existing.Messages)
 		if compressErr != nil {
 			// 压缩失败 → fallback 普通追加（不丢数据，和 Java 一致）
-			log.Printf("[Store] 压缩失败，fallback 普通追加: %v\n", compressErr)
+			slog.Warn("会话压缩失败，改为普通追加",
+				"component", "storage",
+				"operation", "store.AppendTurnWithCompression",
+				"conversation_id", conversationId,
+				"error_kind", errorKindOf(compressErr),
+				"error", compressErr)
 		} else if summaryText != "" {
 			// 压缩成功：旧消息归档，会话重建
 			s.archiveOldMessages(conversationId, existing.Messages)
@@ -449,7 +461,14 @@ func (s *Store) archiveOldMessages(conversationId string, oldMessages []model.Me
 	// 读已有归档（可能已经在之前压缩过）
 	var archive []model.Message
 	if data, err := os.ReadFile(path); err == nil {
-		json.Unmarshal(data, &archive)
+		if decodeErr := json.Unmarshal(data, &archive); decodeErr != nil {
+			slog.Warn("会话归档解析失败，将重新创建归档",
+				"component", "storage",
+				"operation", "store.archiveOldMessages.decode",
+				"conversation_id", conversationId,
+				"error_kind", ErrorStorageRead,
+				"error", decodeErr)
+		}
 	}
 	if archive == nil {
 		archive = []model.Message{}
@@ -459,13 +478,23 @@ func (s *Store) archiveOldMessages(conversationId string, oldMessages []model.Me
 
 	data, err := json.MarshalIndent(archive, "", "  ")
 	if err != nil {
-		log.Printf("[Store] 归档序列化失败: %v\n", err)
+		slog.Error("会话归档序列化失败",
+			"component", "storage",
+			"operation", "store.archiveOldMessages.marshal",
+			"conversation_id", conversationId,
+			"error_kind", ErrorStorageWrite,
+			"error", err)
 		return
 	}
 	data = append(data, '\n')
 
 	if err := os.WriteFile(path, data, 0644); err != nil {
-		log.Printf("[Store] 归档写入失败: %v\n", err)
+		slog.Error("会话归档写入失败",
+			"component", "storage",
+			"operation", "store.archiveOldMessages.write",
+			"conversation_id", conversationId,
+			"error_kind", ErrorStorageWrite,
+			"error", err)
 	}
 }
 

@@ -26,7 +26,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 | **并发** | goroutine + channel | Go 原生轻量并发 |
 | **存储** | JSON 文件 | `workspace/data/sessions/`，与 Java 版格式兼容 |
 | **日志** | `log/slog` | Go 1.21+ 结构化日志 |
-| **配置** | `os.Getenv` | 环境变量读取，无值时硬编码兜底 |
+| **配置** | `os.Getenv` | 环境变量读取；缺少 API Key 时返回配置错误 |
 | **外部命令** | `os/exec` | `exec.CommandContext` + `context.WithTimeout` |
 | **依赖管理** | `go.mod` | `require` 块必须为空 —— 零第三方依赖 |
 
@@ -50,7 +50,9 @@ Go 工具链内建格式化、静态分析、依赖管理，不需要 Prettier/E
 每个版本按以下流程执行：
 
 1. **开始前**：查看下方版本追踪表，确认当前版本 → 读取计划文件中对应版本的步骤和 Go 知识点 → 告知用户本版本会学到哪些 Go 概念
+   - 先读取根目录 `PROJECT_INDEX.md`；索引未记录当前代码时，读取代码并补充索引。
 2. **编码中**：遇到新语法/新标准库时主动解释（不需要等用户问）→ 写一段、编译一段，确保 `go build ./...` 通过
+   - 修改根目录 `main.go`、`config/`、`model/`、`service/` 或 `tool/` 中的正式 Go 文件时，同步更新 `PROJECT_INDEX.md`。
 3. **编码后**：`go build ./...` + `go vet ./...` 通过 → `go run main.go` 启动 → curl 验证端点 → 更新版本追踪表状态
 
 ### 验证模式
@@ -75,7 +77,7 @@ cc-agent-go/
 ├── main.go                  # 入口：注册路由，启动 HTTP 服务
 ├── go.mod                   # module cc-agent-go
 ├── config/
-│   └── config.go            # 配置加载（os.Getenv + 默认值）
+│   └── config.go            # 配置加载（os.Getenv）
 ├── model/
 │   └── types.go             # Message, ContentBlock, ChatRequest, ChatResponse, SessionJson
 ├── service/
@@ -84,7 +86,7 @@ cc-agent-go/
 │   ├── store.go             # 会话 JSON 文件读写 + 超长对话压缩
 │   ├── council.go           # 元老院多 Agent 辩论
 │   ├── stream.go            # SSE 流式推送
-│   └── trace.go             # Trace/Span 记录、错误分类与敏感信息脱敏
+│   └── errors.go            # 自定义错误类型、DeepSeek 状态与网络错误分类
 ├── tool/
 │   ├── tool.go              # Tool 接口定义（隐式实现）
 │   ├── bash.go              # 白名单命令执行 + 30 秒超时
@@ -100,8 +102,6 @@ cc-agent-go/
 │   │   └── _template.md
 │   └── data/
 │       └── sessions/        # 会话 JSON 持久化
-└── logs/
-    └── traces/              # 每次 Agent 运行的 JSONL Trace
 ```
 
 ### Go 编码规则
@@ -171,7 +171,7 @@ if err := action(); err != nil {
 
 ## 7. 版本追踪
 
-**当前主线：v11 🚧 Agent Trace、结构化日志、错误分类与运行回放**
+**当前主线：v12 ⏳ Agent Eval 与回归测试**
 
 | 版本 | 新 Go 概念 | 涉及文件 | 状态 |
 | :--- | :--- | :--- | :--- |
@@ -186,7 +186,7 @@ if err := action(); err != nil {
 | v8 | `os.Getenv`、`os/exec`（`exec.CommandContext`）、`context.WithTimeout`、`strings.Fields` | `democode/v7/config/config.go`、`democode/v7/tool/bash.go` | ✅ |
 | v9 | `os.ReadDir`、`strings.HasSuffix`、`strings.TrimSuffix`、`sort.Strings`、结构体切片 + JSON 序列化、SSE 流式推送（复习）、路由整合（v7+council 共用 8080） | `democode/v9/main.go`、`democode/v9/service/council.go`、`democode/v9/personalities/*.md` | ✅ |
 | v10 | `strings.SplitN`（限制分割次数）、`json.Unmarshal`（从 `[]byte` 解析 JSON）、`strings.TrimPrefix`、`log` 包（`log.Printf` 写 stderr，无缓冲）、Tool 接口实现复习（再写一个 Tool 实现巩固接口概念） | `democode/v10/tool/skill.go`、`democode/v10/tool/create_skill.go`、`democode/v10/main.go` | ✅ |
-| v11 | `context.Context` 传递 Trace ID、HTTP middleware、`slog.With`、`time.Duration`、自定义错误类型、JSONL | `main.go`、`service/trace.go`、`logs/traces/` | 🚧 |
+| v11 | `log/slog`、自定义错误类型、`errors.As`、`errors.Is`、HTTP 状态码映射 | `main.go`、`service/errors.go`、`service/client.go`、`service/stream.go` | ✅ |
 | v12 | 表驱动测试、测试替身、确定性回放、评分器与回归数据集 | `eval/`、`service/*_test.go` | ⏳ |
 | v13 | Guardrails、Tool 权限等级、人工审批、暂停与恢复、幂等性 | `service/approval.go`、`tool/policy.go` | ⏳ |
 | v14 | JSON-RPC 2.0、MCP lifecycle、Tools/Resources/Prompts、STDIO 与 Streamable HTTP | `mcp/` | ⏳ |
@@ -195,7 +195,7 @@ if err := action(); err != nil {
 
 v9 新功能：元老院多 Agent 辩论，回合制发言，SSE 流式推送，公民插话，配置化人格 MD 文件。
 v10 新功能：Skill 系统 —— `activate_skill` 工具动态加载 skill prompt，`create_skill` 工具创建新 skill，skill 文件存于 `workspace/skills/`。`Description()` 每次扫目录自动发现新 skill，Execute() 按文件名匹配。Agent 可用 bash 工具增删 skill 文件，无需重启服务。
-v11 主线目标：每次 Agent 请求生成 Trace ID，记录模型调用、工具调用、耗时、token、错误分类和最终状态，并支持按 Trace 回放问题链路。狼人杀实验仅保留在 `feature/v11-werewolf` 分支。
+v11 完成功能：使用 `slog` 输出 JSON 日志；把配置、网络、DeepSeek、存储和 Agent 轮数错误分类；普通 HTTP 接口返回统一 JSON 错误，SSE 返回统一 error 事件；工具错误继续作为 tool_result 交给下一次 LLM 调用。狼人杀实验仅保留在 `feature/v11-werewolf` 分支。
 
 每个版本完成后：将对应行状态更新为 ✅，并更新上方的 "当前版本" 字段。
 

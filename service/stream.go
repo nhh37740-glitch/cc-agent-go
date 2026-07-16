@@ -17,6 +17,10 @@ import (
 // 返回 *ApiResponse（完整文本 + 工具调用 + token 用量）。
 func ChatStream(messages []model.Message, systemPrompt string, cfg config.Config,
 	tools []map[string]any, maxTokens int, onToken func(string)) (*model.ApiResponse, error) {
+	if strings.TrimSpace(cfg.ApiKey) == "" {
+		return nil, NewAppError(ErrorConfig, "service.ChatStream", 0,
+			fmt.Errorf("DEEPSEEK_API_KEY 未设置"))
+	}
 
 	body := map[string]any{
 		"model":      cfg.Model,
@@ -31,12 +35,12 @@ func ChatStream(messages []model.Message, systemPrompt string, cfg config.Config
 
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
-		return nil, fmt.Errorf("序列化请求体失败: %w", err)
+		return nil, NewAppError(ErrorInternal, "service.ChatStream.marshal", 0, err)
 	}
 
 	req, err := http.NewRequest("POST", cfg.ApiEndpoint, bytes.NewReader(jsonBody))
 	if err != nil {
-		return nil, fmt.Errorf("创建请求失败: %w", err)
+		return nil, NewAppError(ErrorConfig, "service.ChatStream.newRequest", 0, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", cfg.ApiKey)
@@ -44,13 +48,17 @@ func ChatStream(messages []model.Message, systemPrompt string, cfg config.Config
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("API 请求失败: %w", err)
+		return nil, newNetworkError("service.ChatStream.do", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API 返回 %d: %s", resp.StatusCode, string(bodyBytes))
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return nil, NewAppError(ErrorProviderResponseInvalid,
+				"service.ChatStream.readErrorResponse", resp.StatusCode, readErr)
+		}
+		return nil, newProviderError("service.ChatStream.provider", resp.StatusCode, bodyBytes, cfg.ApiKey)
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -159,7 +167,7 @@ done:
 			ToolCalls:    toolCalls,
 			InputTokens:  inputTokens,
 			OutputTokens: outputTokens,
-		}, fmt.Errorf("读取流失败: %w", err)
+		}, newNetworkError("service.ChatStream.readStream", err)
 	}
 	return &model.ApiResponse{
 		Text:         fullText.String(),

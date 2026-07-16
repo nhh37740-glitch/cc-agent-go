@@ -6,16 +6,15 @@ v0–v10 已经完成 Agent 基础能力：HTTP、SSE、模型调用、工具循
 
 主线从 v11 开始停止扩展游戏功能，转向求职更有价值的 Agent 工程化能力：可观察、可评测、可控制、可恢复、可互操作。
 
-## v11：Agent Trace 与运行回放
+## v11：结构化日志与错误分类
 
-目标：能用证据回答一次 Agent 运行中“谁在什么时候做了什么，为什么失败”。
+目标：让前端收到稳定、安全的错误码，让 Codex 可以直接分析 Go 服务输出的 JSON 日志。
 
-- 为每次请求生成 `traceId`，使用 `context.Context` 贯穿 HTTP、Agent、模型和工具层
-- 用 JSONL 记录 `run_start`、`model_call`、`tool_start`、`tool_end`、`run_end`、`run_error`
-- 记录 conversationId、轮次、耗时、token、工具名、脱敏参数、错误类别
-- 将错误分类为配置、网络、代理、鉴权、Provider、模型、工具和存储错误
-- 提供 Trace 查询和回放能力
-- API Key、Authorization header 和敏感正文不得进入日志
+- 使用 `log/slog` 向 stderr 输出 JSON 日志
+- 将配置、网络、超时、DeepSeek 鉴权、限流、Provider、存储和 Agent 轮数错误分类
+- 普通 HTTP 接口返回统一 JSON 错误，SSE 返回统一 `error` 事件
+- 工具错误继续作为 `tool_result` 交给下一次 LLM 调用
+- API Key、用户正文、模型回复和工具参数不得进入日志
 
 ## v12：Agent Eval 与回归测试
 
@@ -24,7 +23,7 @@ v0–v10 已经完成 Agent 基础能力：HTTP、SSE、模型调用、工具循
 - 建立版本化评测数据集
 - 验证工具选择、参数、完成度、轮数、耗时和安全约束
 - 使用模拟模型与工具实现确定性测试
-- 支持历史 Trace 转换为回归用例
+- 支持把历史失败案例转换为回归用例
 - 输出通过率和版本对比报告
 
 ## v13：Guardrails 与人工审批
@@ -64,14 +63,14 @@ v0–v10 已经完成 Agent 基础能力：HTTP、SSE、模型调用、工具循
 - 发布 Agent Card 和能力描述
 - 实现任务创建、状态查询、消息和产物传递
 - 对独立任务使用受控并行，对共享状态使用顺序执行
-- 为每个子 Agent 设置最小工具集、预算、超时和 Trace
+- 为每个子 Agent 设置最小工具集、预算、超时和独立错误日志
 - 通过 Eval 判断多 Agent 是否真的优于单 Agent
 
 ## 暂不优先
 
 - 继续扩展狼人杀和更多人格 Demo
 - 只靠修改 Prompt 追求偶然效果
-- 在没有 Trace 和 Eval 前增加复杂多 Agent 编排
+- 在没有 Eval 和错误分类前增加复杂多 Agent 编排
 - 为追逐框架而同时学习多个 Agent 框架
 
 ## 参考规范

@@ -37,6 +37,14 @@ type ChatResponse struct {
 	Reply          string `json:"reply"`
 }
 
+// ErrorResponse 是非流式 HTTP 错误响应。ProviderStatus 只在 DeepSeek
+// 返回非成功状态码时出现。
+type ErrorResponse struct {
+	Code           string `json:"code"`
+	Message        string `json:"message"`
+	ProviderStatus int    `json:"providerStatus,omitempty"`
+}
+
 // ========== v7 新增 ==========
 
 // ApiResponse 封装 DeepSeek API 调用的完整返回值。
