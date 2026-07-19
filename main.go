@@ -1,17 +1,22 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
+	"time"
 
 	"cc-agent-go/config"
+	"cc-agent-go/mcp"
 	"cc-agent-go/model"
 	"cc-agent-go/service"
 	"cc-agent-go/tool"
@@ -95,6 +100,7 @@ func buildSystemPrompt() string {
 }
 
 var registry = tool.NewRegistry()
+var mcpServerManager *mcp.MCPServerManager
 
 func publicError(err error) (int, model.ErrorResponse) {
 	status := http.StatusInternalServerError
@@ -104,43 +110,77 @@ func publicError(err error) (int, model.ErrorResponse) {
 	}
 
 	var appErr *service.AppError
-	if !errors.As(err, &appErr) {
+	if errors.As(err, &appErr) {
+		resp.Code = string(appErr.Kind)
+		resp.ProviderStatus = appErr.ProviderStatus
+		switch appErr.Kind {
+		case service.ErrorInvalidRequest:
+			status = http.StatusBadRequest
+			resp.Message = "请求参数无效。"
+		case service.ErrorConfig:
+			status = http.StatusServiceUnavailable
+			resp.Message = "服务端未配置 DEEPSEEK_API_KEY。"
+		case service.ErrorProviderAuth:
+			status = http.StatusBadGateway
+			resp.Message = "DeepSeek API 鉴权失败，请检查服务端 DEEPSEEK_API_KEY。"
+		case service.ErrorProviderRateLimit:
+			status = http.StatusServiceUnavailable
+			resp.Message = "DeepSeek 请求过于频繁，请稍后重试。"
+		case service.ErrorProvider, service.ErrorProviderResponseInvalid:
+			status = http.StatusBadGateway
+			resp.Message = "DeepSeek 服务返回异常。"
+		case service.ErrorNetwork:
+			status = http.StatusBadGateway
+			resp.Message = "无法连接 DeepSeek 服务。"
+		case service.ErrorNetworkTimeout:
+			status = http.StatusGatewayTimeout
+			resp.Message = "连接 DeepSeek 服务超时。"
+		case service.ErrorStorageRead:
+			status = http.StatusInternalServerError
+			resp.Message = "读取会话数据失败。"
+		case service.ErrorStorageWrite:
+			status = http.StatusInternalServerError
+			resp.Message = "写入会话数据失败。"
+		case service.ErrorAgentLimit:
+			status = http.StatusInternalServerError
+			resp.Message = "Agent 达到最大工具调用轮数。"
+		}
 		return status, resp
 	}
 
-	resp.Code = string(appErr.Kind)
-	resp.ProviderStatus = appErr.ProviderStatus
-	switch appErr.Kind {
-	case service.ErrorInvalidRequest:
+	var mcpErr *mcp.Error
+	if !errors.As(err, &mcpErr) {
+		return status, resp
+	}
+	resp.Code = string(mcpErr.Kind)
+	switch mcpErr.Kind {
+	case mcp.ErrorServerNotFound:
 		status = http.StatusBadRequest
-		resp.Message = "请求参数无效。"
-	case service.ErrorConfig:
-		status = http.StatusServiceUnavailable
-		resp.Message = "服务端未配置 DEEPSEEK_API_KEY。"
-	case service.ErrorProviderAuth:
-		status = http.StatusBadGateway
-		resp.Message = "DeepSeek API 鉴权失败，请检查服务端 DEEPSEEK_API_KEY。"
-	case service.ErrorProviderRateLimit:
-		status = http.StatusServiceUnavailable
-		resp.Message = "DeepSeek 请求过于频繁，请稍后重试。"
-	case service.ErrorProvider, service.ErrorProviderResponseInvalid:
-		status = http.StatusBadGateway
-		resp.Message = "DeepSeek 服务返回异常。"
-	case service.ErrorNetwork:
-		status = http.StatusBadGateway
-		resp.Message = "无法连接 DeepSeek 服务。"
-	case service.ErrorNetworkTimeout:
+		resp.Message = "选择的 MCP Server 不存在。"
+	case mcp.ErrorConfigurationInvalid:
+		status = http.StatusInternalServerError
+		resp.Message = "MCP 配置文件无效。"
+	case mcp.ErrorRequestTimeout:
 		status = http.StatusGatewayTimeout
-		resp.Message = "连接 DeepSeek 服务超时。"
-	case service.ErrorStorageRead:
-		status = http.StatusInternalServerError
-		resp.Message = "读取会话数据失败。"
-	case service.ErrorStorageWrite:
-		status = http.StatusInternalServerError
-		resp.Message = "写入会话数据失败。"
-	case service.ErrorAgentLimit:
-		status = http.StatusInternalServerError
-		resp.Message = "Agent 达到最大工具调用轮数。"
+		resp.Message = "MCP Server 请求超时。"
+	case mcp.ErrorServerStartFailed:
+		status = http.StatusBadGateway
+		resp.Message = "MCP Server 进程启动失败。"
+	case mcp.ErrorInitializeFailed:
+		status = http.StatusBadGateway
+		resp.Message = "MCP Server 初始化失败。"
+	case mcp.ErrorToolsNotSupported:
+		status = http.StatusBadGateway
+		resp.Message = "MCP Server 没有提供工具。"
+	case mcp.ErrorToolListFailed:
+		status = http.StatusBadGateway
+		resp.Message = "读取 MCP Server 工具列表失败。"
+	case mcp.ErrorProcessStopped:
+		status = http.StatusBadGateway
+		resp.Message = "MCP Server 进程已经停止。"
+	case mcp.ErrorProtocolResponseInvalid:
+		status = http.StatusBadGateway
+		resp.Message = "MCP Server 返回了无效数据。"
 	}
 	return status, resp
 }
@@ -209,6 +249,105 @@ func writeSSEError(w http.ResponseWriter, flusher http.Flusher, operation string
 
 func invalidRequestError(operation string, err error) *service.AppError {
 	return service.NewAppError(service.ErrorInvalidRequest, operation, 0, err)
+}
+
+// ============================================================================
+// MCP Server 选择路由
+// ============================================================================
+
+type FrontendMCPServerSelectionJSON struct {
+	SelectedMCPServerNames []string `json:"selectedServerNames"`
+}
+
+type MCPServerListJSON struct {
+	Servers []mcp.MCPServerStatus `json:"servers"`
+}
+
+func handleListMCPServers(responseWriter http.ResponseWriter, httpRequest *http.Request) {
+	if mcpServerManager == nil {
+		writeAPIError(
+			responseWriter,
+			"handleListMCPServers",
+			"",
+			mcp.NewError(
+				mcp.ErrorConfigurationInvalid,
+				"handleListMCPServers",
+				"",
+				fmt.Errorf("MCPServerManager 尚未初始化"),
+			),
+		)
+		return
+	}
+
+	responseWriter.Header().Set("Content-Type", "application/json;charset=UTF-8")
+	if encodeServerListError := json.NewEncoder(responseWriter).Encode(MCPServerListJSON{
+		Servers: mcpServerManager.ListConfiguredMCPServers(),
+	}); encodeServerListError != nil {
+		slog.Error("MCP Server 列表 JSON 写入失败",
+			"component", "http",
+			"operation", "handleListMCPServers",
+			"error_kind", service.ErrorInternal,
+			"error", encodeServerListError)
+	}
+}
+
+func handleSelectMCPServers(responseWriter http.ResponseWriter, httpRequest *http.Request) {
+	var frontendMCPServerSelectionJSON FrontendMCPServerSelectionJSON
+	if decodeSelectionError := json.NewDecoder(httpRequest.Body).Decode(
+		&frontendMCPServerSelectionJSON,
+	); decodeSelectionError != nil {
+		writeAPIError(
+			responseWriter,
+			"handleSelectMCPServers.decodeSelection",
+			"",
+			invalidRequestError(
+				"handleSelectMCPServers.decodeSelection",
+				decodeSelectionError,
+			),
+		)
+		return
+	}
+	if mcpServerManager == nil {
+		writeAPIError(
+			responseWriter,
+			"handleSelectMCPServers",
+			"",
+			mcp.NewError(
+				mcp.ErrorConfigurationInvalid,
+				"handleSelectMCPServers",
+				"",
+				fmt.Errorf("MCPServerManager 尚未初始化"),
+			),
+		)
+		return
+	}
+
+	mcpServerStatuses, applySelectionError :=
+		mcpServerManager.StartSelectedMCPServers(
+			httpRequest.Context(),
+			frontendMCPServerSelectionJSON.SelectedMCPServerNames,
+			registry,
+		)
+	if applySelectionError != nil {
+		writeAPIError(
+			responseWriter,
+			"handleSelectMCPServers.startSelectedMCPServers",
+			"",
+			applySelectionError,
+		)
+		return
+	}
+
+	responseWriter.Header().Set("Content-Type", "application/json;charset=UTF-8")
+	if encodeServerStatusesError := json.NewEncoder(responseWriter).Encode(MCPServerListJSON{
+		Servers: mcpServerStatuses,
+	}); encodeServerStatusesError != nil {
+		slog.Error("MCP Server 选择结果 JSON 写入失败",
+			"component", "http",
+			"operation", "handleSelectMCPServers",
+			"error_kind", service.ErrorInternal,
+			"error", encodeServerStatusesError)
+	}
 }
 
 // ============================================================================
@@ -514,8 +653,23 @@ func main() {
 		os.Exit(1)
 	}
 
+	mcpServerManager, err = mcp.NewMCPServerManager(
+		"config/mcp_servers.json",
+		"mcp/protocol/2025-11-25/messages.json",
+	)
+	if err != nil {
+		slog.Error("MCP Server 配置加载失败",
+			"component", "startup",
+			"operation", "mcp.NewMCPServerManager",
+			"error_kind", mcp.ErrorConfigurationInvalid,
+			"error", err)
+		os.Exit(1)
+	}
+
 	http.HandleFunc("POST /api/chat", handleChat)
 	http.HandleFunc("POST /api/chat/stream", handleChatStream)
+	http.HandleFunc("GET /api/mcp/servers", handleListMCPServers)
+	http.HandleFunc("PUT /api/mcp/servers", handleSelectMCPServers)
 	http.HandleFunc("GET /api/conversations", handleListConversations)
 	http.HandleFunc("GET /api/conversations/{id}", handleGetConversation)
 	http.HandleFunc("DELETE /api/conversations/{id}", handleDeleteConversation)
@@ -528,14 +682,50 @@ func main() {
 		http.ServeFile(w, r, "index.html")
 	})
 
-	slog.Info("cc-agent-go v11 启动",
+	slog.Info("cc-agent-go v12 启动",
 		"component", "startup",
 		"address", "http://localhost:8080")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
-		slog.Error("HTTP 服务退出",
+
+	httpServer := &http.Server{Addr: ":8080"}
+	httpServerFinished := make(chan error, 1)
+	go func() {
+		httpServerFinished <- httpServer.ListenAndServe()
+	}()
+
+	shutdownSignal := make(chan os.Signal, 1)
+	signal.Notify(shutdownSignal, os.Interrupt, syscall.SIGTERM)
+	select {
+	case receivedSignal := <-shutdownSignal:
+		slog.Info("收到服务停止信号",
 			"component", "startup",
-			"operation", "http.ListenAndServe",
+			"operation", "main.waitForShutdown",
+			"signal", receivedSignal.String())
+	case listenError := <-httpServerFinished:
+		if !errors.Is(listenError, http.ErrServerClosed) {
+			slog.Error("HTTP 服务运行失败",
+				"component", "http",
+				"operation", "http.Server.ListenAndServe",
+				"error_kind", service.ErrorInternal,
+				"error", listenError)
+		}
+	}
+	signal.Stop(shutdownSignal)
+
+	if closeMCPServersError := mcpServerManager.CloseAllStartedMCPServers(registry); closeMCPServersError != nil {
+		slog.Error("停止 MCP Server 失败",
+			"component", "mcp_client",
+			"operation", "CloseAllStartedMCPServers",
+			"error_kind", mcp.ErrorProcessStopped,
+			"error", closeMCPServersError)
+	}
+
+	shutdownContext, cancelHTTPShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelHTTPShutdown()
+	if shutdownHTTPServerError := httpServer.Shutdown(shutdownContext); shutdownHTTPServerError != nil {
+		slog.Error("HTTP 服务停止失败",
+			"component", "http",
+			"operation", "http.Server.Shutdown",
 			"error_kind", service.ErrorInternal,
-			"error", err)
+			"error", shutdownHTTPServerError)
 	}
 }

@@ -4,7 +4,7 @@
 
 v0–v10 已经完成 Agent 基础能力：HTTP、SSE、模型调用、工具循环、会话持久化、上下文压缩、Skill 和多 Agent 辩论。
 
-主线从 v11 开始停止扩展游戏功能，转向求职更有价值的 Agent 工程化能力：可观察、可评测、可控制、可恢复、可互操作。
+主线从 v11 开始停止扩展游戏功能，优先学习求职面试中能直接展示的 Agent 开发能力。
 
 ## v11：结构化日志与错误分类
 
@@ -16,61 +16,60 @@ v0–v10 已经完成 Agent 基础能力：HTTP、SSE、模型调用、工具循
 - 工具错误继续作为 `tool_result` 交给下一次 LLM 调用
 - API Key、用户正文、模型回复和工具参数不得进入日志
 
-## v12：Agent Eval 与回归测试
+## v12：可配置的 MCP Client 与动态工具注册
 
-目标：证明 Prompt、模型或工具改动没有让 Agent 行为退化。
+目标：网页选择外部 MCP Server 后，Go 启动对应进程、读取工具并注册到现有 Agent 工具表。
 
-- 建立版本化评测数据集
-- 验证工具选择、参数、完成度、轮数、耗时和安全约束
-- 使用模拟模型与工具实现确定性测试
-- 支持把历史失败案例转换为回归用例
-- 输出通过率和版本对比报告
+- 使用 JSON 配置文件维护 MCP Server 命令和参数，增加 Server 不修改 Go 代码
+- 从独立 `messages.json` 读取 MCP 2025-11-25 标准消息
+- 实现 STDIO、JSON-RPC 请求编号、initialize、notifications/initialized、tools/list 和 tools/call
+- 将 MCP 工具定义和执行函数一起注册到现有 `tool.Registry`
+- 网页显示 Server 运行状态、工具数量和工具名称
+- 第一台 Server 使用 Playwright MCP，关闭图片结果，只读取网页文字和控件信息
 
-## v13：Guardrails 与人工审批
+## v13：RAG 与资料检索
 
-目标：高风险副作用发生前必须经过规则或人工批准。
+目标：让 Agent 从本地资料中找到实际原文，并在回答中说明使用了哪个文件的哪一部分。
 
-- 为工具定义只读、写入、危险三个权限等级
-- 校验工具输入、输出和路径边界
-- 写文件、删除、外部消息等敏感操作支持暂停与批准
-- 持久化待审批状态，批准后从同一次运行恢复
-- 使用幂等键避免重试造成重复副作用
+- 读取本地资料文件并分段
+- 根据用户问题检索相关段落
+- 将命中的原文、文件名和位置传给模型
+- 回答返回实际使用的来源
+- 比较不同分段大小和检索数量对结果的影响
 
-## v14：MCP Server 与 Client
+## v14：多 Agent 任务分配与协作
 
-目标：让 cc-agent-go 的工具可被其他 Agent 发现，也能调用外部 MCP 服务。
+目标：把不同工作交给职责和工具明确的 Agent，并比较顺序执行和同时执行的结果。
 
-- 使用 Go 标准库实现 JSON-RPC 2.0 和 MCP lifecycle
-- 支持 Tools、Resources、Prompts
-- 支持本地 STDIO 和远程 Streamable HTTP
-- 加入 capability negotiation、取消、进度和错误响应
-- 对远程工具执行认证、权限过滤和审批
+- 实现 router、agent-as-tool 和 handoff
+- 每个 Agent 使用明确的输入参数、工具列表、最大轮数和 token 限制
+- 支持可以独立完成的子任务同时执行
+- 比较单 Agent、顺序多 Agent 和同时执行多 Agent 的耗时与结果
 
-## v15：Durable Workflow
+## v15：长任务、后台运行与恢复
 
-目标：Agent 长任务可以暂停、恢复、取消和安全重试。
+目标：Agent 长任务可以在后台运行，并支持查询、取消和服务重启后继续。
 
-- 明确 Pending、Running、WaitingApproval、Completed、Failed、Cancelled 状态
-- 保存 checkpoint，并在服务重启后恢复
-- 支持 `context` 取消、超时、指数退避和重试上限
-- 区分可重试错误与永久错误
-- 支持后台任务和进度查询
+- 为每次长任务生成 taskId
+- 保存 Pending、Running、Completed、Failed、Cancelled 状态
+- 支持后台运行、进度查询和取消
+- 支持超时、有限次数重试和 checkpoint
+- Go 服务重启后读取 checkpoint 并继续未完成任务
 
-## v16：A2A 与真正的多 Agent
+## v16：A2A 与远程 Agent 调用
 
-目标：不同语言、不同部署位置的 Agent 可以发现并协作。
+目标：Go Agent 可以读取其他服务器的 Agent 信息，并向远程 Agent 发送任务。
 
-- 发布 Agent Card 和能力描述
-- 实现任务创建、状态查询、消息和产物传递
-- 对独立任务使用受控并行，对共享状态使用顺序执行
-- 为每个子 Agent 设置最小工具集、预算、超时和独立错误日志
-- 通过 Eval 判断多 Agent 是否真的优于单 Agent
+- 发布和读取 Agent Card
+- 实现 message/send、tasks/get、任务状态和产物传递
+- 处理远程 Agent 的成功、失败、超时和取消结果
 
 ## 暂不优先
 
 - 继续扩展狼人杀和更多人格 Demo
 - 只靠修改 Prompt 追求偶然效果
-- 在没有 Eval 和错误分类前增加复杂多 Agent 编排
+- 以测试系统本身作为一个独立学习版本
+- 把大量版本内容放在审批流程上
 - 为追逐框架而同时学习多个 Agent 框架
 
 ## 参考规范

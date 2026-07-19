@@ -1,0 +1,19 @@
+{
+  "mcpServers": [
+    {
+      "name": "playwright",
+      "displayName": "Playwright MCP",
+      "transport": "stdio",
+      "command": "npx",
+      "arguments": [
+        "-y",
+        "@playwright/mcp@0.0.78",
+        "--image-responses",
+        "omit"
+      ],
+      "workingDirectory": ".",
+      "requestTimeoutSeconds": 60,
+      "environmentVariables": {}
+    }
+  ]
+}

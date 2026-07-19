@@ -164,6 +164,9 @@
                 <button onclick="switchLeftTab('conversations')" id="tab-left-conversations" class="flex-1 py-2.5 text-center text-xs font-bold rounded-xl transition-all duration-300 text-slate-500 hover:text-slate-800">
                     📂 会话历史
                 </button>
+                <button onclick="switchLeftTab('mcp')" id="tab-left-mcp" class="flex-1 py-2.5 text-center text-xs font-bold rounded-xl transition-all duration-300 text-slate-500 hover:text-slate-800">
+                    🔌 MCP
+                </button>
                 <button onclick="switchLeftTab('sandbox')" id="tab-left-sandbox" class="flex-1 py-2.5 text-center text-xs font-bold rounded-xl transition-all duration-300 text-slate-500 hover:text-slate-800">
                     🛠️ API 原始沙箱
                 </button>
@@ -257,7 +260,27 @@
                 </div>
             </div>
 
-            <!-- 标签页内容 3: 自定义 API 请求沙箱 (已完美修复不可见 Bug) -->
+            <!-- 标签页内容 3: MCP Server 选择 -->
+            <div id="content-left-mcp" class="hidden flex-1 p-5 overflow-y-auto flex flex-col space-y-4">
+                <div class="flex justify-between items-center pb-2 border-b border-pink-100">
+                    <div>
+                        <h3 class="text-xs font-bold text-slate-800">MCP Server 列表</h3>
+                        <p class="text-[10px] text-slate-400 mt-1">只有选中的 Server 才会启动并把工具注册给 Agent。</p>
+                    </div>
+                    <button onclick="refreshMCPServerList()" class="text-[10px] text-pink-600 font-bold hover:underline">🔄 刷新</button>
+                </div>
+                <div id="mcp-servers-list" class="flex-1 overflow-y-auto space-y-3 pr-1">
+                    <div class="text-xs text-slate-400 text-center py-8 italic">切换到真机联调后读取列表。</div>
+                </div>
+                <button id="apply-mcp-selection-button" onclick="applySelectedMCPServers()" class="w-full bg-gradient-to-r from-pink-400 to-sky-400 hover:from-pink-500 hover:to-sky-500 text-white font-bold py-2.5 rounded-xl text-xs transition-all shadow-md">
+                    应用选择
+                </button>
+                <p class="text-[10px] text-slate-400 leading-relaxed">
+                    Server 命令和参数来自 <code>config/mcp_servers.json</code>。网页只提交选中的 Server 名称。
+                </p>
+            </div>
+
+            <!-- 标签页内容 4: 自定义 API 请求沙箱 (已完美修复不可见 Bug) -->
             <div id="content-left-sandbox" class="hidden flex-1 p-5 overflow-y-auto space-y-4">
                 <h3 class="text-xs font-bold text-slate-800 flex items-center justify-between">
                     <span>手动构造 HTTP 请求</span>
@@ -692,7 +715,8 @@ func HandleChatStreamV7(w http.ResponseWriter, r *http.Request) {
             messages: [
                 { sender: 'system', text: '欢迎来到全新重构的极光流式沙箱学习终端！在上方快捷区域可以发起 GET (/) 与 POST (/api/chat) 请求，直观对照并抓包分析底层普通的 JSON 报文及高频 SSE 字节流的流转律动。' }
             ],
-            conversations: [] // V7 会话列表
+            conversations: [], // V7 会话列表
+            mcpServers: []
         };
 
         // 常用快捷 Header Key 选项
@@ -870,10 +894,12 @@ func HandleChatStreamV7(w http.ResponseWriter, r *http.Request) {
             
             const tabChat = document.getElementById('tab-left-chat');
             const tabConversations = document.getElementById('tab-left-conversations');
+            const tabMCP = document.getElementById('tab-left-mcp');
             const tabSandbox = document.getElementById('tab-left-sandbox');
             
             const contentChat = document.getElementById('content-left-chat');
             const contentConversations = document.getElementById('content-left-conversations');
+            const contentMCP = document.getElementById('content-left-mcp');
             const contentSandbox = document.getElementById('content-left-sandbox');
 
             const activeClass = "flex-1 py-2.5 text-center text-xs font-bold rounded-xl transition-all duration-300 text-pink-600 bg-white border border-pink-100 shadow-sm";
@@ -881,10 +907,12 @@ func HandleChatStreamV7(w http.ResponseWriter, r *http.Request) {
 
             tabChat.className = (tabName === 'chat') ? activeClass : inactiveClass;
             tabConversations.className = (tabName === 'conversations') ? activeClass : inactiveClass;
+            tabMCP.className = (tabName === 'mcp') ? activeClass : inactiveClass;
             tabSandbox.className = (tabName === 'sandbox') ? activeClass : inactiveClass;
 
             contentChat.className = (tabName === 'chat') ? "flex-1 flex flex-col overflow-hidden" : "hidden";
             contentConversations.className = (tabName === 'conversations') ? "flex-1 p-5 overflow-y-auto flex flex-col space-y-4" : "hidden";
+            contentMCP.className = (tabName === 'mcp') ? "flex-1 p-5 overflow-y-auto flex flex-col space-y-4" : "hidden";
             
             // 【重要修复】：去除了激活状态类名下的 "hidden"，防止沙箱容器被误拦截隐藏
             contentSandbox.className = (tabName === 'sandbox') ? "flex-1 p-5 overflow-y-auto flex flex-col space-y-4" : "hidden";
@@ -897,6 +925,105 @@ func HandleChatStreamV7(w http.ResponseWriter, r *http.Request) {
                 } else {
                     renderConversationsUI();
                 }
+            }
+            if (tabName === 'mcp') {
+                refreshMCPServerList();
+            }
+        }
+
+        function escapeHTML(untrustedText) {
+            const textContainer = document.createElement('div');
+            textContainer.textContent = String(untrustedText ?? '');
+            return textContainer.innerHTML;
+        }
+
+        async function refreshMCPServerList() {
+            const mcpServerListContainer = document.getElementById('mcp-servers-list');
+            if (state.mode !== 'live') {
+                mcpServerListContainer.innerHTML = `<div class="text-xs text-slate-400 text-center py-8">请先切换到顶部的“真机联调 (8080)”。</div>`;
+                return;
+            }
+
+            mcpServerListContainer.innerHTML = `<div class="text-xs text-slate-400 text-center py-8 italic">正在读取 MCP Server 列表...</div>`;
+            try {
+                const serverListResponse = await fetch(buildApiUrl('/api/mcp/servers'));
+                const serverListJSON = await serverListResponse.json();
+                if (!serverListResponse.ok) {
+                    throw new Error(serverListJSON.message || serverListJSON.code || `HTTP ${serverListResponse.status}`);
+                }
+                state.mcpServers = serverListJSON.servers || [];
+                renderMCPServerList();
+                logConsole(`[MCP] 已读取 ${state.mcpServers.length} 台 MCP Server。`);
+            } catch (readMCPServerListError) {
+                mcpServerListContainer.innerHTML = `<div class="text-xs text-red-500 text-center py-8">${escapeHTML(readMCPServerListError.message)}</div>`;
+                logConsole(`[MCP] 读取 Server 列表失败: ${readMCPServerListError.message}`, true);
+            }
+        }
+
+        function renderMCPServerList() {
+            const mcpServerListContainer = document.getElementById('mcp-servers-list');
+            if (state.mcpServers.length === 0) {
+                mcpServerListContainer.innerHTML = `<div class="text-xs text-slate-400 text-center py-8">配置文件中没有 MCP Server。</div>`;
+                return;
+            }
+
+            mcpServerListContainer.innerHTML = state.mcpServers.map(mcpServer => {
+                const serverIsRunning = mcpServer.status === 'running';
+                const registeredAgentToolNames = mcpServer.registeredAgentToolNames || [];
+                const statusClass = serverIsRunning ? 'text-emerald-600 bg-emerald-50 border-emerald-100' : 'text-slate-500 bg-slate-50 border-slate-200';
+                const toolNamesHTML = registeredAgentToolNames.length === 0
+                    ? '<span class="text-slate-400">尚未注册工具</span>'
+                    : registeredAgentToolNames.map(toolName => `<div class="font-mono text-[9px] text-slate-500 break-all">${escapeHTML(toolName)}</div>`).join('');
+                return `
+                    <label class="block bg-white/90 border border-pink-100 rounded-xl p-3 shadow-sm cursor-pointer hover:border-pink-300 transition-all">
+                        <div class="flex items-start gap-3">
+                            <input type="checkbox" class="mcp-server-checkbox mt-1 accent-pink-500" value="${escapeHTML(mcpServer.name)}" ${serverIsRunning ? 'checked' : ''}>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center justify-between gap-2">
+                                    <div class="text-xs font-bold text-slate-800">${escapeHTML(mcpServer.displayName)}</div>
+                                    <span class="text-[9px] border rounded-full px-2 py-0.5 ${statusClass}">${escapeHTML(mcpServer.status)}</span>
+                                </div>
+                                <div class="text-[9px] text-slate-400 font-mono mt-1">${escapeHTML(mcpServer.name)}</div>
+                                <div class="text-[10px] text-slate-500 mt-2">已注册 ${mcpServer.registeredToolCount || 0} 个工具</div>
+                                <div class="mt-2 max-h-32 overflow-y-auto space-y-1">${toolNamesHTML}</div>
+                            </div>
+                        </div>
+                    </label>`;
+            }).join('');
+        }
+
+        async function applySelectedMCPServers() {
+            if (state.mode !== 'live') {
+                showToast('请先切换到真机联调模式。', 'warning');
+                return;
+            }
+            const selectedMCPServerNames = Array.from(
+                document.querySelectorAll('.mcp-server-checkbox:checked')
+            ).map(serverCheckbox => serverCheckbox.value);
+            const applySelectionButton = document.getElementById('apply-mcp-selection-button');
+            applySelectionButton.disabled = true;
+            applySelectionButton.textContent = '正在启动并读取工具...';
+            try {
+                const selectionResponse = await fetch(buildApiUrl('/api/mcp/servers'), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ selectedServerNames: selectedMCPServerNames })
+                });
+                const selectionResultJSON = await selectionResponse.json();
+                if (!selectionResponse.ok) {
+                    throw new Error(selectionResultJSON.message || selectionResultJSON.code || `HTTP ${selectionResponse.status}`);
+                }
+                state.mcpServers = selectionResultJSON.servers || [];
+                renderMCPServerList();
+                showToast('MCP Server 选择已经应用。', 'success');
+                logConsole(`[MCP] 已应用选择: ${selectedMCPServerNames.join(', ') || '全部停止'}`);
+            } catch (applySelectionError) {
+                showToast(`MCP Server 启动失败: ${applySelectionError.message}`, 'error');
+                logConsole(`[MCP] 应用选择失败: ${applySelectionError.message}`, true);
+                await refreshMCPServerList();
+            } finally {
+                applySelectionButton.disabled = false;
+                applySelectionButton.textContent = '应用选择';
             }
         }
 

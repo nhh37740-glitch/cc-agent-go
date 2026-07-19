@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"cc-agent-go/mcp"
 	"cc-agent-go/model"
 	"cc-agent-go/service"
 )
@@ -108,5 +109,60 @@ func TestPublicErrorPreservesProviderStatus(t *testing.T) {
 	}
 	if resp.ProviderStatus != http.StatusUnauthorized {
 		t.Fatalf("providerStatus = %d, want %d", resp.ProviderStatus, http.StatusUnauthorized)
+	}
+}
+
+func TestHandleSelectMCPServersRejectsInvalidJSON(t *testing.T) {
+	httpResponseRecorder := httptest.NewRecorder()
+	httpRequest := httptest.NewRequest(
+		http.MethodPut,
+		"/api/mcp/servers",
+		strings.NewReader("{"),
+	)
+
+	handleSelectMCPServers(httpResponseRecorder, httpRequest)
+
+	if httpResponseRecorder.Code != http.StatusBadRequest {
+		t.Fatalf(
+			"status = %d, want %d",
+			httpResponseRecorder.Code,
+			http.StatusBadRequest,
+		)
+	}
+	var publicErrorResponse model.ErrorResponse
+	if decodeErrorResponseError := json.Unmarshal(
+		httpResponseRecorder.Body.Bytes(),
+		&publicErrorResponse,
+	); decodeErrorResponseError != nil {
+		t.Fatalf("decode response: %v", decodeErrorResponseError)
+	}
+	if publicErrorResponse.Code != string(service.ErrorInvalidRequest) {
+		t.Fatalf(
+			"code = %q, want %q",
+			publicErrorResponse.Code,
+			service.ErrorInvalidRequest,
+		)
+	}
+}
+
+func TestPublicErrorMapsMCPRequestTimeout(t *testing.T) {
+	mcpRequestTimeoutError := mcp.NewError(
+		mcp.ErrorRequestTimeout,
+		"callMCPServerTool",
+		"playwright",
+		errors.New("timeout"),
+	)
+
+	httpStatus, publicErrorResponse := publicError(mcpRequestTimeoutError)
+
+	if httpStatus != http.StatusGatewayTimeout {
+		t.Fatalf("status = %d, want %d", httpStatus, http.StatusGatewayTimeout)
+	}
+	if publicErrorResponse.Code != string(mcp.ErrorRequestTimeout) {
+		t.Fatalf(
+			"code = %q, want %q",
+			publicErrorResponse.Code,
+			mcp.ErrorRequestTimeout,
+		)
 	}
 }
