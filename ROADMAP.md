@@ -31,11 +31,15 @@ v0–v10 已经完成 Agent 基础能力：HTTP、SSE、模型调用、工具循
 
 目标：让 Agent 从本地资料中找到实际原文，并在回答中说明使用了哪个文件的哪一部分。
 
-- 读取本地资料文件并分段
-- 根据用户问题检索相关段落
-- 将命中的原文、文件名和位置传给模型
-- 回答返回实际使用的来源
-- 比较不同分段大小和检索数量对结果的影响
+- 当前状态：OpenSpec 计划已完成，Go 实现尚未开始
+- 完整计划：[`openspec/changes/v13-local-rag-retrieval/`](openspec/changes/v13-local-rag-retrieval/)
+- 从 `workspace/knowledge/` 读取 `.md` 和 `.txt`，保存每段的相对文件名、起始行、结束行和原文
+- 使用 Go 标准库完成中英文搜索词处理和 BM25 初次排序
+- 使用 DeepSeek 把最多 12 个候选结果重排；重排失败时继续返回 BM25 结果
+- 把 `search_local_documents` 作为普通工具注册到现有 `tool.Registry`，不增加 HTTP 路由
+- 工具结果返回实际原文和 `[source:<文件>:<起始行>-<结束行>]`，最终回答复制实际采用的来源编号
+- 比较不同分段大小和检索数量对命中位置、耗时和回答结果的影响
+- 不读取 PDF，不做 OCR、文件上传、embedding 或向量数据库
 
 ## v14：多 Agent 任务分配与协作
 

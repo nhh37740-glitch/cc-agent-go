@@ -11,11 +11,12 @@
 - 已完成：Demo v0–v10；v10 核心 Agent 已迁移至仓库根目录
 - 已完成：v11 结构化日志、错误分类与统一错误返回
 - 已完成：v12 可配置的 MCP Client、Playwright MCP 和动态工具注册
-- 当前主线：v13 RAG 与资料检索
+- 当前主线：v13 RAG 与资料检索（OpenSpec 计划已完成，Go 实现尚未开始）
 - 后续路线：RAG → 多 Agent 任务协作 → 长任务恢复 → A2A
 - 狼人杀实验仅保留在 `feature/v11-werewolf` 分支，不进入主线 Agent 服务
 - 项目看板：[cc-agent-go Project](https://github.com/users/nhh37740-glitch/projects/1/views/1)
 - 详细路线：[ROADMAP.md](ROADMAP.md)
+- v13 实施计划：[OpenSpec v13-local-rag-retrieval](openspec/changes/v13-local-rag-retrieval/tasks.md)
 
 ## 技术约束
 

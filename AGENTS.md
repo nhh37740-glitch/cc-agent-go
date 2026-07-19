@@ -9,6 +9,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 - **关联文件**：
   - 版本路线：`ROADMAP.md` —— 每个版本的目标、实际功能和后续顺序
   - 项目索引：`PROJECT_INDEX.md` —— 正式代码文件、函数和实际调用关系
+  - 当前版本计划：`openspec/changes/<change-name>/` —— proposal、spec、design 和 tasks；计划内容不得写成已经存在的代码
   - Java 参考实现：`cc-agent-java` —— 功能完整的原版，行为对齐基准
   - 前端页面：复用 Java 版的 `agent.html`，本项目不做前端
   - 本文件（操作手册）：决定 Codex 怎么做事，追踪版本进度
@@ -52,6 +53,7 @@ Go 工具链内建格式化、静态分析、依赖管理，不需要 Prettier/E
 
 1. **开始前**：查看下方版本追踪表，确认当前版本 → 读取计划文件中对应版本的步骤和 Go 知识点 → 告知用户本版本会学到哪些 Go 概念
    - 先读取根目录 `PROJECT_INDEX.md`；索引未记录当前代码时，读取代码并补充索引。
+   - 当前版本存在 OpenSpec change 时，按 `proposal.md`、`specs/`、`design.md`、`tasks.md` 的顺序读取，并只执行 `tasks.md` 中当前被选择的任务。
 2. **编码中**：遇到新语法/新标准库时主动解释（不需要等用户问）→ 写一段、编译一段，确保 `go build ./...` 通过
    - 修改根目录 `main.go`、`config/`、`model/`、`service/` 或 `tool/` 中的正式 Go 文件时，同步更新 `PROJECT_INDEX.md`。
 3. **编码后**：`go build ./...` + `go vet ./...` 通过 → `go run main.go` 启动 → curl 验证端点 → 更新版本追踪表状态

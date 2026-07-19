@@ -1,0 +1,22 @@
+schema: spec-driven
+
+context: |
+  Project: Go AI Agent HTTP service using DeepSeek, SSE, JSON sessions, tools, and MCP.
+  Runtime: Go 1.23 or newer, standard library only, no third-party Go dependencies.
+  Teaching: write exact files, functions, parameters, data values, callers, return values, and execution order.
+  Naming: names must state what a value contains or what a function does; avoid req, resp, data, item, manager, and single-letter names.
+  Documentation: PROJECT_INDEX.md records only code that has been read and verified; planned code must be marked as not implemented.
+  Verification: every implementation change must pass go fmt, go build ./..., go vet ./..., and go test ./....
+
+rules:
+  proposal:
+    - State exactly what the version adds and explicitly list non-goals.
+    - Do not describe planned files or functions as already implemented.
+  design:
+    - Name concrete files, functions, parameters, values, callers, return values, and execution order.
+    - Record why a choice was made and the actual consequence of rejected choices.
+  specs:
+    - Every requirement must have a result that can be checked from code or actual execution.
+  tasks:
+    - Order tasks by the actual caller and callee execution sequence.
+    - Keep each checkbox small enough to implement and verify before the next checkbox.

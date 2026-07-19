@@ -31,3 +31,9 @@
 | `mcp/errors.go` | `mcp` | `ErrorKind`、`Error`、`NewError` | MCP 配置、进程、初始化、工具列表、超时和返回 JSON 错误；`main.go` 的 `publicError` 读取错误类别。 |
 
 `service.Run` 的固定说明：`service` 是包名，来自 `service/agent.go` 的 `package service`。`Run` 是该文件定义的包级函数。`agent.go` 是文件名，不是包名；`Run` 不是接口方法。
+
+## 尚未实现的版本计划
+
+- v13 的 Go 代码尚未开始，当前正式代码中不存在 `rag` 包或 `search_local_documents` 工具。
+- v13 已确认的文件、函数、参数和执行顺序保存在 [`openspec/changes/v13-local-rag-retrieval/design.md`](openspec/changes/v13-local-rag-retrieval/design.md)，实施任务保存在同目录的 [`tasks.md`](openspec/changes/v13-local-rag-retrieval/tasks.md)。
+- 实现完成并检查实际代码后，再把 `rag/` 和 `service/rerank.go` 写入上方正式代码索引。
