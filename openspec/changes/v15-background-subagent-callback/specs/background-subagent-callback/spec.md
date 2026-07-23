@@ -7,6 +7,20 @@ The `run_subagent` tool SHALL start the supplied SubAgent tasks in goroutines an
 - **WHEN** the main Agent calls `run_subagent` with two valid tasks
 - **THEN** the tool returns both task IDs with `status: "running"` while both SubAgents continue executing
 
+### Requirement: Let the calling LLM choose each SubAgent task round limit
+Every item in `subAgentTasks` SHALL contain a positive integer `maximumRounds`. The service SHALL pass that task-specific value to `RunSubAgent` and SHALL stop that SubAgent only after the selected number of DeepSeek and tool-processing rounds. The service SHALL NOT use one fixed round count for every SubAgent task.
+
+#### Scenario: Browser task requests more rounds
+- **WHEN** the main Agent supplies `maximumRounds: 30` for a browser-search task
+- **THEN** that SubAgent may execute up to 30 rounds before returning `agent_limit_reached`
+
+### Requirement: Reject a task round limit above the configured maximum
+The Go configuration SHALL expose the highest allowed SubAgent round count. `run_subagent` SHALL reject a task whose `maximumRounds` is less than 1 or greater than that configured maximum.
+
+#### Scenario: Main Agent requests too many rounds
+- **WHEN** the configured maximum is 50 and a task supplies `maximumRounds: 80`
+- **THEN** `run_subagent` returns a validation error before starting any SubAgent from that tool call
+
 ### Requirement: Call the main Agent after all started SubAgents finish
 The background SubAgent function SHALL call one completion callback after every task from the same `run_subagent` call has completed or failed. The callback SHALL receive the parent `conversationId` and the complete ordered `SubAgentResult` array.
 

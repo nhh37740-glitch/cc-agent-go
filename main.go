@@ -108,33 +108,49 @@ var conversationExecutionLocks = service.NewConversationExecutionLocks()
 const generalSubAgentToolName = "run_subagent"
 
 const generalSubAgentToolDescription = `同时运行一个或多个临时通用 SubAgent。
-每个 subAgentTasks 元素必须包含唯一 taskId，以及完成任务需要的全部文件位置、执行动作和返回内容。
+每个 subAgentTasks 元素必须包含唯一 taskId、完整任务和 maximumRounds。
+根据任务需要选择 maximumRounds：简单任务使用较小数值，浏览器搜索等多步骤任务使用较大数值。
 只提交彼此独立、可以同时执行的任务。`
 
-var generalSubAgentToolInputSchema = map[string]any{
-	"type": "object",
-	"properties": map[string]any{
-		"subAgentTasks": map[string]any{
-			"type":     "array",
-			"minItems": 1,
-			"maxItems": 5,
-			"items": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"taskId": map[string]any{
-						"type":        "string",
-						"description": "本次工具调用中唯一的任务编号",
+func buildGeneralSubAgentToolInputSchema(
+	maximumParallelSubAgents int,
+	maximumSubAgentRounds int,
+) map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"subAgentTasks": map[string]any{
+				"type":     "array",
+				"minItems": 1,
+				"maxItems": maximumParallelSubAgents,
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"taskId": map[string]any{
+							"type":        "string",
+							"description": "本次工具调用中唯一的任务编号",
+						},
+						"task": map[string]any{
+							"type":        "string",
+							"description": "SubAgent 完成任务需要的全部信息",
+						},
+						"maximumRounds": map[string]any{
+							"type":        "integer",
+							"minimum":     1,
+							"maximum":     maximumSubAgentRounds,
+							"description": "这个 SubAgent 最多执行多少轮 DeepSeek 和工具处理",
+						},
 					},
-					"task": map[string]any{
-						"type":        "string",
-						"description": "SubAgent 完成任务需要的全部信息",
+					"required": []string{
+						"taskId",
+						"task",
+						"maximumRounds",
 					},
 				},
-				"required": []string{"taskId", "task"},
 			},
 		},
-	},
-	"required": []string{"subAgentTasks"},
+		"required": []string{"subAgentTasks"},
+	}
 }
 
 // RunSubAgentToolInput 是 run_subagent 工具参数解包后的固定结构。
@@ -157,6 +173,7 @@ type RunSubAgentToolOutput struct {
 func decodeAndValidateRunSubAgentToolInput(
 	toolArguments map[string]any,
 	maximumParallelSubAgents int,
+	maximumSubAgentRounds int,
 ) (RunSubAgentToolInput, error) {
 	var runSubAgentToolInput RunSubAgentToolInput
 
@@ -208,6 +225,20 @@ func decodeAndValidateRunSubAgentToolInput(
 				taskIndex+1,
 			)
 		}
+		if subAgentTask.MaximumRounds < 1 {
+			return runSubAgentToolInput, fmt.Errorf(
+				"run_subagent 的第 %d 个任务 maximumRounds 必须大于 0",
+				taskIndex+1,
+			)
+		}
+		if subAgentTask.MaximumRounds > maximumSubAgentRounds {
+			return runSubAgentToolInput, fmt.Errorf(
+				"run_subagent 的第 %d 个任务 maximumRounds=%d，当前配置最多允许 %d 轮",
+				taskIndex+1,
+				subAgentTask.MaximumRounds,
+				maximumSubAgentRounds,
+			)
+		}
 		if seenSubAgentTaskIDs[trimmedTaskID] {
 			return runSubAgentToolInput, fmt.Errorf(
 				"run_subagent 的 taskId %q 重复",
@@ -225,14 +256,16 @@ func registerGeneralSubAgentTool(
 	parentConversationID string,
 	completedResultsCallback service.CompletedSubAgentResultsCallback,
 ) error {
+	applicationConfig := config.Load()
+
 	executeRunSubAgentTool := func(
 		toolArguments map[string]any,
 	) (string, error) {
-		applicationConfig := config.Load()
 		runSubAgentToolInput, decodeToolArgumentsError :=
 			decodeAndValidateRunSubAgentToolInput(
 				toolArguments,
 				applicationConfig.MaximumParallelSubAgents,
+				applicationConfig.MaximumSubAgentRounds,
 			)
 		if decodeToolArgumentsError != nil {
 			return "", decodeToolArgumentsError
@@ -281,7 +314,10 @@ func registerGeneralSubAgentTool(
 	return mainAgentToolRegistry.RegisterFunctionTool(
 		generalSubAgentToolName,
 		generalSubAgentToolDescription,
-		generalSubAgentToolInputSchema,
+		buildGeneralSubAgentToolInputSchema(
+			applicationConfig.MaximumParallelSubAgents,
+			applicationConfig.MaximumSubAgentRounds,
+		),
 		executeRunSubAgentTool,
 	)
 }
@@ -1215,11 +1251,14 @@ func main() {
 		http.ServeFile(w, r, "index.html")
 	})
 
+	applicationConfig := config.Load()
 	slog.Info("cc-agent-go v15 启动",
 		"component", "startup",
 		"address", "http://localhost:8080",
 		"maximum_parallel_subagents",
-		config.Load().MaximumParallelSubAgents)
+		applicationConfig.MaximumParallelSubAgents,
+		"maximum_subagent_rounds",
+		applicationConfig.MaximumSubAgentRounds)
 
 	httpServer := &http.Server{Addr: ":8080"}
 	httpServerFinished := make(chan error, 1)

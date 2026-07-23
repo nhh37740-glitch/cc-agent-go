@@ -96,3 +96,57 @@ func TestLoadMaximumParallelSubAgents(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadMaximumSubAgentRounds(t *testing.T) {
+	testCases := []struct {
+		testName              string
+		configuredValue       string
+		expectedMaximumRounds int
+	}{
+		{
+			testName:              "empty value uses default",
+			configuredValue:       "",
+			expectedMaximumRounds: 50,
+		},
+		{
+			testName:              "valid value is preserved",
+			configuredValue:       "80",
+			expectedMaximumRounds: 80,
+		},
+		{
+			testName:              "non integer uses default",
+			configuredValue:       "many",
+			expectedMaximumRounds: 50,
+		},
+		{
+			testName:              "zero uses default",
+			configuredValue:       "0",
+			expectedMaximumRounds: 50,
+		},
+		{
+			testName:              "negative value uses default",
+			configuredValue:       "-10",
+			expectedMaximumRounds: 50,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.testName, func(t *testing.T) {
+			t.Setenv(
+				"MAXIMUM_SUBAGENT_ROUNDS",
+				testCase.configuredValue,
+			)
+
+			applicationConfig := Load()
+
+			if applicationConfig.MaximumSubAgentRounds !=
+				testCase.expectedMaximumRounds {
+				t.Fatalf(
+					"MaximumSubAgentRounds = %d, want %d",
+					applicationConfig.MaximumSubAgentRounds,
+					testCase.expectedMaximumRounds,
+				)
+			}
+		})
+	}
+}

@@ -41,6 +41,7 @@ func TestRunSubAgentStartsWithOnlyTheSuppliedTaskAndReturnsFinalText(t *testing.
 
 	subAgentFinalText, runSubAgentError := RunSubAgent(
 		"只检查 config/config.go",
+		3,
 		newSubAgentTestConfig(deepSeekTestServer.URL),
 		tool.NewRegistry(),
 	)
@@ -113,6 +114,7 @@ func TestRunSubAgentExecutesToolAndSendsToolResultToNextRound(t *testing.T) {
 
 	subAgentFinalText, runSubAgentError := RunSubAgent(
 		"读取测试文件",
+		3,
 		newSubAgentTestConfig(deepSeekTestServer.URL),
 		availableSubAgentTools,
 	)
@@ -158,6 +160,7 @@ func TestRunSubAgentSendsToolErrorToNextRound(t *testing.T) {
 
 	_, runSubAgentError := RunSubAgent(
 		"调用不存在的工具",
+		3,
 		newSubAgentTestConfig(deepSeekTestServer.URL),
 		tool.NewRegistry(),
 	)
@@ -210,6 +213,7 @@ func TestRunSubAgentTruncatesLongToolResult(t *testing.T) {
 
 	_, runSubAgentError := RunSubAgent(
 		"读取长结果",
+		3,
 		newSubAgentTestConfig(deepSeekTestServer.URL),
 		availableSubAgentTools,
 	)
@@ -229,7 +233,8 @@ func TestRunSubAgentTruncatesLongToolResult(t *testing.T) {
 	}
 }
 
-func TestRunSubAgentReturnsAgentLimitAfterTwelveRounds(t *testing.T) {
+func TestRunSubAgentUsesTaskSpecificMaximumRounds(t *testing.T) {
+	const taskMaximumRounds = 3
 	var deepSeekCallCount atomic.Int32
 	deepSeekTestServer := httptest.NewServer(http.HandlerFunc(
 		func(responseWriter http.ResponseWriter, httpRequest *http.Request) {
@@ -256,6 +261,7 @@ func TestRunSubAgentReturnsAgentLimitAfterTwelveRounds(t *testing.T) {
 
 	_, runSubAgentError := RunSubAgent(
 		"持续调用工具",
+		taskMaximumRounds,
 		newSubAgentTestConfig(deepSeekTestServer.URL),
 		availableSubAgentTools,
 	)
@@ -274,12 +280,18 @@ func TestRunSubAgentReturnsAgentLimitAfterTwelveRounds(t *testing.T) {
 			ErrorAgentLimit,
 		)
 	}
-	if deepSeekCallCount.Load() != subAgentMaximumRounds {
+	if deepSeekCallCount.Load() != taskMaximumRounds {
 		t.Fatalf(
 			"DeepSeek call count = %d, want %d",
 			deepSeekCallCount.Load(),
-			subAgentMaximumRounds,
+			taskMaximumRounds,
 		)
+	}
+	if !strings.Contains(
+		runSubAgentError.Error(),
+		"达到最大工具调用轮数 3",
+	) {
+		t.Fatalf("error = %q, want selected round count", runSubAgentError)
 	}
 }
 
@@ -340,9 +352,9 @@ func TestRunSubAgentsInParallelStartsTogetherAndPreservesInputOrder(t *testing.T
 
 	subAgentResults := RunSubAgentsInParallel(
 		[]SubAgentTask{
-			{TaskID: "first", Task: "first task"},
-			{TaskID: "second", Task: "second task"},
-			{TaskID: "third", Task: "third task"},
+			{TaskID: "first", Task: "first task", MaximumRounds: 3},
+			{TaskID: "second", Task: "second task", MaximumRounds: 3},
+			{TaskID: "third", Task: "third task", MaximumRounds: 3},
 		},
 		newSubAgentTestConfig(deepSeekTestServer.URL),
 		tool.NewRegistry(),
@@ -407,8 +419,12 @@ func TestRunSubAgentsInParallelKeepsSuccessfulResultWhenAnotherTaskFails(
 
 	subAgentResults := RunSubAgentsInParallel(
 		[]SubAgentTask{
-			{TaskID: "failed", Task: "failed task"},
-			{TaskID: "successful", Task: "successful task"},
+			{TaskID: "failed", Task: "failed task", MaximumRounds: 3},
+			{
+				TaskID:        "successful",
+				Task:          "successful task",
+				MaximumRounds: 3,
+			},
 		},
 		newSubAgentTestConfig(deepSeekTestServer.URL),
 		tool.NewRegistry(),
@@ -467,7 +483,11 @@ func TestRunSubAgentsInBackgroundReturnsBeforeCompletionAndCallsCallbackOnce(
 		RunSubAgentsInBackground(
 			"parent-conversation",
 			[]SubAgentTask{
-				{TaskID: "background-task", Task: "background task"},
+				{
+					TaskID:        "background-task",
+					Task:          "background task",
+					MaximumRounds: 3,
+				},
 			},
 			newSubAgentTestConfig(deepSeekTestServer.URL),
 			tool.NewRegistry(),
@@ -540,6 +560,7 @@ func newSubAgentTestConfig(apiEndpoint string) config.Config {
 		ApiEndpoint:              apiEndpoint,
 		Model:                    "test-model",
 		MaximumParallelSubAgents: 5,
+		MaximumSubAgentRounds:    50,
 	}
 }
 

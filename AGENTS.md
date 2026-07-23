@@ -333,14 +333,14 @@ if err := action(); err != nil {
 | v12 | JSON-RPC 2.0、MCP lifecycle、`os/exec` 管道、goroutine 持续读取、请求 id 与 channel、动态函数工具、`sync.RWMutex` | `mcp/`、`tool/function.go`、`tool/registry.go`、`main.go`、`index.html` | ✅ |
 | v13 | RAG 计划已归档，未实现 | 无正式 Go 文件 | ⏭ 跳过 |
 | v14 | 通用型 agent-as-tool、JSON 输入输出、最多 5 个并行 SubAgent、goroutine + channel、工具表复制 | `config/config.go`、`service/subagent.go`、`tool/registry.go`、`main.go` | ✅ |
-| v15 | 后台 goroutine、完成回调、按会话加锁、独立 GET SSE 长连接、浏览器 `EventSource`；后续继续 checkpoint、取消、超时和重试 | `service/subagent.go`、`service/agent.go`、`service/conversation_events.go`、`service/conversation_execution.go`、`main.go`、`index.html` | ⏳ |
+| v15 | 后台 goroutine、每任务 `maximumRounds`、完成回调、按会话加锁、独立 GET SSE 长连接、浏览器 `EventSource`；后续继续 checkpoint、取消、超时和重试 | `config/config.go`、`service/subagent.go`、`service/agent.go`、`service/conversation_events.go`、`service/conversation_execution.go`、`main.go`、`index.html` | ⏳ |
 | v16 | Agent Card、A2A 任务协议和远程 Agent 调用 | `a2a/` | ⏳ |
 
 v9 新功能：元老院多 Agent 辩论，回合制发言，SSE 流式推送，公民插话，配置化人格 MD 文件。
 v10 新功能：Skill 系统 —— `activate_skill` 工具动态加载 skill prompt，`create_skill` 工具创建新 skill，skill 文件存于 `workspace/skills/`。`Description()` 每次扫目录自动发现新 skill，Execute() 按文件名匹配。Agent 可用 bash 工具增删 skill 文件，无需重启服务。
 v11 完成功能：使用 `slog` 输出 JSON 日志；把配置、网络、DeepSeek、存储和 Agent 轮数错误分类；普通 HTTP 接口返回统一 JSON 错误，SSE 返回统一 error 事件；工具错误继续作为 tool_result 交给下一次 LLM 调用。狼人杀实验仅保留在 `feature/v11-werewolf` 分支。
 v12 完成功能：从 JSON 读取 MCP Server 配置和 MCP 2025-11-25 标准消息；网页选择后启动 Playwright MCP；完成 initialize、notifications/initialized、tools/list、tools/call；把 MCP 工具动态注册到现有工具表；停止选择后删除工具并结束进程。
-v15 当前功能：`run_subagent` 立即返回后台任务已启动；全部 SubAgent完成后回调主 Agent；聊天 POST SSE 固定关闭，会话 GET SSE 固定保持；Web 使用 `EventSource` 接收后台主 Agent回复。
+v15 当前功能：`run_subagent` 立即返回后台任务已启动；调用 LLM 为每项任务填写 `maximumRounds`，配置 `MAXIMUM_SUBAGENT_ROUNDS` 限制最高值；全部 SubAgent完成后回调主 Agent；聊天 POST SSE 固定关闭，会话 GET SSE 固定保持；Web 使用 `EventSource` 接收后台主 Agent回复。
 
 每个版本完成后：将对应行状态更新为 ✅，并更新上方的 "当前版本" 字段。
 

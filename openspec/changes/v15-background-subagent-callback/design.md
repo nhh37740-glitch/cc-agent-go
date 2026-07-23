@@ -67,6 +67,14 @@ conversationId → 当前连接使用的一个或多个 chan []byte
 
 SubAgent回调把 `background_reply_started`、`background_reply_token`、`background_reply_completed` 或 `background_reply_failed` JSON 写入会话事件 channel。完成事件包含完整回复；即使某个 token 事件因浏览器速度过慢没有进入缓冲 channel，完成事件仍能把页面文字修正为完整结果。
 
+### 7. 每个 SubAgent任务由调用 LLM 选择轮数
+
+`SubAgentTask` 增加必填的 `maximumRounds`。一次 `run_subagent` 可以为不同任务填写不同数值，例如浏览器搜索使用 30 轮，简单总结使用 5 轮。
+
+`config.Config.MaximumSubAgentRounds` 从 `MAXIMUM_SUBAGENT_ROUNDS` 读取，默认值为 50。这个配置值只决定调用 LLM 最多可以填写多少轮。`decodeAndValidateRunSubAgentToolInput` 在启动任何 goroutine 前检查所有任务；小于 1 或超过配置值时，整个工具调用返回错误。
+
+`RunSubAgentsInParallel` 把每个 `SubAgentTask.MaximumRounds` 传给 `RunSubAgent`。`RunSubAgent` 的循环直接使用传入值，不再读取固定的 12 轮常量。
+
 ## Risks / Trade-offs
 
 - [浏览器尚未建立事件 SSE 时后台结果已经完成] → 主 Agent最终回复仍写入会话 JSON；当前版本优先保证流式聊天页面，重新加载会话仍能读取最终回复。
@@ -82,6 +90,7 @@ SubAgent回调把 `background_reply_started`、`background_reply_token`、`backg
 4. 增加 SubAgent完成回调和主 Agent继续函数。
 5. 修改 Web 页面建立事件 SSE并显示后台回复。
 6. 增加测试并执行完整 Go 检查。
+7. 增加每任务 `maximumRounds`、配置最高值和参数验证测试。
 
 回滚时恢复全局同步 `run_subagent` 注册，删除事件 SSE 路由和 Web EventSource 代码；现有会话 JSON 不需要迁移。
 

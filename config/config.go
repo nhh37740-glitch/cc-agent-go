@@ -9,6 +9,7 @@ import (
 
 const defaultMaximumParallelSubAgents = 5
 const hardMaximumParallelSubAgents = 5
+const defaultMaximumSubAgentRounds = 50
 const defaultLocalConfigFilePath = "config/local.json"
 
 type localConfigFile struct {
@@ -24,6 +25,7 @@ type Config struct {
 	SessionsDir              string // 会话 JSON 存储目录，默认 "workspace/data/sessions"
 	CompressionThreshold     int    // token 压缩阈值，默认 100000（和 Java 版一致）
 	MaximumParallelSubAgents int    // 同一次 run_subagent 最多并行执行的 SubAgent 数量
+	MaximumSubAgentRounds    int    // run_subagent 单项任务允许填写的最高轮数
 }
 
 // Load 读取运行配置。DEEPSEEK_API_KEY 环境变量优先；
@@ -37,6 +39,7 @@ func Load() Config {
 		SessionsDir:              "data/sessions",
 		CompressionThreshold:     100000,
 		MaximumParallelSubAgents: loadMaximumParallelSubAgents(),
+		MaximumSubAgentRounds:    loadMaximumSubAgentRounds(),
 	}
 }
 
@@ -84,4 +87,20 @@ func loadMaximumParallelSubAgents() int {
 	}
 
 	return maximumParallelSubAgents
+}
+
+func loadMaximumSubAgentRounds() int {
+	configuredMaximumSubAgentRounds :=
+		os.Getenv("MAXIMUM_SUBAGENT_ROUNDS")
+	if configuredMaximumSubAgentRounds == "" {
+		return defaultMaximumSubAgentRounds
+	}
+
+	maximumSubAgentRounds, convertConfigurationError :=
+		strconv.Atoi(configuredMaximumSubAgentRounds)
+	if convertConfigurationError != nil || maximumSubAgentRounds < 1 {
+		return defaultMaximumSubAgentRounds
+	}
+
+	return maximumSubAgentRounds
 }

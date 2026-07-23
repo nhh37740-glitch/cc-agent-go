@@ -46,7 +46,7 @@ v0–v10 已经完成 Agent 基础能力：HTTP、SSE、模型调用、工具循
 - SubAgent 使用新的临时消息记录和现有 DeepSeek API
 - SubAgent 可以使用执行时已有的 Bash、Skill、CreateSkill 和 MCP 工具
 - 从 SubAgent 工具表删除 `run_subagent`，禁止继续创建 SubAgent
-- 每个 SubAgent 最多执行 12 轮，全部结果组成一个 JSON `tool_result` 返回主 Agent
+- 每个 SubAgent任务由调用 LLM 填写 `maximumRounds`；`MAXIMUM_SUBAGENT_ROUNDS` 配置最高允许值，默认 50
 - 第一版不实现 router、固定职能、handoff、独立会话、后台任务或新网页
 
 ## v15：长任务、后台运行与恢复
@@ -57,6 +57,7 @@ v0–v10 已经完成 Agent 基础能力：HTTP、SSE、模型调用、工具循
 - 当前计划：[`openspec/changes/v15-background-subagent-callback/`](openspec/changes/v15-background-subagent-callback/)
 - `run_subagent` 启动 goroutine 后立即返回每个 `taskId` 和 `status: "running"`
 - 全部 SubAgent完成后直接回调主 Agent，不增加 `get_subagent_results`
+- `run_subagent` 每项任务包含自己的 `maximumRounds`，不再固定为 12 轮
 - 同一 `conversationId` 的普通用户消息和完成回调使用同一把主 Agent执行锁
 - `POST /api/chat/stream` 作为短连接固定结束；`GET /api/conversations/{id}/events` 作为长连接接收后台回复
 - Web 页面使用 `EventSource` 接收后台回复开始、token、完成和失败事件

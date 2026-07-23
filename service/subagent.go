@@ -8,7 +8,6 @@ import (
 	"cc-agent-go/tool"
 )
 
-const subAgentMaximumRounds = 12
 const subAgentMaximumOutputTokens = 4096
 const subAgentMaximumToolResultCharacters = 8000
 
@@ -22,8 +21,9 @@ const subAgentStatusFailed = "failed"
 
 // SubAgentTask 保存主 Agent 交给一个临时 SubAgent 的任务编号和完整任务。
 type SubAgentTask struct {
-	TaskID string `json:"taskId"`
-	Task   string `json:"task"`
+	TaskID        string `json:"taskId"`
+	Task          string `json:"task"`
+	MaximumRounds int    `json:"maximumRounds"`
 }
 
 // SubAgentResult 保存一个临时 SubAgent 的最终文字或错误。
@@ -85,6 +85,7 @@ func RunSubAgentsInParallel(
 		go func(currentInputIndex int, currentSubAgentTask SubAgentTask) {
 			subAgentFinalText, runSubAgentError := RunSubAgent(
 				currentSubAgentTask.Task,
+				currentSubAgentTask.MaximumRounds,
 				applicationConfig,
 				availableSubAgentTools,
 			)
@@ -121,6 +122,7 @@ func RunSubAgentsInParallel(
 // 它不读取或保存主 Agent 会话。
 func RunSubAgent(
 	subAgentTask string,
+	maximumRounds int,
 	applicationConfig config.Config,
 	availableSubAgentTools *tool.Registry,
 ) (string, error) {
@@ -132,7 +134,7 @@ func RunSubAgent(
 	}}
 	subAgentToolDefinitions := availableSubAgentTools.GetDefinitions()
 
-	for subAgentRound := 0; subAgentRound < subAgentMaximumRounds; subAgentRound++ {
+	for subAgentRound := 0; subAgentRound < maximumRounds; subAgentRound++ {
 		deepSeekResponse, deepSeekCallError := Chat(
 			subAgentMessageHistory,
 			generalSubAgentSystemPrompt,
@@ -221,7 +223,7 @@ func RunSubAgent(
 		0,
 		fmt.Errorf(
 			"达到最大工具调用轮数 %d，SubAgent 仍未给出最终文字",
-			subAgentMaximumRounds,
+			maximumRounds,
 		),
 	)
 }

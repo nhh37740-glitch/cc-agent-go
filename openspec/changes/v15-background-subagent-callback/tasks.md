@@ -38,3 +38,11 @@
 - [x] 6.2 运行 `go fmt ./...`
 - [x] 6.3 运行 `go build ./...`、`go vet ./...` 和 `go test ./...`
 - [x] 6.4 启动服务，用浏览器验证聊天短连接关闭、输入框恢复和后台回复从长连接出现
+
+## 7. 让调用 LLM 配置每个 SubAgent 的轮数
+
+- [x] 7.1 在 `config.Config` 增加最高允许轮数，并从 `MAXIMUM_SUBAGENT_ROUNDS` 读取
+- [x] 7.2 在每个 `SubAgentTask` 和 `run_subagent` JSON Schema 中增加必填 `maximumRounds`
+- [x] 7.3 启动任务前验证 `maximumRounds`，并把每个任务自己的数值传给 `RunSubAgent`
+- [x] 7.4 增加配置、参数验证和实际轮数测试，更新 `PROJECT_INDEX.md` 与相关文档
+- [x] 7.5 运行格式化、编译、静态检查、全部测试和 OpenSpec 校验

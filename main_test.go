@@ -319,16 +319,19 @@ func TestDecodeAndValidateRunSubAgentToolInputAcceptsValidTasks(t *testing.T) {
 			map[string]any{
 				"subAgentTasks": []any{
 					map[string]any{
-						"taskId": "compile-check",
-						"task":   "运行 go build ./...",
+						"taskId":        "compile-check",
+						"task":          "运行 go build ./...",
+						"maximumRounds": 20,
 					},
 					map[string]any{
-						"taskId": "document-check",
-						"task":   "检查 ROADMAP.md",
+						"taskId":        "document-check",
+						"task":          "检查 ROADMAP.md",
+						"maximumRounds": 5,
 					},
 				},
 			},
 			3,
+			50,
 		)
 	if decodeToolInputError != nil {
 		t.Fatalf("decode valid run_subagent input: %v", decodeToolInputError)
@@ -349,6 +352,12 @@ func TestDecodeAndValidateRunSubAgentToolInputAcceptsValidTasks(t *testing.T) {
 		t.Fatalf(
 			"first task = %q",
 			runSubAgentToolInput.SubAgentTasks[0].Task,
+		)
+	}
+	if runSubAgentToolInput.SubAgentTasks[0].MaximumRounds != 20 {
+		t.Fatalf(
+			"first maximumRounds = %d, want 20",
+			runSubAgentToolInput.SubAgentTasks[0].MaximumRounds,
 		)
 	}
 }
@@ -427,6 +436,33 @@ func TestDecodeAndValidateRunSubAgentToolInputRejectsInvalidTasks(t *testing.T) 
 			maximumParallelSubAgents: 5,
 			expectedErrorText:        "taskId \"same\" 重复",
 		},
+		{
+			testName: "missing maximum rounds",
+			toolArguments: map[string]any{
+				"subAgentTasks": []any{
+					map[string]any{
+						"taskId": "one",
+						"task":   "work",
+					},
+				},
+			},
+			maximumParallelSubAgents: 5,
+			expectedErrorText:        "maximumRounds 必须大于 0",
+		},
+		{
+			testName: "maximum rounds above configuration",
+			toolArguments: map[string]any{
+				"subAgentTasks": []any{
+					map[string]any{
+						"taskId":        "one",
+						"task":          "work",
+						"maximumRounds": 51,
+					},
+				},
+			},
+			maximumParallelSubAgents: 5,
+			expectedErrorText:        "当前配置最多允许 50 轮",
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -434,6 +470,7 @@ func TestDecodeAndValidateRunSubAgentToolInputRejectsInvalidTasks(t *testing.T) 
 			_, decodeToolInputError := decodeAndValidateRunSubAgentToolInput(
 				testCase.toolArguments,
 				testCase.maximumParallelSubAgents,
+				50,
 			)
 			if decodeToolInputError == nil {
 				t.Fatal("decode invalid run_subagent input returned nil error")
@@ -453,6 +490,7 @@ func TestDecodeAndValidateRunSubAgentToolInputRejectsInvalidTasks(t *testing.T) 
 }
 
 func TestRegisterGeneralSubAgentToolAddsFixedJSONSchema(t *testing.T) {
+	t.Setenv("MAXIMUM_SUBAGENT_ROUNDS", "40")
 	mainAgentToolRegistry := tool.NewRegistry()
 
 	registerGeneralSubAgentError := registerGeneralSubAgentTool(
@@ -523,12 +561,36 @@ func TestRegisterGeneralSubAgentToolAddsFixedJSONSchema(t *testing.T) {
 			subAgentTaskItemSchema["required"],
 		)
 	}
-	if len(requiredTaskFields) != 2 ||
+	if len(requiredTaskFields) != 3 ||
 		requiredTaskFields[0] != "taskId" ||
-		requiredTaskFields[1] != "task" {
+		requiredTaskFields[1] != "task" ||
+		requiredTaskFields[2] != "maximumRounds" {
 		t.Fatalf(
-			"required task fields = %#v, want taskId and task",
+			"required task fields = %#v, want taskId, task and maximumRounds",
 			requiredTaskFields,
+		)
+	}
+	taskProperties, taskPropertiesAreMap :=
+		subAgentTaskItemSchema["properties"].(map[string]any)
+	if !taskPropertiesAreMap {
+		t.Fatalf(
+			"task properties type = %T",
+			subAgentTaskItemSchema["properties"],
+		)
+	}
+	maximumRoundsSchema, maximumRoundsSchemaIsMap :=
+		taskProperties["maximumRounds"].(map[string]any)
+	if !maximumRoundsSchemaIsMap {
+		t.Fatalf(
+			"maximumRounds schema type = %T",
+			taskProperties["maximumRounds"],
+		)
+	}
+	if maximumRoundsSchema["minimum"] != 1 ||
+		maximumRoundsSchema["maximum"] != 40 {
+		t.Fatalf(
+			"maximumRounds schema = %#v",
+			maximumRoundsSchema,
 		)
 	}
 }
@@ -882,8 +944,9 @@ func ignoreCompletedSubAgentResults(
 
 func validSubAgentToolTask(taskID string) map[string]any {
 	return map[string]any{
-		"taskId": taskID,
-		"task":   "complete " + taskID,
+		"taskId":        taskID,
+		"task":          "complete " + taskID,
+		"maximumRounds": 20,
 	}
 }
 
@@ -1180,14 +1243,16 @@ func assertOnlyMainAgentSessionWasSaved(t *testing.T) {
 
 func regularDeepSeekToolCallHTTPResponse() *http.Response {
 	toolArgumentsJSON, _ := json.Marshal(map[string]any{
-		"subAgentTasks": []map[string]string{
+		"subAgentTasks": []map[string]any{
 			{
-				"taskId": "first",
-				"task":   "first independent task",
+				"taskId":        "first",
+				"task":          "first independent task",
+				"maximumRounds": 20,
 			},
 			{
-				"taskId": "second",
-				"task":   "second independent task",
+				"taskId":        "second",
+				"task":          "second independent task",
+				"maximumRounds": 20,
 			},
 		},
 	})
@@ -1215,14 +1280,16 @@ func regularDeepSeekTextHTTPResponse(responseText string) *http.Response {
 
 func streamingDeepSeekToolCallHTTPResponse() *http.Response {
 	toolArgumentsJSON, _ := json.Marshal(map[string]any{
-		"subAgentTasks": []map[string]string{
+		"subAgentTasks": []map[string]any{
 			{
-				"taskId": "first",
-				"task":   "first independent task",
+				"taskId":        "first",
+				"task":          "first independent task",
+				"maximumRounds": 20,
 			},
 			{
-				"taskId": "second",
-				"task":   "second independent task",
+				"taskId":        "second",
+				"task":          "second independent task",
+				"maximumRounds": 20,
 			},
 		},
 	})
