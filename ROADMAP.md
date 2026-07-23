@@ -58,6 +58,9 @@ v0–v10 已经完成 Agent 基础能力：HTTP、SSE、模型调用、工具循
 - `run_subagent` 启动 goroutine 后立即返回每个 `taskId` 和 `status: "running"`
 - 全部 SubAgent完成后直接回调主 Agent，不增加 `get_subagent_results`
 - `run_subagent` 每项任务包含自己的 `maximumRounds`，不再固定为 12 轮
+- 达到 `maximumRounds` 时，最后一轮禁用工具并整理已有内容，返回 `limit_reached`、部分 `result` 和 `error`
+- 原主 Agent成功启动 SubAgent 后立即结束，不继续执行同一回复中的其他工具
+- 完成回调使用空工具表；回调主 Agent只能分析和汇总，不能继续执行 SubAgent工作
 - 同一 `conversationId` 的普通用户消息和完成回调使用同一把主 Agent执行锁
 - `POST /api/chat/stream` 作为短连接固定结束；`GET /api/conversations/{id}/events` 作为长连接接收后台回复
 - Web 页面使用 `EventSource` 接收后台回复开始、token、完成和失败事件

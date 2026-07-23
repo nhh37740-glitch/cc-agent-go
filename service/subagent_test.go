@@ -236,9 +236,24 @@ func TestRunSubAgentTruncatesLongToolResult(t *testing.T) {
 func TestRunSubAgentUsesTaskSpecificMaximumRounds(t *testing.T) {
 	const taskMaximumRounds = 3
 	var deepSeekCallCount atomic.Int32
+	var finalRoundDeepSeekRequest recordedDeepSeekRequest
 	deepSeekTestServer := httptest.NewServer(http.HandlerFunc(
 		func(responseWriter http.ResponseWriter, httpRequest *http.Request) {
 			currentDeepSeekCall := deepSeekCallCount.Add(1)
+			if currentDeepSeekCall == taskMaximumRounds {
+				decodeRequestError := json.NewDecoder(httpRequest.Body).Decode(
+					&finalRoundDeepSeekRequest,
+				)
+				if decodeRequestError != nil {
+					t.Errorf("decode final DeepSeek request: %v", decodeRequestError)
+				}
+				writeDeepSeekTextResponse(
+					t,
+					responseWriter,
+					"已经获得的部分结果",
+				)
+				return
+			}
 			writeDeepSeekToolCallResponse(
 				t,
 				responseWriter,
@@ -259,7 +274,7 @@ func TestRunSubAgentUsesTaskSpecificMaximumRounds(t *testing.T) {
 		},
 	)
 
-	_, runSubAgentError := RunSubAgent(
+	subAgentPartialResult, runSubAgentError := RunSubAgent(
 		"持续调用工具",
 		taskMaximumRounds,
 		newSubAgentTestConfig(deepSeekTestServer.URL),
@@ -280,6 +295,24 @@ func TestRunSubAgentUsesTaskSpecificMaximumRounds(t *testing.T) {
 			ErrorAgentLimit,
 		)
 	}
+	if subAgentPartialResult != "已经获得的部分结果" {
+		t.Fatalf(
+			"partial result = %q, want %q",
+			subAgentPartialResult,
+			"已经获得的部分结果",
+		)
+	}
+	if len(finalRoundDeepSeekRequest.Tools) != 0 {
+		t.Fatalf(
+			"final round tool count = %d, want 0",
+			len(finalRoundDeepSeekRequest.Tools),
+		)
+	}
+	finalRoundMessage :=
+		finalRoundDeepSeekRequest.Messages[len(finalRoundDeepSeekRequest.Messages)-1]
+	if !messageContainsText(finalRoundMessage, "不得再调用任何工具") {
+		t.Fatalf("final round message = %#v", finalRoundMessage)
+	}
 	if deepSeekCallCount.Load() != taskMaximumRounds {
 		t.Fatalf(
 			"DeepSeek call count = %d, want %d",
@@ -292,6 +325,64 @@ func TestRunSubAgentUsesTaskSpecificMaximumRounds(t *testing.T) {
 		"达到最大工具调用轮数 3",
 	) {
 		t.Fatalf("error = %q, want selected round count", runSubAgentError)
+	}
+}
+
+func TestRunSubAgentsInParallelMarksLimitReachedAndKeepsPartialResult(
+	t *testing.T,
+) {
+	var deepSeekCallCount atomic.Int32
+	deepSeekTestServer := httptest.NewServer(http.HandlerFunc(
+		func(responseWriter http.ResponseWriter, httpRequest *http.Request) {
+			if deepSeekCallCount.Add(1) == 1 {
+				writeDeepSeekToolCallResponse(
+					t,
+					responseWriter,
+					"tool-use-1",
+					"continue_tool",
+				)
+				return
+			}
+			writeDeepSeekTextResponse(t, responseWriter, "部分结果总结")
+		},
+	))
+	t.Cleanup(deepSeekTestServer.Close)
+
+	availableSubAgentTools := tool.NewRegistry()
+	registerSubAgentTestTool(
+		t,
+		availableSubAgentTools,
+		"continue_tool",
+		func(toolArguments map[string]any) (string, error) {
+			return "已经读取到一部分内容", nil
+		},
+	)
+
+	subAgentResults := RunSubAgentsInParallel(
+		[]SubAgentTask{{
+			TaskID:        "limited-task",
+			Task:          "执行一个超过轮数的任务",
+			MaximumRounds: 2,
+		}},
+		newSubAgentTestConfig(deepSeekTestServer.URL),
+		availableSubAgentTools,
+	)
+
+	if subAgentResults[0].Status != subAgentStatusLimitReached {
+		t.Fatalf(
+			"status = %q, want %q",
+			subAgentResults[0].Status,
+			subAgentStatusLimitReached,
+		)
+	}
+	if subAgentResults[0].Result != "部分结果总结" {
+		t.Fatalf("result = %q", subAgentResults[0].Result)
+	}
+	if !strings.Contains(
+		subAgentResults[0].Error,
+		"达到最大工具调用轮数 2",
+	) {
+		t.Fatalf("error = %q", subAgentResults[0].Error)
 	}
 }
 
@@ -657,4 +748,16 @@ func findToolResultText(messages []model.Message) string {
 		}
 	}
 	return ""
+}
+
+func messageContainsText(message model.Message, expectedText string) bool {
+	for _, messageContentBlock := range message.Content {
+		textContentBlock, isTextContentBlock :=
+			messageContentBlock.(model.TextContentBlock)
+		if isTextContentBlock &&
+			strings.Contains(textContentBlock.Text, expectedText) {
+			return true
+		}
+	}
+	return false
 }

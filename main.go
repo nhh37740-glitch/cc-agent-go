@@ -105,7 +105,7 @@ var mcpServerManager *mcp.MCPServerManager
 var conversationEventReceivers = service.NewConversationEventReceivers()
 var conversationExecutionLocks = service.NewConversationExecutionLocks()
 
-const generalSubAgentToolName = "run_subagent"
+const generalSubAgentToolName = service.GeneralSubAgentToolName
 
 const generalSubAgentToolDescription = `同时运行一个或多个临时通用 SubAgent。
 每个 subAgentTasks 元素必须包含唯一 taskId、完整任务和 maximumRounds。
@@ -454,8 +454,7 @@ func continueMainAgentAfterSubAgents(
 
 	applicationConfig := config.Load()
 	conversationStore := service.NewStore(applicationConfig.SessionsDir)
-	backgroundReplyToolRegistry :=
-		registry.CopyExcludingTools(generalSubAgentToolName)
+	backgroundReplyToolRegistry := tool.NewRegistry()
 
 	backgroundReplyText, _, continueMainAgentError :=
 		service.ContinueConversationAfterSubAgentsStream(

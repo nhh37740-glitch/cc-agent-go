@@ -35,7 +35,7 @@ Go 服务每次启动时自动创建 `logs/server.jsonl`。每条 `slog` JSON �
 
 ## 后台 SubAgent 回复
 
-`POST /api/chat/stream` 只处理一条用户消息，回复完成后固定关闭。网页同时为当前会话建立 `GET /api/conversations/{conversationId}/events` 长连接。`run_subagent` 启动后台任务后立即返回；每个任务由调用 LLM 填写 `maximumRounds`，`MAXIMUM_SUBAGENT_ROUNDS` 配置允许的最高值，默认 50。全部 SubAgent完成时，Go 回调主 Agent，并通过会话事件长连接推送主 Agent的新回复。
+`POST /api/chat/stream` 只处理一条用户消息，回复完成后固定关闭。网页同时为当前会话建立 `GET /api/conversations/{conversationId}/events` 长连接。`run_subagent` 启动后台任务后，原主 Agent立即返回并结束；同一条模型回复中的其他工具不会执行。每个任务由调用 LLM 填写 `maximumRounds`，`MAXIMUM_SUBAGENT_ROUNDS` 配置允许的最高值，默认 50。达到轮数上限时，SubAgent最后一轮不再收到工具，而是整理已有结果，并返回 `limit_reached`、`result` 和 `error`。全部 SubAgent完成时，Go 使用空工具表回调主 Agent；回调主 Agent只分析和汇总结果，再通过会话事件长连接推送新回复。
 
 ## DeepSeek Key 配置
 

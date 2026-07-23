@@ -676,7 +676,7 @@ func TestHandleChatReceivesParallelSubAgentJSONToolResult(t *testing.T) {
 	if decodeChatResponseError != nil {
 		t.Fatalf("decode chat response: %v", decodeChatResponseError)
 	}
-	if chatResponse.Reply != "主 Agent 已启动两个 SubAgent" {
+	if chatResponse.Reply != "SubAgent 已启动，完成后会自动返回结果。" {
 		t.Fatalf("reply = %q", chatResponse.Reply)
 	}
 
@@ -728,7 +728,7 @@ func TestHandleChatStreamReceivesParallelSubAgentJSONToolResult(t *testing.T) {
 	}
 	if !strings.Contains(
 		httpResponseRecorder.Body.String(),
-		"主 Agent 已启动两个 SubAgent",
+		"SubAgent 已启动，完成后会自动返回结果。",
 	) {
 		t.Fatalf("SSE body = %s", httpResponseRecorder.Body.String())
 	}
@@ -958,8 +958,12 @@ func (executeRoundTrip roundTripFunction) RoundTrip(
 	return executeRoundTrip(httpRequest)
 }
 
+var mainIntegrationFakeMCPToolExecutions atomic.Int32
+
 type parallelSubAgentProviderTransport struct {
 	subAgentRequestsStarted  atomic.Int32
+	foregroundRequests       atomic.Int32
+	callbackToolCount        atomic.Int32
 	allSubAgentRequestsReady chan struct{}
 	closeAllRequestsReady    sync.Once
 	toolResultMutex          sync.Mutex
@@ -1013,6 +1017,9 @@ func (providerTransport *parallelSubAgentProviderTransport) RoundTrip(
 		deepSeekRequest.Messages,
 		"你之前启动的一批 SubAgent 已经执行完毕",
 	) {
+		providerTransport.callbackToolCount.Store(
+			int32(len(deepSeekRequest.Tools)),
+		)
 		if deepSeekRequest.Stream {
 			return streamingDeepSeekTextHTTPResponse(
 				"主 Agent 已处理后台 SubAgent 结果",
@@ -1023,6 +1030,7 @@ func (providerTransport *parallelSubAgentProviderTransport) RoundTrip(
 		), nil
 	}
 
+	providerTransport.foregroundRequests.Add(1)
 	mainAgentToolResultJSON := findMainIntegrationToolResult(
 		deepSeekRequest.Messages,
 	)
@@ -1077,6 +1085,7 @@ func configureMainIntegrationTestGlobals(t *testing.T) func() {
 	originalConversationExecutionLocks := conversationExecutionLocks
 
 	registry = tool.NewRegistry()
+	mainIntegrationFakeMCPToolExecutions.Store(0)
 	conversationEventReceivers = service.NewConversationEventReceivers()
 	conversationExecutionLocks = service.NewConversationExecutionLocks()
 	registerFakeMCPToolError := registry.RegisterFunctionTool(
@@ -1084,6 +1093,7 @@ func configureMainIntegrationTestGlobals(t *testing.T) func() {
 		"fake MCP tool used by the integration test",
 		map[string]any{"type": "object"},
 		func(toolArguments map[string]any) (string, error) {
+			mainIntegrationFakeMCPToolExecutions.Add(1)
 			return "fake MCP result", nil
 		},
 	)
@@ -1170,49 +1180,31 @@ func assertParallelSubAgentToolResult(
 			providerTransport.subAgentRequestsStarted.Load(),
 		)
 	}
+	if providerTransport.foregroundRequests.Load() != 1 {
+		t.Fatalf(
+			"foreground main Agent request count = %d, want 1",
+			providerTransport.foregroundRequests.Load(),
+		)
+	}
+	if providerTransport.callbackToolCount.Load() != 0 {
+		t.Fatalf(
+			"callback tool count = %d, want 0",
+			providerTransport.callbackToolCount.Load(),
+		)
+	}
+	if mainIntegrationFakeMCPToolExecutions.Load() != 0 {
+		t.Fatalf(
+			"foreground MCP tool execution count = %d, want 0",
+			mainIntegrationFakeMCPToolExecutions.Load(),
+		)
+	}
 
 	providerTransport.toolResultMutex.Lock()
-	mainAgentToolResultJSON := providerTransport.mainAgentToolResultJSON
 	subAgentToolNames := make(map[string]bool)
 	for toolName, toolExists := range providerTransport.subAgentToolNames {
 		subAgentToolNames[toolName] = toolExists
 	}
 	providerTransport.toolResultMutex.Unlock()
-
-	var runSubAgentToolOutput RunSubAgentToolOutput
-	decodeToolResultError := json.Unmarshal(
-		[]byte(mainAgentToolResultJSON),
-		&runSubAgentToolOutput,
-	)
-	if decodeToolResultError != nil {
-		t.Fatalf(
-			"decode run_subagent tool result %q: %v",
-			mainAgentToolResultJSON,
-			decodeToolResultError,
-		)
-	}
-	if runSubAgentToolOutput.MaximumParallelSubAgents != 3 {
-		t.Fatalf(
-			"maximumParallelSubAgents = %d, want 3",
-			runSubAgentToolOutput.MaximumParallelSubAgents,
-		)
-	}
-	if len(runSubAgentToolOutput.Tasks) != 2 {
-		t.Fatalf(
-			"task count = %d, want 2",
-			len(runSubAgentToolOutput.Tasks),
-		)
-	}
-	for taskIndex, startedSubAgentTask := range runSubAgentToolOutput.Tasks {
-		if startedSubAgentTask.TaskID == "" ||
-			startedSubAgentTask.Status != "running" {
-			t.Fatalf(
-				"task %d = %#v",
-				taskIndex,
-				startedSubAgentTask,
-			)
-		}
-	}
 	if !subAgentToolNames["mcp_playwright__read_page"] {
 		t.Fatal("SubAgent tool definitions do not contain the registered MCP tool")
 	}
@@ -1259,7 +1251,7 @@ func regularDeepSeekToolCallHTTPResponse() *http.Response {
 	return newProviderHTTPResponse(
 		http.StatusOK,
 		fmt.Sprintf(
-			`{"content":[{"type":"tool_use","id":"run-subagents","name":"run_subagent","input":%s}],"stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":5}}`,
+			`{"content":[{"type":"tool_use","id":"run-subagents","name":"run_subagent","input":%s},{"type":"tool_use","id":"read-page","name":"mcp_playwright__read_page","input":{}}],"stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":5}}`,
 			toolArgumentsJSON,
 		),
 		"application/json",
@@ -1302,6 +1294,9 @@ func streamingDeepSeekToolCallHTTPResponse() *http.Response {
 			partialToolArgumentsJSON,
 		),
 		`data: {"type":"content_block_stop","index":0}`,
+		`data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"read-page","name":"mcp_playwright__read_page"}}`,
+		`data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{}"}}`,
+		`data: {"type":"content_block_stop","index":1}`,
 		`data: {"type":"message_delta","usage":{"output_tokens":5}}`,
 		`data: {"type":"message_stop"}`,
 		"",

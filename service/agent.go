@@ -15,6 +15,7 @@ import (
 const maxRounds = 50          // 最大工具调用轮数，和 Java 版一致
 const maxToolResult = 8000    // 工具结果最大字符数，超长截断
 const defaultMaxTokens = 4096 // 默认 API max_tokens
+const subAgentStartedReply = "SubAgent 已启动，完成后会自动返回结果。"
 
 // Run 执行 Agent 循环（非流式）。v7 新增会话持久化：
 //   - 从 store 加载历史消息，实现跨请求的上下文延续
@@ -151,8 +152,22 @@ func Run(userMessage string, conversationId string, systemPrompt string,
 
 		// 执行每个工具，工具结果打包成 user 消息
 		toolResultMsg := model.Message{Role: "user"}
+		responseContainsRunSubAgent :=
+			containsToolCall(resp.ToolCalls, GeneralSubAgentToolName)
+		runSubAgentStartedSuccessfully := false
 		for _, tc := range resp.ToolCalls {
-			result, execErr := registry.Execute(tc.Name, tc.Input)
+			result := ""
+			var execErr error
+			if responseContainsRunSubAgent &&
+				tc.Name != GeneralSubAgentToolName {
+				result = "工具未执行：本轮已经调用 run_subagent，" +
+					"主 Agent 只负责启动 SubAgent。"
+			} else {
+				result, execErr = registry.Execute(tc.Name, tc.Input)
+				if tc.Name == GeneralSubAgentToolName && execErr == nil {
+					runSubAgentStartedSuccessfully = true
+				}
+			}
 			if execErr != nil {
 				slog.Warn("工具执行失败，错误将交给下一轮模型调用",
 					"component", "tool",
@@ -178,6 +193,39 @@ func Run(userMessage string, conversationId string, systemPrompt string,
 		}
 		history = append(history, toolResultMsg)
 		// 工具结果只进 history，不进 newMessages
+
+		if runSubAgentStartedSuccessfully {
+			mainAgentReply := resp.Text
+			if mainAgentReply != "" {
+				mainAgentReply += "\n\n"
+			}
+			mainAgentReply += subAgentStartedReply
+			newMessages = append(
+				newMessages,
+				model.Message{
+					Role: "assistant",
+					Content: []model.MessageContentBlock{
+						model.TextContentBlock{Text: mainAgentReply},
+					},
+				},
+			)
+
+			saveErr := store.AppendTurnWithCompression(
+				conversationId, newMessages, totalOutputTokens,
+				cfg.CompressionThreshold,
+				makeCompressor(cfg, tools),
+			)
+			if saveErr != nil {
+				slog.Error("保存 Agent 会话失败",
+					"component", "storage",
+					"operation", "store.AppendTurnWithCompression",
+					"conversation_id", conversationId,
+					"error_kind", ErrorStorageWrite,
+					"error", saveErr)
+			}
+
+			return mainAgentReply, conversationId, nil
+		}
 	}
 
 	return "", conversationId, NewAppError(ErrorAgentLimit,
@@ -223,7 +271,7 @@ func ContinueConversationAfterSubAgentsStream(
 	conversationId string,
 	systemPrompt string,
 	cfg config.Config,
-	registry *tool.Registry,
+	_ *tool.Registry,
 	store *Store,
 	onToken func(string),
 ) (string, string, error) {
@@ -241,7 +289,10 @@ func ContinueConversationAfterSubAgentsStream(
 		Content: []model.MessageContentBlock{
 			model.TextContentBlock{
 				Text: "你之前启动的一批 SubAgent 已经执行完毕。" +
-					"请结合当前完整会话和下面的执行结果继续回答用户。" +
+					"你现在只能分析和汇总下面的执行结果，不能调用工具，" +
+					"不能继续执行 SubAgent 尚未完成的工作。" +
+					"如果 status 是 limit_reached 或 failed，" +
+					"必须明确说明已经获得的结果和仍未完成的内容。" +
 					"不要要求用户再次询问结果。\n\n" +
 					string(subAgentResultsJSON),
 			},
@@ -254,7 +305,7 @@ func ContinueConversationAfterSubAgentsStream(
 		conversationId,
 		systemPrompt,
 		cfg,
-		registry,
+		tool.NewRegistry(),
 		store,
 		onToken,
 		"service.ContinueConversationAfterSubAgentsStream",
@@ -361,8 +412,22 @@ func runStreamWithInputMessage(
 		// 工具调用消息只进 history（内部上下文），不进 newMessages
 
 		toolResultMsg := model.Message{Role: "user"}
+		responseContainsRunSubAgent :=
+			containsToolCall(resp.ToolCalls, GeneralSubAgentToolName)
+		runSubAgentStartedSuccessfully := false
 		for _, tc := range resp.ToolCalls {
-			result, execErr := registry.Execute(tc.Name, tc.Input)
+			result := ""
+			var execErr error
+			if responseContainsRunSubAgent &&
+				tc.Name != GeneralSubAgentToolName {
+				result = "工具未执行：本轮已经调用 run_subagent，" +
+					"主 Agent 只负责启动 SubAgent。"
+			} else {
+				result, execErr = registry.Execute(tc.Name, tc.Input)
+				if tc.Name == GeneralSubAgentToolName && execErr == nil {
+					runSubAgentStartedSuccessfully = true
+				}
+			}
 			if execErr != nil {
 				slog.Warn("工具执行失败，错误将交给下一轮模型调用",
 					"component", "tool",
@@ -387,11 +452,59 @@ func runStreamWithInputMessage(
 		}
 		history = append(history, toolResultMsg)
 		// 工具结果只进 history，不进 newMessages
+
+		if runSubAgentStartedSuccessfully {
+			streamedReplySuffix := subAgentStartedReply
+			mainAgentReply := resp.Text
+			if mainAgentReply != "" {
+				mainAgentReply += "\n\n"
+				streamedReplySuffix = "\n\n" + streamedReplySuffix
+			}
+			mainAgentReply += subAgentStartedReply
+			onToken(streamedReplySuffix)
+			newMessages = append(
+				newMessages,
+				model.Message{
+					Role: "assistant",
+					Content: []model.MessageContentBlock{
+						model.TextContentBlock{Text: mainAgentReply},
+					},
+				},
+			)
+
+			saveErr := store.AppendTurnWithCompression(
+				conversationId, newMessages, totalOutputTokens,
+				cfg.CompressionThreshold,
+				makeCompressor(cfg, tools),
+			)
+			if saveErr != nil {
+				slog.Error("保存 Agent 会话失败",
+					"component", "storage",
+					"operation", "store.AppendTurnWithCompression",
+					"conversation_id", conversationId,
+					"error_kind", ErrorStorageWrite,
+					"error", saveErr)
+			}
+
+			return mainAgentReply, conversationId, nil
+		}
 	}
 
 	return "", conversationId, NewAppError(ErrorAgentLimit,
 		operationName, 0,
 		fmt.Errorf("达到最大工具调用轮数 %d", maxRounds))
+}
+
+func containsToolCall(
+	toolCalls []model.ToolCall,
+	expectedToolName string,
+) bool {
+	for _, toolCall := range toolCalls {
+		if toolCall.Name == expectedToolName {
+			return true
+		}
+	}
+	return false
 }
 
 // ========================================================================

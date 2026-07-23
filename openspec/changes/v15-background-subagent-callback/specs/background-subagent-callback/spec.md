@@ -14,6 +14,13 @@ Every item in `subAgentTasks` SHALL contain a positive integer `maximumRounds`. 
 - **WHEN** the main Agent supplies `maximumRounds: 30` for a browser-search task
 - **THEN** that SubAgent may execute up to 30 rounds before returning `agent_limit_reached`
 
+### Requirement: Preserve partial results when a SubAgent reaches its round limit
+The final allowed SubAgent round SHALL receive the existing temporary message history without any tool definitions and SHALL be instructed to return the work already completed, results already obtained, and unfinished items. If this final round returns text, the `SubAgentResult` SHALL use `status: "limit_reached"`, SHALL preserve that text in `result`, and SHALL preserve the round-limit explanation in `error`.
+
+#### Scenario: Browser task reaches its selected limit
+- **WHEN** a browser-search SubAgent reaches `maximumRounds` after collecting page content
+- **THEN** the main Agent receives the collected result summary together with `status: "limit_reached"` instead of receiving an empty result
+
 ### Requirement: Reject a task round limit above the configured maximum
 The Go configuration SHALL expose the highest allowed SubAgent round count. `run_subagent` SHALL reject a task whose `maximumRounds` is less than 1 or greater than that configured maximum.
 
@@ -29,11 +36,18 @@ The background SubAgent function SHALL call one completion callback after every 
 - **THEN** the completion callback receives those results without requiring another model-selected tool call or another user message
 
 ### Requirement: Continue the latest parent conversation with SubAgent results
-The completion callback SHALL wait until any current main Agent execution for the same `conversationId` has finished, load the latest saved conversation messages, append the completed SubAgent results for the next DeepSeek call, and execute the existing main Agent tool loop. The internal SubAgent-result message SHALL NOT be saved as a visible user message; the resulting main Agent assistant reply SHALL be saved.
+The completion callback SHALL wait until any current main Agent execution for the same `conversationId` has finished, load the latest saved conversation messages, append the completed SubAgent results for the next DeepSeek call, and call the main Agent with an empty tool registry. The callback main Agent SHALL only analyze and summarize the SubAgent results and SHALL NOT continue an unfinished SubAgent task. The internal SubAgent-result message SHALL NOT be saved as a visible user message; the resulting main Agent assistant reply SHALL be saved.
 
 #### Scenario: User sends another message while a SubAgent runs
 - **WHEN** the main Agent has answered the new user message before the SubAgent completes
 - **THEN** the completion callback loads that new exchange before calling DeepSeek
+
+### Requirement: End the original main Agent run after SubAgents start
+When at least one `run_subagent` tool call succeeds, the current main Agent run SHALL save and return an acknowledgement without making another DeepSeek call. Other tool calls requested in the same model response SHALL NOT be executed.
+
+#### Scenario: Model requests run_subagent and a browser tool together
+- **WHEN** `run_subagent` starts successfully in a response that also requests a browser tool
+- **THEN** the browser tool is not executed and the current chat response ends with the SubAgent-started acknowledgement
 
 ### Requirement: Keep chat SSE short and conversation event SSE long
 `POST /api/chat/stream` SHALL finish and close after its one main Agent reply. `GET /api/conversations/{id}/events` SHALL keep running until the browser disconnects. Neither handler SHALL decide its connection lifetime by checking whether a SubAgent was started.

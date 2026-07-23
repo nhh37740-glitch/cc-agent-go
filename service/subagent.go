@@ -1,7 +1,9 @@
 package service
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 
 	"cc-agent-go/config"
 	"cc-agent-go/model"
@@ -10,14 +12,20 @@ import (
 
 const subAgentMaximumOutputTokens = 4096
 const subAgentMaximumToolResultCharacters = 8000
+const GeneralSubAgentToolName = "run_subagent"
 
 const generalSubAgentSystemPrompt = `你是主 Agent 创建的临时通用 SubAgent。
 只完成用户消息中写明的一个任务，不读取或猜测主 Agent 的其他对话内容。
 任务需要使用工具时必须实际调用工具。
 完成后只返回准备交给主 Agent 的任务结果。`
 
+const subAgentFinalRoundInstruction = `这是本任务允许的最后一轮。
+不得再调用任何工具。
+只根据当前临时消息记录返回：已经完成的工作、已经获得的结果、尚未完成的内容。`
+
 const subAgentStatusCompleted = "completed"
 const subAgentStatusFailed = "failed"
+const subAgentStatusLimitReached = "limit_reached"
 
 // SubAgentTask 保存主 Agent 交给一个临时 SubAgent 的任务编号和完整任务。
 type SubAgentTask struct {
@@ -97,8 +105,13 @@ func RunSubAgentsInParallel(
 				Error:  "",
 			}
 			if runSubAgentError != nil {
-				subAgentResult.Status = subAgentStatusFailed
-				subAgentResult.Result = ""
+				var applicationError *AppError
+				if errors.As(runSubAgentError, &applicationError) &&
+					applicationError.Kind == ErrorAgentLimit {
+					subAgentResult.Status = subAgentStatusLimitReached
+				} else {
+					subAgentResult.Status = subAgentStatusFailed
+				}
 				subAgentResult.Error = runSubAgentError.Error()
 			}
 
@@ -133,20 +146,58 @@ func RunSubAgent(
 		},
 	}}
 	subAgentToolDefinitions := availableSubAgentTools.GetDefinitions()
+	var collectedPartialResults []string
 
 	for subAgentRound := 0; subAgentRound < maximumRounds; subAgentRound++ {
+		isFinalAllowedRound := subAgentRound == maximumRounds-1
+		currentRoundToolDefinitions := subAgentToolDefinitions
+		if isFinalAllowedRound {
+			lastMessageIndex := len(subAgentMessageHistory) - 1
+			subAgentMessageHistory[lastMessageIndex].Content = append(
+				subAgentMessageHistory[lastMessageIndex].Content,
+				model.TextContentBlock{
+					Text: subAgentFinalRoundInstruction,
+				},
+			)
+			currentRoundToolDefinitions = nil
+		}
+
 		deepSeekResponse, deepSeekCallError := Chat(
 			subAgentMessageHistory,
 			generalSubAgentSystemPrompt,
 			applicationConfig,
-			subAgentToolDefinitions,
+			currentRoundToolDefinitions,
 			subAgentMaximumOutputTokens,
 		)
 		if deepSeekCallError != nil {
+			if isFinalAllowedRound {
+				return strings.Join(collectedPartialResults, "\n\n"),
+					newSubAgentLimitError(
+						maximumRounds,
+						fmt.Errorf(
+							"最终整理已有结果失败: %w",
+							deepSeekCallError,
+						),
+					)
+			}
 			return "", fmt.Errorf(
 				"SubAgent 第 %d 轮 API 调用失败: %w",
 				subAgentRound+1,
 				deepSeekCallError,
+			)
+		}
+
+		if isFinalAllowedRound {
+			subAgentFinalText := deepSeekResponse.Text
+			if subAgentFinalText == "" {
+				subAgentFinalText = strings.Join(
+					collectedPartialResults,
+					"\n\n",
+				)
+			}
+			return subAgentFinalText, newSubAgentLimitError(
+				maximumRounds,
+				nil,
 			)
 		}
 
@@ -156,6 +207,10 @@ func RunSubAgent(
 
 		subAgentAssistantMessage := model.Message{Role: "assistant"}
 		if deepSeekResponse.Text != "" {
+			collectedPartialResults = append(
+				collectedPartialResults,
+				deepSeekResponse.Text,
+			)
 			subAgentAssistantMessage.Content = append(
 				subAgentAssistantMessage.Content,
 				model.TextContentBlock{
@@ -202,6 +257,14 @@ func RunSubAgent(
 							subAgentMaximumToolResultCharacters,
 						)
 			}
+			collectedPartialResults = append(
+				collectedPartialResults,
+				fmt.Sprintf(
+					"工具 %s 返回：\n%s",
+					subAgentToolCall.Name,
+					subAgentToolResult,
+				),
+			)
 
 			subAgentToolResultMessage.Content = append(
 				subAgentToolResultMessage.Content,
@@ -217,13 +280,23 @@ func RunSubAgent(
 		)
 	}
 
-	return "", NewAppError(
+	return strings.Join(collectedPartialResults, "\n\n"),
+		newSubAgentLimitError(maximumRounds, nil)
+}
+
+func newSubAgentLimitError(maximumRounds int, cause error) error {
+	limitReason := fmt.Errorf(
+		"达到最大工具调用轮数 %d，返回已经获得的部分结果",
+		maximumRounds,
+	)
+	if cause != nil {
+		limitReason = fmt.Errorf("%w: %v", limitReason, cause)
+	}
+
+	return NewAppError(
 		ErrorAgentLimit,
 		"service.RunSubAgent",
 		0,
-		fmt.Errorf(
-			"达到最大工具调用轮数 %d，SubAgent 仍未给出最终文字",
-			maximumRounds,
-		),
+		limitReason,
 	)
 }

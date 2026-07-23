@@ -44,7 +44,7 @@
 
 ### 4. SubAgent结果只作为本次 DeepSeek输入，不保存成用户消息
 
-`service/agent.go` 增加继续函数。它读取最新会话，把包含任务结果的内部 user 消息加入本次 DeepSeek history，但不把这条内部消息加入 `newMessages`。DeepSeek产生的最终 assistant 消息正常保存。
+`service/agent.go` 增加继续函数。它读取最新会话，把包含任务结果的内部 user 消息加入本次 DeepSeek history，但不把这条内部消息加入 `newMessages`。回调传入空工具表，并明确要求主 Agent只分析和汇总已有结果。DeepSeek产生的最终 assistant 消息正常保存。
 
 没有直接调用现有公开 `RunStream`，因为它会把传入文字保存成一条普通用户消息，网页重新加载会把内部回调内容显示成用户输入。
 
@@ -75,6 +75,16 @@ SubAgent回调把 `background_reply_started`、`background_reply_token`、`backg
 
 `RunSubAgentsInParallel` 把每个 `SubAgentTask.MaximumRounds` 传给 `RunSubAgent`。`RunSubAgent` 的循环直接使用传入值，不再读取固定的 12 轮常量。
 
+### 8. 轮数耗尽保留结果，主 Agent不接手任务
+
+`RunSubAgent` 的最后一轮不提供工具定义，并在临时消息记录中追加明确指令：只整理已经完成的工作、已有结果和未完成内容。最后一轮返回的文字和 `agent_limit_reached` 同时返回。
+
+`RunSubAgentsInParallel` 不再在出现错误时清空 `Result`。轮数错误对应 `status: "limit_reached"`；其他错误对应 `status: "failed"`。两种状态都保留 `RunSubAgent` 已经返回的非空文字。
+
+主 Agent工具循环在同一轮发现 `run_subagent` 时，只执行 `run_subagent`，不执行该轮的其他工具。只要 `run_subagent` 成功启动任务，Go 追加固定的“SubAgent 已启动”文字、保存会话并结束当前 `Run` 或 `RunStream`，不再进行下一轮 DeepSeek调用。
+
+`continueMainAgentAfterSubAgents` 创建新的空 `tool.Registry` 传给 `ContinueConversationAfterSubAgentsStream`。因此回调主 Agent收不到 Bash、Skill 或 MCP 工具定义，只能根据最新会话和 `SubAgentResult` 输出分析与汇总。
+
 ## Risks / Trade-offs
 
 - [浏览器尚未建立事件 SSE 时后台结果已经完成] → 主 Agent最终回复仍写入会话 JSON；当前版本优先保证流式聊天页面，重新加载会话仍能读取最终回复。
@@ -91,6 +101,7 @@ SubAgent回调把 `background_reply_started`、`background_reply_token`、`backg
 5. 修改 Web 页面建立事件 SSE并显示后台回复。
 6. 增加测试并执行完整 Go 检查。
 7. 增加每任务 `maximumRounds`、配置最高值和参数验证测试。
+8. 保留轮数耗尽时的部分结果，限制回调主 Agent只做无工具汇总，并让原主 Agent启动后台任务后结束。
 
 回滚时恢复全局同步 `run_subagent` 注册，删除事件 SSE 路由和 Web EventSource 代码；现有会话 JSON 不需要迁移。
 

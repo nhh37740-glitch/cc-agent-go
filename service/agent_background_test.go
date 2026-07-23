@@ -77,6 +77,18 @@ func TestContinueConversationAfterSubAgentsStreamLoadsLatestHistoryAndHidesInter
 	}
 
 	var streamedReply strings.Builder
+	callbackToolRegistry := tool.NewRegistry()
+	registerCallbackToolError := callbackToolRegistry.RegisterFunctionTool(
+		"forbidden_callback_tool",
+		"回调主 Agent 不应收到的工具",
+		map[string]any{"type": "object"},
+		func(toolArguments map[string]any) (string, error) {
+			return "不应执行", nil
+		},
+	)
+	if registerCallbackToolError != nil {
+		t.Fatalf("register callback tool: %v", registerCallbackToolError)
+	}
 	backgroundReplyText, returnedConversationID, continueConversationError :=
 		ContinueConversationAfterSubAgentsStream(
 			[]SubAgentResult{
@@ -90,7 +102,7 @@ func TestContinueConversationAfterSubAgentsStreamLoadsLatestHistoryAndHidesInter
 			conversationID,
 			"main agent system prompt",
 			applicationConfig,
-			tool.NewRegistry(),
+			callbackToolRegistry,
 			conversationStore,
 			func(token string) {
 				streamedReply.WriteString(token)
@@ -114,6 +126,12 @@ func TestContinueConversationAfterSubAgentsStreamLoadsLatestHistoryAndHidesInter
 	}
 	if streamedReply.String() != "后台主 Agent 回复" {
 		t.Fatalf("streamed reply = %q", streamedReply.String())
+	}
+	if len(receivedDeepSeekRequest.Tools) != 0 {
+		t.Fatalf(
+			"callback tool count = %d, want 0",
+			len(receivedDeepSeekRequest.Tools),
+		)
 	}
 
 	if len(receivedDeepSeekRequest.Messages) != 3 {
