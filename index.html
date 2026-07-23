@@ -236,8 +236,8 @@
                 <div class="p-4 border-t border-pink-200/20 bg-white/20">
                     <form id="chat-form" onsubmit="handleChatSubmit(event)" class="flex gap-2">
                         <input type="text" id="chat-input" placeholder="输入聊天内容并回车。支持输出富文本 Markdown 及标准 SSE 流..." required
-                            class="flex-1 bg-white/95 border border-pink-200/60 rounded-xl px-4 py-3 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-pink-400 focus:border-transparent transition-all shadow-sm">
-                        <button type="submit" id="btn-send-chat" class="bg-gradient-to-r from-pink-400 to-sky-400 hover:from-pink-500 hover:to-sky-500 text-white font-bold px-5 py-3 rounded-xl text-xs transition-all shadow-md shadow-pink-300/10 flex items-center gap-1.5">
+                            class="flex-1 bg-white/95 border border-pink-200/60 rounded-xl px-4 py-3 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-pink-400 focus:border-transparent transition-all shadow-sm disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed">
+                        <button type="submit" id="btn-send-chat" class="bg-gradient-to-r from-pink-400 to-sky-400 hover:from-pink-500 hover:to-sky-500 text-white font-bold px-5 py-3 rounded-xl text-xs transition-all shadow-md shadow-pink-300/10 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed">
                             发送聊天
                         </button>
                     </form>
@@ -716,7 +716,10 @@ func HandleChatStreamV7(w http.ResponseWriter, r *http.Request) {
                 { sender: 'system', text: '欢迎来到全新重构的极光流式沙箱学习终端！在上方快捷区域可以发起 GET (/) 与 POST (/api/chat) 请求，直观对照并抓包分析底层普通的 JSON 报文及高频 SSE 字节流的流转律动。' }
             ],
             conversations: [], // V7 会话列表
-            mcpServers: []
+            mcpServers: [],
+            chatRequestInProgress: false,
+            conversationEventSource: null,
+            conversationEventConversationId: ''
         };
 
         // 常用快捷 Header Key 选项
@@ -865,6 +868,7 @@ func HandleChatStreamV7(w http.ResponseWriter, r *http.Request) {
             state.mode = mode;
 
             if (mode === 'mock') {
+                closeConversationEvents();
                 btnMock.className = "px-4 py-1.5 rounded-lg text-xs font-semibold transition-all duration-300 flex items-center gap-1.5 bg-white text-slate-800 shadow-sm border border-pink-200/50";
                 btnLive.className = "px-4 py-1.5 rounded-lg text-xs font-semibold transition-all duration-300 text-slate-500 hover:text-slate-800 flex items-center gap-1.5";
                 liveDot.className = "h-1.5 w-1.5 rounded-full bg-slate-400";
@@ -885,6 +889,7 @@ func HandleChatStreamV7(w http.ResponseWriter, r *http.Request) {
                 
                 // 真实获取会话列表
                 refreshConversationList();
+                connectConversationEvents(state.currentConversationId);
             }
         }
 
@@ -1029,6 +1034,7 @@ func HandleChatStreamV7(w http.ResponseWriter, r *http.Request) {
 
         // 新建会话
         function createNewConversation() {
+            closeConversationEvents();
             state.currentConversationId = '';
             state.messages = [
                 { sender: 'system', text: '已为您开启全新对话会话。第一次发送流式提问时，Go 后端会自动产生新的会话 ID 并记录历史上下文。' }
@@ -1050,6 +1056,147 @@ func HandleChatStreamV7(w http.ResponseWriter, r *http.Request) {
             }
         }
 
+        function closeConversationEvents() {
+            if (state.conversationEventSource) {
+                state.conversationEventSource.close();
+            }
+            state.conversationEventSource = null;
+            state.conversationEventConversationId = '';
+        }
+
+        function connectConversationEvents(conversationId) {
+            if (
+                state.mode !== 'live' ||
+                !conversationId
+            ) {
+                closeConversationEvents();
+                return;
+            }
+
+            if (
+                state.conversationEventSource &&
+                state.conversationEventConversationId === conversationId &&
+                state.conversationEventSource.readyState !== EventSource.CLOSED
+            ) {
+                return;
+            }
+
+            closeConversationEvents();
+
+            const conversationEventUrl = buildApiUrl(
+                `/api/conversations/${encodeURIComponent(conversationId)}/events`
+            );
+            const conversationEventSource =
+                new EventSource(conversationEventUrl);
+            state.conversationEventSource = conversationEventSource;
+            state.conversationEventConversationId = conversationId;
+
+            conversationEventSource.onopen = function() {
+                logConsole(
+                    `[Background SSE] 已连接会话 ${conversationId}`
+                );
+            };
+
+            conversationEventSource.onmessage = function(messageEvent) {
+                let conversationEvent;
+                try {
+                    conversationEvent = JSON.parse(messageEvent.data);
+                } catch (decodeConversationEventError) {
+                    logConsole(
+                        `[Background SSE] JSON 解包失败: ${messageEvent.data}`,
+                        true
+                    );
+                    return;
+                }
+
+                if (conversationEvent.type === 'background_reply_started') {
+                    const existingBackgroundReply = state.messages.find(
+                        message =>
+                            message.id === conversationEvent.messageId
+                    );
+                    if (!existingBackgroundReply) {
+                        state.messages.push({
+                            id: conversationEvent.messageId,
+                            sender: 'assistant',
+                            text: '',
+                            isStreaming: true
+                        });
+                        renderMessages();
+                    }
+                    return;
+                }
+
+                if (conversationEvent.type === 'background_reply_token') {
+                    const backgroundReply = state.messages.find(
+                        message =>
+                            message.id === conversationEvent.messageId
+                    );
+                    if (backgroundReply) {
+                        backgroundReply.text +=
+                            conversationEvent.token || '';
+                        backgroundReply.isStreaming = true;
+                        renderMessages();
+                    }
+                    return;
+                }
+
+                if (conversationEvent.type === 'background_reply_completed') {
+                    let backgroundReply = state.messages.find(
+                        message =>
+                            message.id === conversationEvent.messageId
+                    );
+                    if (!backgroundReply) {
+                        backgroundReply = {
+                            id: conversationEvent.messageId,
+                            sender: 'assistant',
+                            text: '',
+                            isStreaming: false
+                        };
+                        state.messages.push(backgroundReply);
+                    }
+                    backgroundReply.text = conversationEvent.text || '';
+                    backgroundReply.isStreaming = false;
+                    renderMessages();
+                    refreshConversationList();
+                    return;
+                }
+
+                if (conversationEvent.type === 'background_reply_failed') {
+                    let backgroundReply = state.messages.find(
+                        message =>
+                            message.id === conversationEvent.messageId
+                    );
+                    if (!backgroundReply) {
+                        backgroundReply = {
+                            id: conversationEvent.messageId,
+                            sender: 'assistant',
+                            text: '',
+                            isStreaming: false
+                        };
+                        state.messages.push(backgroundReply);
+                    }
+                    backgroundReply.text =
+                        `⚠️ **后台主 Agent异常**：${
+                            conversationEvent.message || '未知错误'
+                        }`;
+                    backgroundReply.isStreaming = false;
+                    renderMessages();
+                }
+            };
+
+            conversationEventSource.onerror = function() {
+                if (
+                    state.mode === 'live' &&
+                    state.currentConversationId === conversationId
+                ) {
+                    logConsole(
+                        `[Background SSE] 会话 ${conversationId} 连接中断，浏览器将自动重连。`,
+                        true
+                    );
+                }
+            };
+        }
+
         // 模拟会话数据
         function loadMockConversations() {
             state.conversations = [
@@ -1058,6 +1205,13 @@ func HandleChatStreamV7(w http.ResponseWriter, r *http.Request) {
                 { conversationId: "mock-session-003", title: "解决 CORS 跨域请求报错", updatedAt: new Date(Date.now() - 86400000).toISOString(), currentWindowTokens: 256 }
             ];
             renderConversationsUI();
+        }
+
+        function formatConversationUpdatedAt(updatedAt) {
+            const browserDateInput = typeof updatedAt === 'number'
+                ? updatedAt * 1000
+                : updatedAt;
+            return new Date(browserDateInput).toLocaleString();
         }
 
         // 渲染历史会话 UI 列表
@@ -1072,7 +1226,7 @@ func HandleChatStreamV7(w http.ResponseWriter, r *http.Request) {
 
             state.conversations.forEach(conv => {
                 const isCurrent = conv.conversationId === state.currentConversationId;
-                const dateStr = new Date(conv.updatedAt).toLocaleString();
+                const dateStr = formatConversationUpdatedAt(conv.updatedAt);
                 
                 const card = document.createElement('div');
                 card.className = `p-3 rounded-xl border transition-all duration-300 cursor-pointer relative group flex justify-between items-start ${
@@ -1116,6 +1270,7 @@ func HandleChatStreamV7(w http.ResponseWriter, r *http.Request) {
                     
                     const data = await response.json();
                     state.currentConversationId = id;
+                    connectConversationEvents(id);
                     
                     // 将 SessionJson 中的 messages 转为 UI messages 数组
                     // V7 Message.content 是 ContentBlock 数组，需要提取文本
@@ -1581,70 +1736,92 @@ func HandleChatStreamV7(w http.ResponseWriter, r *http.Request) {
             rawPayloadBuffer += firstFrame;
             document.getElementById('trace-res-body').innerText = rawPayloadBuffer;
 
-            const interval = setInterval(() => {
-                if (currentIndex < words.length) {
-                    const char = words[currentIndex];
-                    currentText += char;
-                    
-                    // V7 SSE 标准 token 帧：data: "字符" (是一个 JSON 字符串，带引号)
-                    const sseLine = `data: ${JSON.stringify(char)}\n\n`;
-                    rawPayloadBuffer += sseLine;
-                    
-                    // 实时同步渲染到响应报文 Trace 面板
-                    document.getElementById('trace-res-body').innerText = rawPayloadBuffer;
-                    
-                    // 实时同步渲染到聊天面板
-                    const msgIndex = state.messages.findIndex(m => m.id === messageId);
-                    if (msgIndex !== -1) {
-                        state.messages[msgIndex].text = currentText;
-                        renderMessages();
-                    }
-                    currentIndex++;
-                } else {
-                    clearInterval(interval);
-                    
-                    // V7 SSE 终结帧
-                    const doneFrame = `data: ${JSON.stringify({ type: "done", text: currentText })}\n\n`;
-                    rawPayloadBuffer += doneFrame;
-                    document.getElementById('trace-res-body').innerText = rawPayloadBuffer;
+            return new Promise(resolveStreamingResponse => {
+                const interval = setInterval(() => {
+                    if (currentIndex < words.length) {
+                        const char = words[currentIndex];
+                        currentText += char;
 
-                    // 取消打字状态
-                    const msgIndex = state.messages.findIndex(m => m.id === messageId);
-                    if (msgIndex !== -1) {
-                        state.messages[msgIndex].isStreaming = false;
-                        renderMessages();
-                    }
-                    
-                    const latency = (performance.now() - startTime).toFixed(1);
-                    const mockHeaders = "Content-Type: text/event-stream\nCache-Control: no-cache\nConnection: keep-alive\nAccess-Control-Allow-Origin: *";
-                    updateResponseTrace(200, `${latency}ms`, mockHeaders, rawPayloadBuffer);
-                    logConsole(`[API Response] ✅ [模拟流式] 成功输出并渲染完整 SSE 数据。`);
-                    showToast("流式模拟渲染完成", "success");
-                    
-                    // 刷新会话历史
-                    if (state.mode === 'mock') {
-                        // 更新 Mock 历史标题
-                        const existing = state.conversations.find(c => c.conversationId === state.currentConversationId);
-                        if (!existing) {
-                            state.conversations.unshift({
-                                conversationId: state.currentConversationId,
-                                title: userMsg.substring(0, 15) + "...",
-                                updatedAt: new Date().toISOString(),
-                                currentWindowTokens: 320
-                            });
+                        // V7 SSE 标准 token 帧：data: "字符" (是一个 JSON 字符串，带引号)
+                        const sseLine = `data: ${JSON.stringify(char)}\n\n`;
+                        rawPayloadBuffer += sseLine;
+
+                        // 实时同步渲染到响应报文 Trace 面板
+                        document.getElementById('trace-res-body').innerText = rawPayloadBuffer;
+
+                        // 实时同步渲染到聊天面板
+                        const msgIndex = state.messages.findIndex(m => m.id === messageId);
+                        if (msgIndex !== -1) {
+                            state.messages[msgIndex].text = currentText;
+                            renderMessages();
                         }
+                        currentIndex++;
+                    } else {
+                        clearInterval(interval);
+
+                        // V7 SSE 终结帧
+                        const doneFrame = `data: ${JSON.stringify({ type: "done", text: currentText })}\n\n`;
+                        rawPayloadBuffer += doneFrame;
+                        document.getElementById('trace-res-body').innerText = rawPayloadBuffer;
+
+                        // 取消打字状态
+                        const msgIndex = state.messages.findIndex(m => m.id === messageId);
+                        if (msgIndex !== -1) {
+                            state.messages[msgIndex].isStreaming = false;
+                            renderMessages();
+                        }
+
+                        const latency = (performance.now() - startTime).toFixed(1);
+                        const mockHeaders = "Content-Type: text/event-stream\nCache-Control: no-cache\nConnection: keep-alive\nAccess-Control-Allow-Origin: *";
+                        updateResponseTrace(200, `${latency}ms`, mockHeaders, rawPayloadBuffer);
+                        logConsole(`[API Response] ✅ [模拟流式] 成功输出并渲染完整 SSE 数据。`);
+                        showToast("流式模拟渲染完成", "success");
+
+                        // 刷新会话历史
+                        if (state.mode === 'mock') {
+                            // 更新 Mock 历史标题
+                            const existing = state.conversations.find(c => c.conversationId === state.currentConversationId);
+                            if (!existing) {
+                                state.conversations.unshift({
+                                    conversationId: state.currentConversationId,
+                                    title: userMsg.substring(0, 15) + "...",
+                                    updatedAt: new Date().toISOString(),
+                                    currentWindowTokens: 320
+                                });
+                            }
+                        }
+                        resolveStreamingResponse();
                     }
-                }
-            }, 10);
+                }, 10);
+            });
+        }
+
+        function setChatRequestInProgress(chatRequestInProgress) {
+            state.chatRequestInProgress = chatRequestInProgress;
+
+            const chatInput = document.getElementById('chat-input');
+            const sendChatButton = document.getElementById('btn-send-chat');
+            chatInput.disabled = chatRequestInProgress;
+            sendChatButton.disabled = chatRequestInProgress;
+            sendChatButton.textContent = chatRequestInProgress
+                ? '等待回复...'
+                : '发送聊天';
         }
 
         // --- 聊天界面的标准对话发送机制 ---
         async function handleChatSubmit(event) {
             event.preventDefault();
+            if (state.chatRequestInProgress) {
+                showToast("上一条聊天请求尚未结束。", "warning");
+                return;
+            }
+
             const input = document.getElementById('chat-input');
             const messageText = input.value.trim();
             if (!messageText) return;
 
+            setChatRequestInProgress(true);
+            try {
             // 1. UI 渲染对话气泡
             state.messages.push({ sender: 'user', text: messageText });
             renderMessages();
@@ -1674,7 +1851,7 @@ func HandleChatStreamV7(w http.ResponseWriter, r *http.Request) {
 
             if (state.mode === 'mock') {
                 // 模拟模式：采用 SSE V7 流仿真输出
-                simulateStreamingResponse(messageText, startTime);
+                await simulateStreamingResponse(messageText, startTime);
             } else {
                 try {
                     const response = await fetch(targetUrl, {
@@ -1741,6 +1918,9 @@ func HandleChatStreamV7(w http.ResponseWriter, r *http.Request) {
                                             if (parsed.type === 'conversation_id') {
                                                 // 捕捉会话 ID 帧
                                                 state.currentConversationId = parsed.conversationId;
+                                                connectConversationEvents(
+                                                    state.currentConversationId
+                                                );
                                                 console.log('[SSE] 捕获会话ID:', parsed.conversationId);
                                                 updateSessionBadge();
                                                 logConsole(`[SSE] 捕捉并激活会话持久 ID: ${state.currentConversationId}`);
@@ -1795,6 +1975,9 @@ func HandleChatStreamV7(w http.ResponseWriter, r *http.Request) {
                         // 捕捉并存储 V7 conversationId
                         if (resData && resData.conversationId) {
                             state.currentConversationId = resData.conversationId;
+                            connectConversationEvents(
+                                state.currentConversationId
+                            );
                             updateSessionBadge();
                         }
 
@@ -1810,6 +1993,10 @@ func HandleChatStreamV7(w http.ResponseWriter, r *http.Request) {
                 } catch (err) {
                     handleFetchError(err, startTime);
                 }
+            }
+            } finally {
+                setChatRequestInProgress(false);
+                document.getElementById('chat-input').focus();
             }
         }
 

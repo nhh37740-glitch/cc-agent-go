@@ -2,6 +2,7 @@ package service
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -47,8 +48,8 @@ func Run(userMessage string, conversationId string, systemPrompt string,
 	// 构建本轮用户消息
 	userMsg := model.Message{
 		Role: "user",
-		Content: []model.ContentBlock{
-			{Type: "text", Text: userMessage},
+		Content: []model.MessageContentBlock{
+			model.TextContentBlock{Text: userMessage},
 		},
 	}
 
@@ -103,7 +104,7 @@ func Run(userMessage string, conversationId string, systemPrompt string,
 			assistantMsg := model.Message{Role: "assistant"}
 			if resp.Text != "" {
 				assistantMsg.Content = append(assistantMsg.Content,
-					model.ContentBlock{Type: "text", Text: resp.Text})
+					model.TextContentBlock{Text: resp.Text})
 			}
 			newMessages = append(newMessages, assistantMsg)
 
@@ -135,12 +136,11 @@ func Run(userMessage string, conversationId string, systemPrompt string,
 		assistantMsg := model.Message{Role: "assistant"}
 		if resp.Text != "" {
 			assistantMsg.Content = append(assistantMsg.Content,
-				model.ContentBlock{Type: "text", Text: resp.Text})
+				model.TextContentBlock{Text: resp.Text})
 		}
 		for _, tc := range resp.ToolCalls {
 			assistantMsg.Content = append(assistantMsg.Content,
-				model.ContentBlock{
-					Type:  "tool_use",
+				model.ToolUseContentBlock{
 					ID:    tc.ID,
 					Name:  tc.Name,
 					Input: tc.Input,
@@ -171,8 +171,7 @@ func Run(userMessage string, conversationId string, systemPrompt string,
 					len(result), maxToolResult)
 			}
 			toolResultMsg.Content = append(toolResultMsg.Content,
-				model.ContentBlock{
-					Type:      "tool_result",
+				model.ToolResultContentBlock{
 					ToolUseID: tc.ID,
 					Content:   result,
 				})
@@ -196,6 +195,83 @@ func RunStream(userMessage string, conversationId string, systemPrompt string,
 		conversationId = GenerateConversationId()
 	}
 
+	userMessageForAgent := model.Message{
+		Role: "user",
+		Content: []model.MessageContentBlock{
+			model.TextContentBlock{Text: userMessage},
+		},
+	}
+
+	return runStreamWithInputMessage(
+		userMessageForAgent,
+		true,
+		conversationId,
+		systemPrompt,
+		cfg,
+		registry,
+		store,
+		onToken,
+		"service.RunStream",
+	)
+}
+
+// ContinueConversationAfterSubAgentsStream 读取主 Agent 最新会话，
+// 把本批 SubAgent 结果作为本次 DeepSeek 输入，然后流式返回主 Agent 回复。
+// SubAgent 结果输入不作为普通用户消息保存；最终 assistant 回复正常保存。
+func ContinueConversationAfterSubAgentsStream(
+	subAgentResults []SubAgentResult,
+	conversationId string,
+	systemPrompt string,
+	cfg config.Config,
+	registry *tool.Registry,
+	store *Store,
+	onToken func(string),
+) (string, string, error) {
+	subAgentResultsJSON, encodeSubAgentResultsError :=
+		json.Marshal(subAgentResults)
+	if encodeSubAgentResultsError != nil {
+		return "", conversationId, fmt.Errorf(
+			"SubAgent 结果无法编码为 JSON: %w",
+			encodeSubAgentResultsError,
+		)
+	}
+
+	subAgentResultsForMainAgent := model.Message{
+		Role: "user",
+		Content: []model.MessageContentBlock{
+			model.TextContentBlock{
+				Text: "你之前启动的一批 SubAgent 已经执行完毕。" +
+					"请结合当前完整会话和下面的执行结果继续回答用户。" +
+					"不要要求用户再次询问结果。\n\n" +
+					string(subAgentResultsJSON),
+			},
+		},
+	}
+
+	return runStreamWithInputMessage(
+		subAgentResultsForMainAgent,
+		false,
+		conversationId,
+		systemPrompt,
+		cfg,
+		registry,
+		store,
+		onToken,
+		"service.ContinueConversationAfterSubAgentsStream",
+	)
+}
+
+func runStreamWithInputMessage(
+	inputMessage model.Message,
+	saveInputMessage bool,
+	conversationId string,
+	systemPrompt string,
+	cfg config.Config,
+	registry *tool.Registry,
+	store *Store,
+	onToken func(string),
+	operationName string,
+) (string, string, error) {
 	oldMessages, err := store.LoadMessages(conversationId)
 	if err != nil {
 		return "", conversationId, NewAppError(ErrorStorageRead,
@@ -203,18 +279,16 @@ func RunStream(userMessage string, conversationId string, systemPrompt string,
 	}
 	slog.Info("Agent 流式请求开始",
 		"component", "agent",
-		"operation", "service.RunStream",
+		"operation", operationName,
 		"conversation_id", conversationId,
 		"history_messages", len(oldMessages))
 
-	userMsg := model.Message{
-		Role:    "user",
-		Content: []model.ContentBlock{{Type: "text", Text: userMessage}},
-	}
-	history := append(oldMessages, userMsg)
+	history := append(oldMessages, inputMessage)
 
 	var newMessages []model.Message
-	newMessages = append(newMessages, userMsg)
+	if saveInputMessage {
+		newMessages = append(newMessages, inputMessage)
+	}
 
 	tools := registry.GetDefinitions()
 	totalOutputTokens := 0
@@ -229,7 +303,7 @@ func RunStream(userMessage string, conversationId string, systemPrompt string,
 
 		slog.Info("Agent 流式模型调用完成",
 			"component", "agent",
-			"operation", "service.RunStream",
+			"operation", operationName,
 			"conversation_id", conversationId,
 			"round", round+1,
 			"text_length", len(resp.Text),
@@ -249,7 +323,7 @@ func RunStream(userMessage string, conversationId string, systemPrompt string,
 			assistantMsg := model.Message{Role: "assistant"}
 			if resp.Text != "" {
 				assistantMsg.Content = append(assistantMsg.Content,
-					model.ContentBlock{Type: "text", Text: resp.Text})
+					model.TextContentBlock{Text: resp.Text})
 			}
 			newMessages = append(newMessages, assistantMsg)
 
@@ -273,12 +347,11 @@ func RunStream(userMessage string, conversationId string, systemPrompt string,
 		assistantMsg := model.Message{Role: "assistant"}
 		if resp.Text != "" {
 			assistantMsg.Content = append(assistantMsg.Content,
-				model.ContentBlock{Type: "text", Text: resp.Text})
+				model.TextContentBlock{Text: resp.Text})
 		}
 		for _, tc := range resp.ToolCalls {
 			assistantMsg.Content = append(assistantMsg.Content,
-				model.ContentBlock{
-					Type:  "tool_use",
+				model.ToolUseContentBlock{
 					ID:    tc.ID,
 					Name:  tc.Name,
 					Input: tc.Input,
@@ -307,8 +380,7 @@ func RunStream(userMessage string, conversationId string, systemPrompt string,
 					len(result), maxToolResult)
 			}
 			toolResultMsg.Content = append(toolResultMsg.Content,
-				model.ContentBlock{
-					Type:      "tool_result",
+				model.ToolResultContentBlock{
 					ToolUseID: tc.ID,
 					Content:   result,
 				})
@@ -318,7 +390,7 @@ func RunStream(userMessage string, conversationId string, systemPrompt string,
 	}
 
 	return "", conversationId, NewAppError(ErrorAgentLimit,
-		"service.RunStream", 0,
+		operationName, 0,
 		fmt.Errorf("达到最大工具调用轮数 %d", maxRounds))
 }
 
@@ -361,15 +433,15 @@ func makeCompressor(cfg config.Config, tools []map[string]any) model.Compressor 
 		var sb strings.Builder
 		for _, msg := range oldMessages {
 			sb.WriteString("[" + msg.Role + "]: ")
-			for _, block := range msg.Content {
-				switch block.Type {
-				case "text":
-					sb.WriteString(block.Text)
-				case "tool_use":
-					sb.WriteString(fmt.Sprintf("[调用工具 %s]", block.Name))
-				case "tool_result":
+			for _, messageContentBlock := range msg.Content {
+				switch contentBlock := messageContentBlock.(type) {
+				case model.TextContentBlock:
+					sb.WriteString(contentBlock.Text)
+				case model.ToolUseContentBlock:
+					sb.WriteString(fmt.Sprintf("[调用工具 %s]", contentBlock.Name))
+				case model.ToolResultContentBlock:
 					// 工具结果可能很长，截断
-					result := block.Content
+					result := contentBlock.Content
 					if len(result) > 500 {
 						result = result[:500] + "..."
 					}
@@ -381,10 +453,11 @@ func makeCompressor(cfg config.Config, tools []map[string]any) model.Compressor 
 
 		summaryRequest := []model.Message{{
 			Role: "user",
-			Content: []model.ContentBlock{{
-				Type: "text",
-				Text: "请用一段话总结以下对话内容，保留所有关键事实、工具调用结果、用户偏好。最多500字。\n\n" + sb.String(),
-			}},
+			Content: []model.MessageContentBlock{
+				model.TextContentBlock{
+					Text: "请用一段话总结以下对话内容，保留所有关键事实、工具调用结果、用户偏好。最多500字。\n\n" + sb.String(),
+				},
+			},
 		}}
 
 		// 调 Chat，max_tokens=512，不带工具

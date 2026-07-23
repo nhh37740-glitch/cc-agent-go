@@ -439,6 +439,101 @@ func TestRunSubAgentsInParallelKeepsSuccessfulResultWhenAnotherTaskFails(
 	}
 }
 
+func TestRunSubAgentsInBackgroundReturnsBeforeCompletionAndCallsCallbackOnce(
+	t *testing.T,
+) {
+	subAgentRequestStarted := make(chan struct{})
+	releaseSubAgentResponse := make(chan struct{})
+	deepSeekTestServer := httptest.NewServer(http.HandlerFunc(
+		func(responseWriter http.ResponseWriter, httpRequest *http.Request) {
+			close(subAgentRequestStarted)
+			<-releaseSubAgentResponse
+			writeDeepSeekTextResponse(
+				t,
+				responseWriter,
+				"background result",
+			)
+		},
+	))
+	t.Cleanup(deepSeekTestServer.Close)
+
+	backgroundStartReturned := make(chan struct{})
+	completedCallbackCalls := make(chan struct {
+		parentConversationID string
+		subAgentResults      []SubAgentResult
+	}, 2)
+
+	go func() {
+		RunSubAgentsInBackground(
+			"parent-conversation",
+			[]SubAgentTask{
+				{TaskID: "background-task", Task: "background task"},
+			},
+			newSubAgentTestConfig(deepSeekTestServer.URL),
+			tool.NewRegistry(),
+			func(
+				parentConversationID string,
+				subAgentResults []SubAgentResult,
+			) {
+				completedCallbackCalls <- struct {
+					parentConversationID string
+					subAgentResults      []SubAgentResult
+				}{
+					parentConversationID: parentConversationID,
+					subAgentResults:      subAgentResults,
+				}
+			},
+		)
+		close(backgroundStartReturned)
+	}()
+
+	select {
+	case <-backgroundStartReturned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("RunSubAgentsInBackground waited for the SubAgent result")
+	}
+
+	select {
+	case <-subAgentRequestStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("background SubAgent did not start")
+	}
+
+	close(releaseSubAgentResponse)
+
+	select {
+	case completedCallbackCall := <-completedCallbackCalls:
+		if completedCallbackCall.parentConversationID !=
+			"parent-conversation" {
+			t.Fatalf(
+				"parent conversation ID = %q",
+				completedCallbackCall.parentConversationID,
+			)
+		}
+		if len(completedCallbackCall.subAgentResults) != 1 {
+			t.Fatalf(
+				"SubAgent result count = %d, want 1",
+				len(completedCallbackCall.subAgentResults),
+			)
+		}
+		if completedCallbackCall.subAgentResults[0].Result !=
+			"background result" {
+			t.Fatalf(
+				"SubAgent result = %#v",
+				completedCallbackCall.subAgentResults[0],
+			)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("completion callback was not called")
+	}
+
+	select {
+	case <-completedCallbackCalls:
+		t.Fatal("completion callback was called more than once")
+	case <-time.After(30 * time.Millisecond):
+	}
+}
+
 func newSubAgentTestConfig(apiEndpoint string) config.Config {
 	return config.Config{
 		ApiKey:                   "test-key",
@@ -522,14 +617,21 @@ func firstSubAgentTaskText(messages []model.Message) string {
 	if len(messages) == 0 || len(messages[0].Content) == 0 {
 		return ""
 	}
-	return messages[0].Content[0].Text
+	textContentBlock, isTextContentBlock :=
+		messages[0].Content[0].(model.TextContentBlock)
+	if !isTextContentBlock {
+		return ""
+	}
+	return textContentBlock.Text
 }
 
 func findToolResultText(messages []model.Message) string {
 	for _, message := range messages {
-		for _, contentBlock := range message.Content {
-			if contentBlock.Type == "tool_result" {
-				return contentBlock.Content
+		for _, messageContentBlock := range message.Content {
+			toolResultContentBlock, isToolResultContentBlock :=
+				messageContentBlock.(model.ToolResultContentBlock)
+			if isToolResultContentBlock {
+				return toolResultContentBlock.Content
 			}
 		}
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -39,6 +40,47 @@ func TestHandleChatInvalidJSON(t *testing.T) {
 	}
 	if resp.Code != string(service.ErrorInvalidRequest) {
 		t.Fatalf("code = %q, want %q", resp.Code, service.ErrorInvalidRequest)
+	}
+}
+
+func TestConfigureApplicationLoggerWritesJSONToFileAndStandardError(t *testing.T) {
+	oldLogger := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(oldLogger) })
+
+	logFilePath := filepath.Join(t.TempDir(), "logs", "server.jsonl")
+	var standardErrorOutput bytes.Buffer
+
+	applicationLogFile, configureLoggerError :=
+		configureApplicationLogger(logFilePath, &standardErrorOutput)
+	if configureLoggerError != nil {
+		t.Fatalf("configure application logger: %v", configureLoggerError)
+	}
+
+	slog.Info("logger test message",
+		"component", "logger_test",
+		"operation", "write")
+	if syncLogFileError := applicationLogFile.Sync(); syncLogFileError != nil {
+		t.Fatalf("sync application log file: %v", syncLogFileError)
+	}
+	if closeLogFileError := applicationLogFile.Close(); closeLogFileError != nil {
+		t.Fatalf("close application log file: %v", closeLogFileError)
+	}
+
+	logFileJSON, readLogFileError := os.ReadFile(logFilePath)
+	if readLogFileError != nil {
+		t.Fatalf("read application log file: %v", readLogFileError)
+	}
+
+	for outputName, logOutput := range map[string]string{
+		"log file":       string(logFileJSON),
+		"standard error": standardErrorOutput.String(),
+	} {
+		if !strings.Contains(logOutput, `"msg":"logger test message"`) {
+			t.Fatalf("%s does not contain JSON log message: %s", outputName, logOutput)
+		}
+		if !strings.Contains(logOutput, `"component":"logger_test"`) {
+			t.Fatalf("%s does not contain component field: %s", outputName, logOutput)
+		}
 	}
 }
 
@@ -101,6 +143,101 @@ func TestHandleChatStreamMissingAPIKey(t *testing.T) {
 	}
 	if !strings.Contains(body, `"code":"config_error"`) {
 		t.Fatalf("SSE response has no config_error: %s", body)
+	}
+}
+
+func TestHandleConversationEventsSendsEventAndRemovesDisconnectedReceiver(
+	t *testing.T,
+) {
+	previousConversationEventReceivers := conversationEventReceivers
+	conversationEventReceivers = service.NewConversationEventReceivers()
+	t.Cleanup(func() {
+		conversationEventReceivers = previousConversationEventReceivers
+	})
+
+	conversationEventHTTPRoutes := http.NewServeMux()
+	conversationEventHTTPRoutes.HandleFunc(
+		"GET /api/conversations/{id}/events",
+		handleConversationEvents,
+	)
+	conversationEventHTTPServer :=
+		httptest.NewServer(conversationEventHTTPRoutes)
+	t.Cleanup(conversationEventHTTPServer.Close)
+
+	requestContext, cancelRequest := context.WithCancel(context.Background())
+	conversationEventRequest, createRequestError := http.NewRequestWithContext(
+		requestContext,
+		http.MethodGet,
+		conversationEventHTTPServer.URL+
+			"/api/conversations/conversation-a/events",
+		nil,
+	)
+	if createRequestError != nil {
+		t.Fatalf("create conversation event request: %v", createRequestError)
+	}
+
+	conversationEventResponse, sendRequestError :=
+		conversationEventHTTPServer.Client().Do(conversationEventRequest)
+	if sendRequestError != nil {
+		t.Fatalf("send conversation event request: %v", sendRequestError)
+	}
+	defer conversationEventResponse.Body.Close()
+
+	if conversationEventResponse.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"status = %d, want %d",
+			conversationEventResponse.StatusCode,
+			http.StatusOK,
+		)
+	}
+	if contentType :=
+		conversationEventResponse.Header.Get("Content-Type"); !strings.Contains(
+		contentType,
+		"text/event-stream",
+	) {
+		t.Fatalf("Content-Type = %q", contentType)
+	}
+
+	conversationEventReader :=
+		bufio.NewReader(conversationEventResponse.Body)
+	connectedComment, readConnectedCommentError :=
+		conversationEventReader.ReadString('\n')
+	if readConnectedCommentError != nil {
+		t.Fatalf("read connected comment: %v", readConnectedCommentError)
+	}
+	if connectedComment != ": connected\n" {
+		t.Fatalf("connected comment = %q", connectedComment)
+	}
+	if _, readEmptyLineError := conversationEventReader.ReadString('\n'); readEmptyLineError != nil {
+		t.Fatalf("read connected empty line: %v", readEmptyLineError)
+	}
+
+	eventJSON := []byte(`{"type":"background_reply_started"}`)
+	if receiverCount :=
+		conversationEventReceivers.SendEventJSON(
+			"conversation-a",
+			eventJSON,
+		); receiverCount != 1 {
+		t.Fatalf("receiver count = %d, want 1", receiverCount)
+	}
+
+	eventLine, readEventError :=
+		conversationEventReader.ReadString('\n')
+	if readEventError != nil {
+		t.Fatalf("read event: %v", readEventError)
+	}
+	if expectedEventLine :=
+		"data: " + string(eventJSON) + "\n"; eventLine != expectedEventLine {
+		t.Fatalf("event line = %q, want %q", eventLine, expectedEventLine)
+	}
+
+	cancelRequest()
+	deadline := time.Now().Add(2 * time.Second)
+	for conversationEventReceivers.ReceiverCount("conversation-a") != 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("conversation event receiver was not removed")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -318,8 +455,11 @@ func TestDecodeAndValidateRunSubAgentToolInputRejectsInvalidTasks(t *testing.T) 
 func TestRegisterGeneralSubAgentToolAddsFixedJSONSchema(t *testing.T) {
 	mainAgentToolRegistry := tool.NewRegistry()
 
-	registerGeneralSubAgentError :=
-		registerGeneralSubAgentTool(mainAgentToolRegistry)
+	registerGeneralSubAgentError := registerGeneralSubAgentTool(
+		mainAgentToolRegistry,
+		"test-conversation",
+		ignoreCompletedSubAgentResults,
+	)
 	if registerGeneralSubAgentError != nil {
 		t.Fatalf("registerGeneralSubAgentTool: %v", registerGeneralSubAgentError)
 	}
@@ -398,8 +538,11 @@ func TestRegisteredGeneralSubAgentToolRejectsInvalidInputBeforeDeepSeekCall(
 ) {
 	t.Setenv("MAX_PARALLEL_SUBAGENTS", "3")
 	mainAgentToolRegistry := tool.NewRegistry()
-	registerGeneralSubAgentError :=
-		registerGeneralSubAgentTool(mainAgentToolRegistry)
+	registerGeneralSubAgentError := registerGeneralSubAgentTool(
+		mainAgentToolRegistry,
+		"test-conversation",
+		ignoreCompletedSubAgentResults,
+	)
 	if registerGeneralSubAgentError != nil {
 		t.Fatalf("registerGeneralSubAgentTool: %v", registerGeneralSubAgentError)
 	}
@@ -436,12 +579,22 @@ func TestHandleChatReceivesParallelSubAgentJSONToolResult(t *testing.T) {
 
 	providerTransport := newParallelSubAgentProviderTransport()
 	http.DefaultClient = &http.Client{Transport: providerTransport}
+	const conversationID = "nonstream-background-callback"
+	conversationEventChannel :=
+		conversationEventReceivers.AddReceiver(conversationID)
+	defer conversationEventReceivers.RemoveReceiver(
+		conversationID,
+		conversationEventChannel,
+	)
 
 	httpResponseRecorder := httptest.NewRecorder()
 	httpRequest := httptest.NewRequest(
 		http.MethodPost,
 		"/api/chat",
-		strings.NewReader(`{"message":"同时完成两个独立任务"}`),
+		strings.NewReader(
+			`{"message":"同时完成两个独立任务",`+
+				`"conversationId":"`+conversationID+`"}`,
+		),
 	)
 
 	handleChat(httpResponseRecorder, httpRequest)
@@ -461,10 +614,15 @@ func TestHandleChatReceivesParallelSubAgentJSONToolResult(t *testing.T) {
 	if decodeChatResponseError != nil {
 		t.Fatalf("decode chat response: %v", decodeChatResponseError)
 	}
-	if chatResponse.Reply != "主 Agent 已收到两个 SubAgent 结果" {
+	if chatResponse.Reply != "主 Agent 已启动两个 SubAgent" {
 		t.Fatalf("reply = %q", chatResponse.Reply)
 	}
 
+	waitForBackgroundReplyCompletedEvent(
+		t,
+		conversationEventChannel,
+		"主 Agent 已处理后台 SubAgent 结果",
+	)
 	assertParallelSubAgentToolResult(t, providerTransport)
 	assertOnlyMainAgentSessionWasSaved(t)
 }
@@ -479,12 +637,22 @@ func TestHandleChatStreamReceivesParallelSubAgentJSONToolResult(t *testing.T) {
 
 	providerTransport := newParallelSubAgentProviderTransport()
 	http.DefaultClient = &http.Client{Transport: providerTransport}
+	const conversationID = "stream-background-callback"
+	conversationEventChannel :=
+		conversationEventReceivers.AddReceiver(conversationID)
+	defer conversationEventReceivers.RemoveReceiver(
+		conversationID,
+		conversationEventChannel,
+	)
 
 	httpResponseRecorder := httptest.NewRecorder()
 	httpRequest := httptest.NewRequest(
 		http.MethodPost,
 		"/api/chat/stream",
-		strings.NewReader(`{"message":"同时完成两个独立任务"}`),
+		strings.NewReader(
+			`{"message":"同时完成两个独立任务",`+
+				`"conversationId":"`+conversationID+`"}`,
+		),
 	)
 
 	handleChatStream(httpResponseRecorder, httpRequest)
@@ -498,11 +666,16 @@ func TestHandleChatStreamReceivesParallelSubAgentJSONToolResult(t *testing.T) {
 	}
 	if !strings.Contains(
 		httpResponseRecorder.Body.String(),
-		"主 Agent 已收到两个 SubAgent 结果",
+		"主 Agent 已启动两个 SubAgent",
 	) {
 		t.Fatalf("SSE body = %s", httpResponseRecorder.Body.String())
 	}
 
+	waitForBackgroundReplyCompletedEvent(
+		t,
+		conversationEventChannel,
+		"主 Agent 已处理后台 SubAgent 结果",
+	)
 	assertParallelSubAgentToolResult(t, providerTransport)
 	assertOnlyMainAgentSessionWasSaved(t)
 }
@@ -556,8 +729,17 @@ func TestRunSubAgentUsesToolsFromStartedPlaywrightMCPServer(t *testing.T) {
 		)
 	}
 
-	registerGeneralSubAgentError :=
-		registerGeneralSubAgentTool(mainAgentToolRegistry)
+	completedSubAgentResults := make(chan []service.SubAgentResult, 1)
+	registerGeneralSubAgentError := registerGeneralSubAgentTool(
+		mainAgentToolRegistry,
+		"playwright-test-conversation",
+		func(
+			parentConversationID string,
+			subAgentResults []service.SubAgentResult,
+		) {
+			completedSubAgentResults <- subAgentResults
+		},
+	)
 	if registerGeneralSubAgentError != nil {
 		t.Fatalf("register general SubAgent tool: %v", registerGeneralSubAgentError)
 	}
@@ -590,11 +772,22 @@ func TestRunSubAgentUsesToolsFromStartedPlaywrightMCPServer(t *testing.T) {
 	if decodeToolOutputError != nil {
 		t.Fatalf("decode run_subagent output: %v", decodeToolOutputError)
 	}
-	if len(runSubAgentToolOutput.Results) != 2 {
+	if len(runSubAgentToolOutput.Tasks) != 2 {
 		t.Fatalf(
-			"run_subagent result count = %d, want 2",
-			len(runSubAgentToolOutput.Results),
+			"run_subagent task count = %d, want 2",
+			len(runSubAgentToolOutput.Tasks),
 		)
+	}
+	select {
+	case returnedSubAgentResults := <-completedSubAgentResults:
+		if len(returnedSubAgentResults) != 2 {
+			t.Fatalf(
+				"completed SubAgent result count = %d, want 2",
+				len(returnedSubAgentResults),
+			)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("background SubAgents did not call completion callback")
 	}
 
 	providerTransport.toolResultMutex.Lock()
@@ -619,18 +812,14 @@ func TestRunSubAgentUsesToolsFromStartedPlaywrightMCPServer(t *testing.T) {
 func TestRunSubAgentToolOutputUsesFixedJSONFields(t *testing.T) {
 	runSubAgentToolOutput := RunSubAgentToolOutput{
 		MaximumParallelSubAgents: 3,
-		Results: []service.SubAgentResult{
+		Tasks: []StartedSubAgentTask{
 			{
 				TaskID: "successful",
-				Status: "completed",
-				Result: "done",
-				Error:  "",
+				Status: "running",
 			},
 			{
-				TaskID: "failed",
-				Status: "failed",
-				Result: "",
-				Error:  "network_timeout",
+				TaskID: "second",
+				Status: "running",
 			},
 		},
 	}
@@ -656,35 +845,39 @@ func TestRunSubAgentToolOutputUsesFixedJSONFields(t *testing.T) {
 		)
 	}
 
-	decodedResults, resultsIsArray := decodedOutput["results"].([]any)
-	if !resultsIsArray || len(decodedResults) != 2 {
-		t.Fatalf("results = %#v", decodedOutput["results"])
+	decodedTasks, tasksIsArray := decodedOutput["tasks"].([]any)
+	if !tasksIsArray || len(decodedTasks) != 2 {
+		t.Fatalf("tasks = %#v", decodedOutput["tasks"])
 	}
-	for resultIndex, decodedResultValue := range decodedResults {
-		decodedResult, resultIsObject :=
-			decodedResultValue.(map[string]any)
-		if !resultIsObject {
+	for taskIndex, decodedTaskValue := range decodedTasks {
+		decodedTask, taskIsObject :=
+			decodedTaskValue.(map[string]any)
+		if !taskIsObject {
 			t.Fatalf(
-				"result %d type = %T",
-				resultIndex,
-				decodedResultValue,
+				"task %d type = %T",
+				taskIndex,
+				decodedTaskValue,
 			)
 		}
 		for _, requiredField := range []string{
 			"taskId",
 			"status",
-			"result",
-			"error",
 		} {
-			if _, fieldExists := decodedResult[requiredField]; !fieldExists {
+			if _, fieldExists := decodedTask[requiredField]; !fieldExists {
 				t.Fatalf(
-					"result %d has no %s field",
-					resultIndex,
+					"task %d has no %s field",
+					taskIndex,
 					requiredField,
 				)
 			}
 		}
 	}
+}
+
+func ignoreCompletedSubAgentResults(
+	parentConversationID string,
+	subAgentResults []service.SubAgentResult,
+) {
 }
 
 func validSubAgentToolTask(taskID string) map[string]any {
@@ -753,6 +946,20 @@ func (providerTransport *parallelSubAgentProviderTransport) RoundTrip(
 		return regularDeepSeekTextHTTPResponse("result: " + subAgentTask), nil
 	}
 
+	if mainIntegrationMessagesContainText(
+		deepSeekRequest.Messages,
+		"你之前启动的一批 SubAgent 已经执行完毕",
+	) {
+		if deepSeekRequest.Stream {
+			return streamingDeepSeekTextHTTPResponse(
+				"主 Agent 已处理后台 SubAgent 结果",
+			), nil
+		}
+		return regularDeepSeekTextHTTPResponse(
+			"主 Agent 已处理后台 SubAgent 结果",
+		), nil
+	}
+
 	mainAgentToolResultJSON := findMainIntegrationToolResult(
 		deepSeekRequest.Messages,
 	)
@@ -769,11 +976,11 @@ func (providerTransport *parallelSubAgentProviderTransport) RoundTrip(
 
 	if deepSeekRequest.Stream {
 		return streamingDeepSeekTextHTTPResponse(
-			"主 Agent 已收到两个 SubAgent 结果",
+			"主 Agent 已启动两个 SubAgent",
 		), nil
 	}
 	return regularDeepSeekTextHTTPResponse(
-		"主 Agent 已收到两个 SubAgent 结果",
+		"主 Agent 已启动两个 SubAgent",
 	), nil
 }
 
@@ -803,8 +1010,12 @@ func configureMainIntegrationTestGlobals(t *testing.T) func() {
 
 	originalRegistry := registry
 	originalHTTPClient := http.DefaultClient
+	originalConversationEventReceivers := conversationEventReceivers
+	originalConversationExecutionLocks := conversationExecutionLocks
 
 	registry = tool.NewRegistry()
+	conversationEventReceivers = service.NewConversationEventReceivers()
+	conversationExecutionLocks = service.NewConversationExecutionLocks()
 	registerFakeMCPToolError := registry.RegisterFunctionTool(
 		"mcp_playwright__read_page",
 		"fake MCP tool used by the integration test",
@@ -816,15 +1027,72 @@ func configureMainIntegrationTestGlobals(t *testing.T) func() {
 	if registerFakeMCPToolError != nil {
 		t.Fatalf("register fake MCP tool: %v", registerFakeMCPToolError)
 	}
-	registerGeneralSubAgentError := registerGeneralSubAgentTool(registry)
-	if registerGeneralSubAgentError != nil {
-		t.Fatalf("register general SubAgent tool: %v", registerGeneralSubAgentError)
-	}
 
 	return func() {
 		registry = originalRegistry
 		http.DefaultClient = originalHTTPClient
+		conversationEventReceivers = originalConversationEventReceivers
+		conversationExecutionLocks = originalConversationExecutionLocks
 	}
+}
+
+func waitForBackgroundReplyCompletedEvent(
+	t *testing.T,
+	conversationEventChannel chan []byte,
+	expectedReplyText string,
+) {
+	t.Helper()
+
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case conversationEventJSON := <-conversationEventChannel:
+			var backgroundReplyCompletedEvent BackgroundAgentReplyCompletedEvent
+			decodeConversationEventError := json.Unmarshal(
+				conversationEventJSON,
+				&backgroundReplyCompletedEvent,
+			)
+			if decodeConversationEventError != nil {
+				t.Fatalf(
+					"decode background event %q: %v",
+					conversationEventJSON,
+					decodeConversationEventError,
+				)
+			}
+			if backgroundReplyCompletedEvent.Type !=
+				"background_reply_completed" {
+				continue
+			}
+			if backgroundReplyCompletedEvent.Text != expectedReplyText {
+				t.Fatalf(
+					"background reply = %q, want %q",
+					backgroundReplyCompletedEvent.Text,
+					expectedReplyText,
+				)
+			}
+			return
+
+		case <-deadline:
+			t.Fatal("background main Agent reply was not completed")
+		}
+	}
+}
+
+func mainIntegrationMessagesContainText(
+	messages []model.Message,
+	expectedText string,
+) bool {
+	for _, message := range messages {
+		for _, messageContentBlock := range message.Content {
+			textContentBlock, isTextContentBlock :=
+				messageContentBlock.(model.TextContentBlock)
+			if isTextContentBlock &&
+				strings.Contains(textContentBlock.Text, expectedText) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func assertParallelSubAgentToolResult(
@@ -866,21 +1134,19 @@ func assertParallelSubAgentToolResult(
 			runSubAgentToolOutput.MaximumParallelSubAgents,
 		)
 	}
-	if len(runSubAgentToolOutput.Results) != 2 {
+	if len(runSubAgentToolOutput.Tasks) != 2 {
 		t.Fatalf(
-			"result count = %d, want 2",
-			len(runSubAgentToolOutput.Results),
+			"task count = %d, want 2",
+			len(runSubAgentToolOutput.Tasks),
 		)
 	}
-	for resultIndex, subAgentResult := range runSubAgentToolOutput.Results {
-		if subAgentResult.TaskID == "" ||
-			subAgentResult.Status != "completed" ||
-			subAgentResult.Result == "" ||
-			subAgentResult.Error != "" {
+	for taskIndex, startedSubAgentTask := range runSubAgentToolOutput.Tasks {
+		if startedSubAgentTask.TaskID == "" ||
+			startedSubAgentTask.Status != "running" {
 			t.Fatalf(
-				"result %d = %#v",
-				resultIndex,
-				subAgentResult,
+				"task %d = %#v",
+				taskIndex,
+				startedSubAgentTask,
 			)
 		}
 	}
@@ -1017,14 +1283,21 @@ func firstMainIntegrationUserText(messages []model.Message) string {
 	if len(messages) == 0 || len(messages[0].Content) == 0 {
 		return ""
 	}
-	return messages[0].Content[0].Text
+	textContentBlock, isTextContentBlock :=
+		messages[0].Content[0].(model.TextContentBlock)
+	if !isTextContentBlock {
+		return ""
+	}
+	return textContentBlock.Text
 }
 
 func findMainIntegrationToolResult(messages []model.Message) string {
 	for _, message := range messages {
-		for _, contentBlock := range message.Content {
-			if contentBlock.Type == "tool_result" {
-				return contentBlock.Content
+		for _, messageContentBlock := range message.Content {
+			toolResultContentBlock, isToolResultContentBlock :=
+				messageContentBlock.(model.ToolResultContentBlock)
+			if isToolResultContentBlock {
+				return toolResultContentBlock.Content
 			}
 		}
 	}

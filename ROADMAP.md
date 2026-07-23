@@ -53,11 +53,14 @@ v0–v10 已经完成 Agent 基础能力：HTTP、SSE、模型调用、工具循
 
 目标：Agent 长任务可以在后台运行，并支持查询、取消和服务重启后继续。
 
-- 为每次长任务生成 taskId
-- 保存 Pending、Running、Completed、Failed、Cancelled 状态
-- 支持后台运行、进度查询和取消
-- 支持超时、有限次数重试和 checkpoint
-- Go 服务重启后读取 checkpoint 并继续未完成任务
+- 当前状态：⏳ 第一部分已实现
+- 当前计划：[`openspec/changes/v15-background-subagent-callback/`](openspec/changes/v15-background-subagent-callback/)
+- `run_subagent` 启动 goroutine 后立即返回每个 `taskId` 和 `status: "running"`
+- 全部 SubAgent完成后直接回调主 Agent，不增加 `get_subagent_results`
+- 同一 `conversationId` 的普通用户消息和完成回调使用同一把主 Agent执行锁
+- `POST /api/chat/stream` 作为短连接固定结束；`GET /api/conversations/{id}/events` 作为长连接接收后台回复
+- Web 页面使用 `EventSource` 接收后台回复开始、token、完成和失败事件
+- 后续仍需实现取消、超时、有限次数重试、checkpoint 和服务重启恢复
 
 ## v16：A2A 与远程 Agent 调用
 

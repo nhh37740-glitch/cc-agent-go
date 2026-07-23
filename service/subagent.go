@@ -34,9 +34,39 @@ type SubAgentResult struct {
 	Error  string `json:"error"`
 }
 
+// CompletedSubAgentResultsCallback 在同一次工具调用的全部 SubAgent 结束后执行。
+type CompletedSubAgentResultsCallback func(
+	parentConversationID string,
+	subAgentResults []SubAgentResult,
+)
+
 type indexedSubAgentResult struct {
 	InputIndex     int
 	SubAgentResult SubAgentResult
+}
+
+// RunSubAgentsInBackground 启动后台 goroutine 后立即返回。
+// 后台 goroutine 收齐全部结果以后，只调用一次 completedResultsCallback。
+func RunSubAgentsInBackground(
+	parentConversationID string,
+	subAgentTasks []SubAgentTask,
+	applicationConfig config.Config,
+	availableSubAgentTools *tool.Registry,
+	completedResultsCallback CompletedSubAgentResultsCallback,
+) {
+	go func() {
+		subAgentResults := RunSubAgentsInParallel(
+			subAgentTasks,
+			applicationConfig,
+			availableSubAgentTools,
+		)
+		if completedResultsCallback != nil {
+			completedResultsCallback(
+				parentConversationID,
+				subAgentResults,
+			)
+		}
+	}()
 }
 
 // RunSubAgentsInParallel 为每个任务启动一个 goroutine，并按输入顺序返回结果。
@@ -96,10 +126,9 @@ func RunSubAgent(
 ) (string, error) {
 	subAgentMessageHistory := []model.Message{{
 		Role: "user",
-		Content: []model.ContentBlock{{
-			Type: "text",
-			Text: subAgentTask,
-		}},
+		Content: []model.MessageContentBlock{
+			model.TextContentBlock{Text: subAgentTask},
+		},
 	}}
 	subAgentToolDefinitions := availableSubAgentTools.GetDefinitions()
 
@@ -127,8 +156,7 @@ func RunSubAgent(
 		if deepSeekResponse.Text != "" {
 			subAgentAssistantMessage.Content = append(
 				subAgentAssistantMessage.Content,
-				model.ContentBlock{
-					Type: "text",
+				model.TextContentBlock{
 					Text: deepSeekResponse.Text,
 				},
 			)
@@ -136,8 +164,7 @@ func RunSubAgent(
 		for _, subAgentToolCall := range deepSeekResponse.ToolCalls {
 			subAgentAssistantMessage.Content = append(
 				subAgentAssistantMessage.Content,
-				model.ContentBlock{
-					Type:  "tool_use",
+				model.ToolUseContentBlock{
 					ID:    subAgentToolCall.ID,
 					Name:  subAgentToolCall.Name,
 					Input: subAgentToolCall.Input,
@@ -176,8 +203,7 @@ func RunSubAgent(
 
 			subAgentToolResultMessage.Content = append(
 				subAgentToolResultMessage.Content,
-				model.ContentBlock{
-					Type:      "tool_result",
+				model.ToolResultContentBlock{
 					ToolUseID: subAgentToolCall.ID,
 					Content:   subAgentToolResult,
 				},

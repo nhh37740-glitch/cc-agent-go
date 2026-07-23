@@ -1,6 +1,46 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestLoadDeepSeekAPIKey(t *testing.T) {
+	localConfigFilePath :=
+		filepath.Join(t.TempDir(), "local.json")
+	writeLocalConfigError := os.WriteFile(
+		localConfigFilePath,
+		[]byte(`{"deepseekApiKey":"key-from-local-file"}`),
+		0o600,
+	)
+	if writeLocalConfigError != nil {
+		t.Fatalf("write local config: %v", writeLocalConfigError)
+	}
+
+	t.Setenv("CC_AGENT_LOCAL_CONFIG", localConfigFilePath)
+	t.Setenv("DEEPSEEK_API_KEY", "")
+
+	applicationConfigLoadedFromFile := Load()
+	if applicationConfigLoadedFromFile.ApiKey != "key-from-local-file" {
+		t.Fatalf(
+			"ApiKey loaded from file = %q, want %q",
+			applicationConfigLoadedFromFile.ApiKey,
+			"key-from-local-file",
+		)
+	}
+
+	t.Setenv("DEEPSEEK_API_KEY", "key-from-environment")
+
+	applicationConfigLoadedFromEnvironment := Load()
+	if applicationConfigLoadedFromEnvironment.ApiKey != "key-from-environment" {
+		t.Fatalf(
+			"ApiKey loaded from environment = %q, want %q",
+			applicationConfigLoadedFromEnvironment.ApiKey,
+			"key-from-environment",
+		)
+	}
+}
 
 func TestLoadMaximumParallelSubAgents(t *testing.T) {
 	testCases := []struct {

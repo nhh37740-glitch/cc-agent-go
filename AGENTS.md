@@ -27,8 +27,8 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 | **流式推送** | SSE | `text/event-stream`；`http.Flusher` 逐 token 推送 |
 | **并发** | goroutine + channel | Go 原生轻量并发 |
 | **存储** | JSON 文件 | `workspace/data/sessions/`，与 Java 版格式兼容 |
-| **日志** | `log/slog` | Go 1.21+ 结构化日志 |
-| **配置** | `os.Getenv` | 环境变量读取；缺少 API Key 时返回配置错误 |
+| **日志** | `log/slog` | JSON 同时写入 stderr 和被 Git 忽略的 `logs/server.jsonl` |
+| **配置** | `os.Getenv` + JSON 文件 | `DEEPSEEK_API_KEY` 优先；空值时读取被 Git 忽略的 `config/local.json` |
 | **外部命令** | `os/exec` | `exec.CommandContext` + `context.WithTimeout` |
 | **依赖管理** | `go.mod` | `require` 块必须为空 —— 零第三方依赖 |
 
@@ -81,7 +81,9 @@ cc-agent-go/
 ├── main.go                  # 入口：注册路由，启动 HTTP 服务
 ├── go.mod                   # module cc-agent-go
 ├── config/
-│   ├── config.go            # DeepSeek 配置加载（os.Getenv）
+│   ├── config.go            # DeepSeek 配置加载（环境变量优先，本地 JSON 备用）
+│   ├── local.example.json   # 不含真实 Key 的本地配置示例
+│   ├── local.json           # 本机真实 Key；被 .gitignore 排除
 │   └── mcp_servers.json     # MCP Server 名称、命令和参数
 ├── mcp/
 │   ├── server_manager.go    # MCP Server 启动、初始化、工具列表和停止
@@ -89,7 +91,7 @@ cc-agent-go/
 │   ├── server_tools.go      # MCP 工具注册与 tools/call
 │   └── protocol/2025-11-25/ # messages.json 和官方 schema.json
 ├── model/
-│   └── types.go             # Message, ContentBlock, ChatRequest, ChatResponse, SessionJson
+│   └── types.go             # Message 和三种独立消息内容类型，以及 HTTP、会话类型
 ├── service/
 │   ├── agent.go             # Agent 循环：最多 50 轮，工具调用 → API → 工具调用
 │   ├── client.go            # DeepSeek API 调用（非流式 Chat + 流式 ChatStream）
@@ -132,6 +134,8 @@ if err := action(); err != nil {
 
 **多返回值**：Go 的标准模式是 `(result, error)`，调用方立即检查 error。
 
+**不同数据使用不同类型**：必填字段不同的数据必须定义成不同结构体，不得定义一个包含所有可选字段的万能结构体，再依靠 `omitempty`、空值或 `switch` 猜测当前数据类型。多个具体类型需要放入同一列表时，定义只表达共同用途的接口。
+
 ### API 路由（最终态）
 
 | 方法 | 路径 | 功能 |
@@ -142,6 +146,7 @@ if err := action(); err != nil {
 | `PUT` | `/api/mcp/servers` | 启动选中的 MCP Server，停止未选中的 Server |
 | `GET` | `/api/conversations` | 会话列表 |
 | `GET` | `/api/conversations/{id}` | 加载指定会话 |
+| `GET` | `/api/conversations/{id}/events` | 保持会话事件 SSE，接收后台主 Agent回复 |
 | `DELETE` | `/api/conversations/{id}` | 删除指定会话 |
 | `POST` | `/api/council` | 非流式元老院讨论 |
 | `POST` | `/api/council/stream` | SSE 元老院讨论 |
@@ -252,6 +257,8 @@ if err := action(); err != nil {
 - 变量名、函数名和类型名必须直接说明保存的内容或执行的动作，不使用 `req`、`resp`、`data`、`item`、`manager`、`m` 等离开当前语句就无法确认含义的名称。
 - 同一个对象在定义、调用、接收和返回位置保持同一个含义完整的名称，执行“代码即注释”的命名原则。
 - 遇到尚未读取或尚未验证的内容，明确区分已经看到的内容和尚未确认的内容，不猜测。
+- 解释故障不能只按时间列出发生过的动作。必须找到第一处实际数据与接收方要求不同的位置，并在同一次回答中写出：接收方要求的具体数据、发送方实际生成的数据、生成这份数据的文件和函数、两份数据的具体差异、接收方因此返回的实际错误。
+- 提出修复方案前，必须检查错误是否来自对象分类本身。不同对象拥有不同必填内容时，先说明它们为什么是不同类型；不得先在万能对象上增加条件判断或序列化特例。
 
 #### 9. 不同内容统一使用同一流程
 
@@ -299,7 +306,7 @@ if err := action(); err != nil {
 3. **不做 SQLite、不做前端**：存储只用 JSON 文件，前端复用 Java 版 `agent.html`
 4. **路径安全**：所有文件操作经过 `validator.go`（`filepath.Abs → Clean → HasPrefix`），禁止目录逃逸
 5. **Bash 安全**：白名单命令 + 禁止 shell 控制字符（`;` `|` `&&` `$()` 反引号），30 秒超时
-6. **凭证安全**：`DEEPSEEK_API_KEY` 从环境变量读取，不硬编码真实 key。无环境变量时用占位符提示用户设置
+6. **凭证安全**：真实 Key 只能来自 `DEEPSEEK_API_KEY` 或被 Git 忽略的 `config/local.json`，不得写入正式 Go 文件、示例文件或 Git 提交
 7. **行为对齐**：Agent 行为（system prompt、工具定义、压缩策略）和 Java 版 `cc-agent-java` 保持一致。不确定时参考 Java 源码
 8. **不猜测**：遇到计划文件未覆盖的实现细节时，向用户确认而非自行决定
 
@@ -307,7 +314,7 @@ if err := action(); err != nil {
 
 ## 7. 版本追踪
 
-**当前主线：v15 ⏳ 长任务、后台运行与恢复**
+**当前主线：v15 ⏳ 后台 SubAgent 回调与长连接**
 
 | 版本 | 新 Go 概念 | 涉及文件 | 状态 |
 | :--- | :--- | :--- | :--- |
@@ -326,13 +333,14 @@ if err := action(); err != nil {
 | v12 | JSON-RPC 2.0、MCP lifecycle、`os/exec` 管道、goroutine 持续读取、请求 id 与 channel、动态函数工具、`sync.RWMutex` | `mcp/`、`tool/function.go`、`tool/registry.go`、`main.go`、`index.html` | ✅ |
 | v13 | RAG 计划已归档，未实现 | 无正式 Go 文件 | ⏭ 跳过 |
 | v14 | 通用型 agent-as-tool、JSON 输入输出、最多 5 个并行 SubAgent、goroutine + channel、工具表复制 | `config/config.go`、`service/subagent.go`、`tool/registry.go`、`main.go` | ✅ |
-| v15 | taskId、任务状态、checkpoint、取消、超时、重试与后台任务 | `service/workflow.go` | ⏳ |
+| v15 | 后台 goroutine、完成回调、按会话加锁、独立 GET SSE 长连接、浏览器 `EventSource`；后续继续 checkpoint、取消、超时和重试 | `service/subagent.go`、`service/agent.go`、`service/conversation_events.go`、`service/conversation_execution.go`、`main.go`、`index.html` | ⏳ |
 | v16 | Agent Card、A2A 任务协议和远程 Agent 调用 | `a2a/` | ⏳ |
 
 v9 新功能：元老院多 Agent 辩论，回合制发言，SSE 流式推送，公民插话，配置化人格 MD 文件。
 v10 新功能：Skill 系统 —— `activate_skill` 工具动态加载 skill prompt，`create_skill` 工具创建新 skill，skill 文件存于 `workspace/skills/`。`Description()` 每次扫目录自动发现新 skill，Execute() 按文件名匹配。Agent 可用 bash 工具增删 skill 文件，无需重启服务。
 v11 完成功能：使用 `slog` 输出 JSON 日志；把配置、网络、DeepSeek、存储和 Agent 轮数错误分类；普通 HTTP 接口返回统一 JSON 错误，SSE 返回统一 error 事件；工具错误继续作为 tool_result 交给下一次 LLM 调用。狼人杀实验仅保留在 `feature/v11-werewolf` 分支。
 v12 完成功能：从 JSON 读取 MCP Server 配置和 MCP 2025-11-25 标准消息；网页选择后启动 Playwright MCP；完成 initialize、notifications/initialized、tools/list、tools/call；把 MCP 工具动态注册到现有工具表；停止选择后删除工具并结束进程。
+v15 当前功能：`run_subagent` 立即返回后台任务已启动；全部 SubAgent完成后回调主 Agent；聊天 POST SSE 固定关闭，会话 GET SSE 固定保持；Web 使用 `EventSource` 接收后台主 Agent回复。
 
 每个版本完成后：将对应行状态更新为 ✅，并更新上方的 "当前版本" 字段。
 

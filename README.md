@@ -13,12 +13,12 @@
 - 已完成：v12 可配置的 MCP Client、Playwright MCP 和动态工具注册
 - 已跳过：v13 RAG 与资料检索（未实现，计划已归档）
 - 已完成：v14 通用型 SubAgent 工具（固定 JSON 输入输出、配置并行数、最多 5 个；真实 DeepSeek 与 Playwright MCP 检查通过）
-- 当前主线：v15 长任务、后台运行与恢复
+- 当前主线：v15 后台 SubAgent 回调；已完成长短连接分离，取消、重试和恢复尚未实现
 - 后续路线：长任务恢复 → A2A
 - 狼人杀实验仅保留在 `feature/v11-werewolf` 分支，不进入主线 Agent 服务
 - 项目看板：[cc-agent-go Project](https://github.com/users/nhh37740-glitch/projects/1/views/1)
 - 详细路线：[ROADMAP.md](ROADMAP.md)
-- v14 实施计划：[OpenSpec v14-general-subagent-tool](openspec/changes/v14-general-subagent-tool/tasks.md)
+- v15 当前实施计划：[OpenSpec v15-background-subagent-callback](openspec/changes/v15-background-subagent-callback/tasks.md)
 
 ## 技术约束
 
@@ -28,6 +28,23 @@
 - `log/slog` 输出结构化日志
 - Go 标准库实现 MCP 2025-11-25 STDIO Client
 - MCP Server 列表由 `config/mcp_servers.json` 维护
+
+## 服务日志
+
+Go 服务每次启动时自动创建 `logs/server.jsonl`。每条 `slog` JSON 同时写入 stderr 和该文件。日志不记录用户正文、模型回复、工具参数或 API Key。
+
+## 后台 SubAgent 回复
+
+`POST /api/chat/stream` 只处理一条用户消息，回复完成后固定关闭。网页同时为当前会话建立 `GET /api/conversations/{conversationId}/events` 长连接。`run_subagent` 启动后台任务后立即返回；全部 SubAgent完成时，Go 回调主 Agent，并通过会话事件长连接推送主 Agent的新回复。
+
+## DeepSeek Key 配置
+
+正式服务按下面的顺序读取 DeepSeek Key：
+
+1. 读取 `DEEPSEEK_API_KEY` 环境变量。
+2. 环境变量为空时，读取 `config/local.json` 的 `deepseekApiKey`。
+
+本地文件格式参考 `config/local.example.json`。真实的 `config/local.json` 已加入 `.gitignore`，不会提交到 GitHub。需要从其他路径读取时，可用 `CC_AGENT_LOCAL_CONFIG` 环境变量指定文件路径。
 
 ## MCP Server 配置
 

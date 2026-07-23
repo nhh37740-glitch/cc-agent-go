@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -101,6 +102,8 @@ func buildSystemPrompt() string {
 
 var registry = tool.NewRegistry()
 var mcpServerManager *mcp.MCPServerManager
+var conversationEventReceivers = service.NewConversationEventReceivers()
+var conversationExecutionLocks = service.NewConversationExecutionLocks()
 
 const generalSubAgentToolName = "run_subagent"
 
@@ -139,10 +142,16 @@ type RunSubAgentToolInput struct {
 	SubAgentTasks []service.SubAgentTask `json:"subAgentTasks"`
 }
 
-// RunSubAgentToolOutput 是 run_subagent 返回给主 Agent 的固定 JSON 结构。
+// StartedSubAgentTask 是 run_subagent 已经启动的一项后台任务。
+type StartedSubAgentTask struct {
+	TaskID string `json:"taskId"`
+	Status string `json:"status"`
+}
+
+// RunSubAgentToolOutput 是 run_subagent 立即返回给主 Agent 的固定 JSON 结构。
 type RunSubAgentToolOutput struct {
-	MaximumParallelSubAgents int                      `json:"maximumParallelSubAgents"`
-	Results                  []service.SubAgentResult `json:"results"`
+	MaximumParallelSubAgents int                   `json:"maximumParallelSubAgents"`
+	Tasks                    []StartedSubAgentTask `json:"tasks"`
 }
 
 func decodeAndValidateRunSubAgentToolInput(
@@ -213,6 +222,8 @@ func decodeAndValidateRunSubAgentToolInput(
 
 func registerGeneralSubAgentTool(
 	mainAgentToolRegistry *tool.Registry,
+	parentConversationID string,
+	completedResultsCallback service.CompletedSubAgentResultsCallback,
 ) error {
 	executeRunSubAgentTool := func(
 		toolArguments map[string]any,
@@ -229,15 +240,31 @@ func registerGeneralSubAgentTool(
 
 		availableSubAgentTools :=
 			mainAgentToolRegistry.CopyExcludingTools(generalSubAgentToolName)
-		subAgentResults := service.RunSubAgentsInParallel(
+		service.RunSubAgentsInBackground(
+			parentConversationID,
 			runSubAgentToolInput.SubAgentTasks,
 			applicationConfig,
 			availableSubAgentTools,
+			completedResultsCallback,
 		)
 
+		startedSubAgentTasks := make(
+			[]StartedSubAgentTask,
+			0,
+			len(runSubAgentToolInput.SubAgentTasks),
+		)
+		for _, startedSubAgentTask := range runSubAgentToolInput.SubAgentTasks {
+			startedSubAgentTasks = append(
+				startedSubAgentTasks,
+				StartedSubAgentTask{
+					TaskID: startedSubAgentTask.TaskID,
+					Status: "running",
+				},
+			)
+		}
 		runSubAgentToolOutput := RunSubAgentToolOutput{
 			MaximumParallelSubAgents: applicationConfig.MaximumParallelSubAgents,
-			Results:                  subAgentResults,
+			Tasks:                    startedSubAgentTasks,
 		}
 		runSubAgentToolOutputJSONBytes, encodeToolOutputError :=
 			json.Marshal(runSubAgentToolOutput)
@@ -257,6 +284,206 @@ func registerGeneralSubAgentTool(
 		generalSubAgentToolInputSchema,
 		executeRunSubAgentTool,
 	)
+}
+
+type BackgroundAgentReplyStartedEvent struct {
+	Type      string `json:"type"`
+	MessageID string `json:"messageId"`
+}
+
+type BackgroundAgentReplyTokenEvent struct {
+	Type      string `json:"type"`
+	MessageID string `json:"messageId"`
+	Token     string `json:"token"`
+}
+
+type BackgroundAgentReplyCompletedEvent struct {
+	Type      string `json:"type"`
+	MessageID string `json:"messageId"`
+	Text      string `json:"text"`
+}
+
+type BackgroundAgentReplyFailedEvent struct {
+	Type      string `json:"type"`
+	MessageID string `json:"messageId"`
+	Message   string `json:"message"`
+}
+
+func sendEncodedConversationEvent(
+	conversationID string,
+	conversationEventJSON []byte,
+) {
+	conversationEventReceivers.SendEventJSON(
+		conversationID,
+		conversationEventJSON,
+	)
+}
+
+func sendBackgroundAgentReplyStarted(
+	conversationID string,
+	backgroundReplyStartedEvent BackgroundAgentReplyStartedEvent,
+) {
+	conversationEventJSON, encodeConversationEventError :=
+		json.Marshal(backgroundReplyStartedEvent)
+	if encodeConversationEventError != nil {
+		slog.Error(
+			"后台回复开始事件无法编码为 JSON",
+			"component", "conversation_events",
+			"operation", "sendBackgroundAgentReplyStarted",
+			"conversation_id", conversationID,
+			"error_kind", service.ErrorInternal,
+			"error", encodeConversationEventError,
+		)
+		return
+	}
+	sendEncodedConversationEvent(conversationID, conversationEventJSON)
+}
+
+func sendBackgroundAgentReplyToken(
+	conversationID string,
+	backgroundReplyTokenEvent BackgroundAgentReplyTokenEvent,
+) {
+	conversationEventJSON, encodeConversationEventError :=
+		json.Marshal(backgroundReplyTokenEvent)
+	if encodeConversationEventError != nil {
+		slog.Error(
+			"后台回复 token 事件无法编码为 JSON",
+			"component", "conversation_events",
+			"operation", "sendBackgroundAgentReplyToken",
+			"conversation_id", conversationID,
+			"error_kind", service.ErrorInternal,
+			"error", encodeConversationEventError,
+		)
+		return
+	}
+	sendEncodedConversationEvent(conversationID, conversationEventJSON)
+}
+
+func sendBackgroundAgentReplyCompleted(
+	conversationID string,
+	backgroundReplyCompletedEvent BackgroundAgentReplyCompletedEvent,
+) {
+	conversationEventJSON, encodeConversationEventError :=
+		json.Marshal(backgroundReplyCompletedEvent)
+	if encodeConversationEventError != nil {
+		slog.Error(
+			"后台回复完成事件无法编码为 JSON",
+			"component", "conversation_events",
+			"operation", "sendBackgroundAgentReplyCompleted",
+			"conversation_id", conversationID,
+			"error_kind", service.ErrorInternal,
+			"error", encodeConversationEventError,
+		)
+		return
+	}
+	sendEncodedConversationEvent(conversationID, conversationEventJSON)
+}
+
+func sendBackgroundAgentReplyFailed(
+	conversationID string,
+	backgroundReplyFailedEvent BackgroundAgentReplyFailedEvent,
+) {
+	conversationEventJSON, encodeConversationEventError :=
+		json.Marshal(backgroundReplyFailedEvent)
+	if encodeConversationEventError != nil {
+		slog.Error(
+			"后台回复失败事件无法编码为 JSON",
+			"component", "conversation_events",
+			"operation", "sendBackgroundAgentReplyFailed",
+			"conversation_id", conversationID,
+			"error_kind", service.ErrorInternal,
+			"error", encodeConversationEventError,
+		)
+		return
+	}
+	sendEncodedConversationEvent(conversationID, conversationEventJSON)
+}
+
+func continueMainAgentAfterSubAgents(
+	parentConversationID string,
+	subAgentResults []service.SubAgentResult,
+) {
+	backgroundReplyMessageID := service.GenerateConversationId()
+	sendBackgroundAgentReplyStarted(
+		parentConversationID,
+		BackgroundAgentReplyStartedEvent{
+			Type:      "background_reply_started",
+			MessageID: backgroundReplyMessageID,
+		},
+	)
+
+	unlockConversationExecution :=
+		conversationExecutionLocks.LockConversation(parentConversationID)
+	defer unlockConversationExecution()
+
+	applicationConfig := config.Load()
+	conversationStore := service.NewStore(applicationConfig.SessionsDir)
+	backgroundReplyToolRegistry :=
+		registry.CopyExcludingTools(generalSubAgentToolName)
+
+	backgroundReplyText, _, continueMainAgentError :=
+		service.ContinueConversationAfterSubAgentsStream(
+			subAgentResults,
+			parentConversationID,
+			buildSystemPrompt(),
+			applicationConfig,
+			backgroundReplyToolRegistry,
+			conversationStore,
+			func(token string) {
+				sendBackgroundAgentReplyToken(
+					parentConversationID,
+					BackgroundAgentReplyTokenEvent{
+						Type:      "background_reply_token",
+						MessageID: backgroundReplyMessageID,
+						Token:     token,
+					},
+				)
+			},
+		)
+	if continueMainAgentError != nil {
+		slog.Error(
+			"SubAgent 完成后调用主 Agent失败",
+			"component", "subagent_callback",
+			"operation", "continueMainAgentAfterSubAgents",
+			"conversation_id", parentConversationID,
+			"error_kind", service.ErrorInternal,
+			"error", continueMainAgentError,
+		)
+		sendBackgroundAgentReplyFailed(
+			parentConversationID,
+			BackgroundAgentReplyFailedEvent{
+				Type:      "background_reply_failed",
+				MessageID: backgroundReplyMessageID,
+				Message:   "SubAgent 完成后调用主 Agent失败。",
+			},
+		)
+		return
+	}
+
+	sendBackgroundAgentReplyCompleted(
+		parentConversationID,
+		BackgroundAgentReplyCompletedEvent{
+			Type:      "background_reply_completed",
+			MessageID: backgroundReplyMessageID,
+			Text:      backgroundReplyText,
+		},
+	)
+}
+
+func createConversationToolRegistry(
+	parentConversationID string,
+) (*tool.Registry, error) {
+	conversationToolRegistry :=
+		registry.CopyExcludingTools(generalSubAgentToolName)
+	registerGeneralSubAgentError := registerGeneralSubAgentTool(
+		conversationToolRegistry,
+		parentConversationID,
+		continueMainAgentAfterSubAgents,
+	)
+	if registerGeneralSubAgentError != nil {
+		return nil, registerGeneralSubAgentError
+	}
+	return conversationToolRegistry, nil
 }
 
 func publicError(err error) (int, model.ErrorResponse) {
@@ -521,8 +748,28 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 	cfg := config.Load()
 	store := service.NewStore(cfg.SessionsDir)
 
-	reply, convId, err := service.Run(req.Message, req.ConversationId,
-		buildSystemPrompt(), cfg, registry, store)
+	conversationID := req.ConversationId
+	if conversationID == "" {
+		conversationID = service.GenerateConversationId()
+	}
+	conversationToolRegistry, createToolRegistryError :=
+		createConversationToolRegistry(conversationID)
+	if createToolRegistryError != nil {
+		writeAPIError(
+			w,
+			"handleChat.createConversationToolRegistry",
+			conversationID,
+			createToolRegistryError,
+		)
+		return
+	}
+
+	unlockConversationExecution :=
+		conversationExecutionLocks.LockConversation(conversationID)
+	defer unlockConversationExecution()
+
+	reply, convId, err := service.Run(req.Message, conversationID,
+		buildSystemPrompt(), cfg, conversationToolRegistry, store)
 	if err != nil {
 		writeAPIError(w, "handleChat.run", convId, err)
 		return
@@ -571,12 +818,28 @@ func handleChatStream(w http.ResponseWriter, r *http.Request) {
 
 	cfg := config.Load()
 	store := service.NewStore(cfg.SessionsDir)
+	conversationToolRegistry, createToolRegistryError :=
+		createConversationToolRegistry(conversationId)
+	if createToolRegistryError != nil {
+		writeSSEError(
+			w,
+			flusher,
+			"handleChatStream.createConversationToolRegistry",
+			conversationId,
+			createToolRegistryError,
+		)
+		return
+	}
 
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		unlockConversationExecution :=
+			conversationExecutionLocks.LockConversation(conversationId)
+		defer unlockConversationExecution()
+
 		reply, _, err := service.RunStream(req.Message, conversationId,
-			buildSystemPrompt(), cfg, registry, store,
+			buildSystemPrompt(), cfg, conversationToolRegistry, store,
 			func(token string) {
 				if len(token) > 0 && token[0] == '{' {
 					fmt.Fprintf(w, "data: %s\n\n", token)
@@ -601,6 +864,78 @@ func handleChatStream(w http.ResponseWriter, r *http.Request) {
 // ============================================================================
 // 会话管理路由
 // ============================================================================
+
+func handleConversationEvents(
+	responseWriter http.ResponseWriter,
+	request *http.Request,
+) {
+	conversationID := request.PathValue("id")
+	if strings.TrimSpace(conversationID) == "" {
+		writeAPIError(
+			responseWriter,
+			"handleConversationEvents.conversationID",
+			"",
+			invalidRequestError(
+				"handleConversationEvents.conversationID",
+				fmt.Errorf("缺少 conversationId"),
+			),
+		)
+		return
+	}
+
+	responseWriter.Header().Set(
+		"Content-Type",
+		"text/event-stream;charset=UTF-8",
+	)
+	responseWriter.Header().Set("Cache-Control", "no-cache")
+	responseWriter.Header().Set("Connection", "keep-alive")
+	responseWriter.Header().Set("X-Accel-Buffering", "no")
+
+	responseWriterFlusher, supportsFlush :=
+		responseWriter.(http.Flusher)
+	if !supportsFlush {
+		writeAPIError(
+			responseWriter,
+			"handleConversationEvents.flusher",
+			conversationID,
+			service.NewAppError(
+				service.ErrorInternal,
+				"handleConversationEvents.flusher",
+				0,
+				fmt.Errorf("ResponseWriter 不支持 http.Flusher"),
+			),
+		)
+		return
+	}
+
+	conversationEventChannel :=
+		conversationEventReceivers.AddReceiver(conversationID)
+	defer conversationEventReceivers.RemoveReceiver(
+		conversationID,
+		conversationEventChannel,
+	)
+
+	fmt.Fprint(responseWriter, ": connected\n\n")
+	responseWriterFlusher.Flush()
+
+	keepAliveTicker := time.NewTicker(15 * time.Second)
+	defer keepAliveTicker.Stop()
+
+	for {
+		select {
+		case eventJSON := <-conversationEventChannel:
+			fmt.Fprintf(responseWriter, "data: %s\n\n", eventJSON)
+			responseWriterFlusher.Flush()
+
+		case <-keepAliveTicker.C:
+			fmt.Fprint(responseWriter, ": keep-alive\n\n")
+			responseWriterFlusher.Flush()
+
+		case <-request.Context().Done():
+			return
+		}
+	}
+}
 
 func handleListConversations(w http.ResponseWriter, r *http.Request) {
 	cfg := config.Load()
@@ -725,15 +1060,15 @@ func handleCouncilStream(w http.ResponseWriter, r *http.Request) {
 		sort.Strings(names)
 
 		history := []model.Message{
-			{Role: "user", Content: []model.ContentBlock{
-				{Type: "text", Text: "【元老院议题】" + req.Topic},
+			{Role: "user", Content: []model.MessageContentBlock{
+				model.TextContentBlock{Text: "【元老院议题】" + req.Topic},
 			}},
 		}
 		if req.Interruption != "" {
 			history = append(history, model.Message{
 				Role: "user",
-				Content: []model.ContentBlock{
-					{Type: "text", Text: "【公民插话】" + req.Interruption},
+				Content: []model.MessageContentBlock{
+					model.TextContentBlock{Text: "【公民插话】" + req.Interruption},
 				},
 			})
 		}
@@ -752,8 +1087,10 @@ func handleCouncilStream(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				history = append(history, model.Message{
-					Role:    "assistant",
-					Content: []model.ContentBlock{{Type: "text", Text: "【" + name + "】" + resp.Text}},
+					Role: "assistant",
+					Content: []model.MessageContentBlock{
+						model.TextContentBlock{Text: "【" + name + "】" + resp.Text},
+					},
 				})
 				speechFrame, _ := json.Marshal(map[string]any{
 					"type": "speech", "round": round, "agent": name, "text": resp.Text,
@@ -773,8 +1110,44 @@ func handleCouncilStream(w http.ResponseWriter, r *http.Request) {
 // main
 // ============================================================================
 
+const applicationLogFilePath = "logs/server.jsonl"
+
+func configureApplicationLogger(
+	logFilePath string,
+	standardErrorWriter io.Writer,
+) (*os.File, error) {
+	logDirectoryPath := filepath.Dir(logFilePath)
+	if createLogDirectoryError := os.MkdirAll(logDirectoryPath, 0o755); createLogDirectoryError != nil {
+		return nil, fmt.Errorf("创建日志目录失败: %w", createLogDirectoryError)
+	}
+
+	applicationLogFile, openLogFileError := os.OpenFile(
+		logFilePath,
+		os.O_CREATE|os.O_APPEND|os.O_WRONLY,
+		0o644,
+	)
+	if openLogFileError != nil {
+		return nil, fmt.Errorf("打开日志文件失败: %w", openLogFileError)
+	}
+
+	logOutputWriter := io.MultiWriter(standardErrorWriter, applicationLogFile)
+	slog.SetDefault(slog.New(slog.NewJSONHandler(logOutputWriter, nil)))
+	return applicationLogFile, nil
+}
+
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+	applicationLogFile, configureLoggerError :=
+		configureApplicationLogger(applicationLogFilePath, os.Stderr)
+	if configureLoggerError != nil {
+		slog.Error("日志文件初始化失败，继续只向 stderr 输出",
+			"component", "startup",
+			"operation", "configureApplicationLogger",
+			"error_kind", service.ErrorStorageWrite,
+			"error", configureLoggerError)
+	} else {
+		defer applicationLogFile.Close()
+	}
 
 	var err error
 	personalities, err = loadPersonalities("personalities")
@@ -809,14 +1182,6 @@ func main() {
 		slog.Error("工具注册失败", "component", "startup", "tool_name", "create_skill", "error", err)
 		os.Exit(1)
 	}
-	if registerGeneralSubAgentError := registerGeneralSubAgentTool(registry); registerGeneralSubAgentError != nil {
-		slog.Error("工具注册失败",
-			"component", "startup",
-			"tool_name", generalSubAgentToolName,
-			"error", registerGeneralSubAgentError)
-		os.Exit(1)
-	}
-
 	mcpServerManager, err = mcp.NewMCPServerManager(
 		"config/mcp_servers.json",
 		"mcp/protocol/2025-11-25/messages.json",
@@ -835,6 +1200,10 @@ func main() {
 	http.HandleFunc("GET /api/mcp/servers", handleListMCPServers)
 	http.HandleFunc("PUT /api/mcp/servers", handleSelectMCPServers)
 	http.HandleFunc("GET /api/conversations", handleListConversations)
+	http.HandleFunc(
+		"GET /api/conversations/{id}/events",
+		handleConversationEvents,
+	)
 	http.HandleFunc("GET /api/conversations/{id}", handleGetConversation)
 	http.HandleFunc("DELETE /api/conversations/{id}", handleDeleteConversation)
 	http.HandleFunc("POST /api/council", handleCouncil)
@@ -846,7 +1215,7 @@ func main() {
 		http.ServeFile(w, r, "index.html")
 	})
 
-	slog.Info("cc-agent-go v14 启动",
+	slog.Info("cc-agent-go v15 启动",
 		"component", "startup",
 		"address", "http://localhost:8080",
 		"maximum_parallel_subagents",

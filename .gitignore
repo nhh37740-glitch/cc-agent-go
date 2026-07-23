@@ -3,6 +3,7 @@
 
 # Runtime and debug output
 *.log
+logs/*.jsonl
 **/debug-store.txt
 **/data/sessions/
 
@@ -10,6 +11,7 @@
 .gocache/
 
 # Local historical configuration files containing API credentials
+config/local.json
 democode/v3/config/config.go
 democode/v4/config/config.go
 democode/v5/config/config.go

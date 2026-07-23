@@ -239,7 +239,7 @@ func (s *Store) ListConversations() ([]model.ConversationSummary, error) {
 
 		summaries = append(summaries, model.ConversationSummary{
 			ConversationId:           sj.ConversationId,
-			Title:                    sj.Title,
+			Title:                    readableSessionTitle(sj),
 			UpdatedAt:                sj.UpdatedAt,
 			ContextWindowLimitTokens: sj.ContextWindowLimitTokens,
 			CurrentInputTokens:       sj.LastInputTokens,
@@ -259,6 +259,21 @@ func (s *Store) ListConversations() ([]model.ConversationSummary, error) {
 		summaries = []model.ConversationSummary{}
 	}
 	return summaries, nil
+}
+
+// readableSessionTitle 返回网页会话列表使用的标题。
+// 旧版本按 UTF-8 字节截取标题，可能在一个中文或日文字符中间切断，
+// JSON 保存后会出现替换字符 �。遇到这种旧标题时，用完整的第一条用户消息重新生成。
+func readableSessionTitle(sessionJson model.SessionJson) string {
+	if !strings.ContainsRune(sessionJson.Title, '\uFFFD') {
+		return sessionJson.Title
+	}
+
+	recreatedTitle := firstUserText(sessionJson.Messages)
+	if recreatedTitle == "" {
+		return sessionJson.Title
+	}
+	return recreatedTitle
 }
 
 // DeleteConversation 删除指定会话的 JSON 文件和归档文件。
@@ -434,8 +449,10 @@ func (s *Store) AppendTurnWithCompression(conversationId string, newMessages []m
 			// 重建会话：摘要消息 + 新消息
 			summaryMsg := model.Message{
 				Role: "assistant",
-				Content: []model.ContentBlock{
-					{Type: "text", Text: fmt.Sprintf("[对话摘要] %s", summaryText)},
+				Content: []model.MessageContentBlock{
+					model.TextContentBlock{
+						Text: fmt.Sprintf("[对话摘要] %s", summaryText),
+					},
 				},
 			}
 			existing.Messages = append([]model.Message{summaryMsg}, newMessages...)
@@ -510,18 +527,22 @@ func javaInstant(t time.Time) float64 {
 }
 
 // firstUserText 从消息列表中提取第一条用户文本，用于新会话标题。
-// 标题截取前 40 字符。
+// []rune 把文本拆成完整字符，避免在一个 UTF-8 中文或日文字符中间切断。
 func firstUserText(messages []model.Message) string {
 	for _, msg := range messages {
 		if msg.Role == "user" {
-			for _, block := range msg.Content {
-				if block.Type == "text" && block.Text != "" {
-					text := strings.TrimSpace(block.Text)
-					if len(text) > 40 {
-						text = text[:40]
-					}
-					return text
+			for _, messageContentBlock := range msg.Content {
+				textContentBlock, isTextContentBlock :=
+					messageContentBlock.(model.TextContentBlock)
+				if !isTextContentBlock || textContentBlock.Text == "" {
+					continue
 				}
+				text := strings.TrimSpace(textContentBlock.Text)
+				textCharacters := []rune(text)
+				if len(textCharacters) > 40 {
+					text = string(textCharacters[:40])
+				}
+				return text
 			}
 		}
 	}
