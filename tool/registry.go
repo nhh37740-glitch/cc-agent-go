@@ -87,3 +87,28 @@ func (r *Registry) GetDefinitions() []map[string]any {
 	}
 	return defs
 }
+
+// CopyExcludingTools 复制当前已经注册的工具，并排除指定名称的工具。
+// 复制完成以后，源工具表增加或删除工具不会修改返回的工具表。
+func (sourceToolRegistry *Registry) CopyExcludingTools(
+	excludedToolNames ...string,
+) *Registry {
+	excludedToolNameSet := make(map[string]bool, len(excludedToolNames))
+	for _, excludedToolName := range excludedToolNames {
+		excludedToolNameSet[excludedToolName] = true
+	}
+
+	copiedToolRegistry := NewRegistry()
+
+	sourceToolRegistry.toolsMutex.RLock()
+	defer sourceToolRegistry.toolsMutex.RUnlock()
+
+	for registeredToolName, registeredTool := range sourceToolRegistry.tools {
+		if excludedToolNameSet[registeredToolName] {
+			continue
+		}
+		copiedToolRegistry.tools[registeredToolName] = registeredTool
+	}
+
+	return copiedToolRegistry
+}

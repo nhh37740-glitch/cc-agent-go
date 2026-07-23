@@ -29,26 +29,25 @@ v0–v10 已经完成 Agent 基础能力：HTTP、SSE、模型调用、工具循
 
 ## v13：RAG 与资料检索
 
-目标：让 Agent 从本地资料中找到实际原文，并在回答中说明使用了哪个文件的哪一部分。
+状态：已跳过，未实现。用户决定把学习时间优先用于通用型 SubAgent。
 
-- 当前状态：OpenSpec 计划已完成，Go 实现尚未开始
-- 完整计划：[`openspec/changes/v13-local-rag-retrieval/`](openspec/changes/v13-local-rag-retrieval/)
-- 从 `workspace/knowledge/` 读取 `.md` 和 `.txt`，保存每段的相对文件名、起始行、结束行和原文
-- 使用 Go 标准库完成中英文搜索词处理和 BM25 初次排序
-- 使用 DeepSeek 把最多 12 个候选结果重排；重排失败时继续返回 BM25 结果
-- 把 `search_local_documents` 作为普通工具注册到现有 `tool.Registry`，不增加 HTTP 路由
-- 工具结果返回实际原文和 `[source:<文件>:<起始行>-<结束行>]`，最终回答复制实际采用的来源编号
-- 比较不同分段大小和检索数量对命中位置、耗时和回答结果的影响
-- 不读取 PDF，不做 OCR、文件上传、embedding 或向量数据库
+- 归档计划：[`openspec/changes/archive/2026-07-19-v13-local-rag-retrieval/`](openspec/changes/archive/2026-07-19-v13-local-rag-retrieval/)
+- 30 个实施任务均未执行，RAG spec 未同步到正式 `openspec/specs/`
 
 ## v14：多 Agent 任务分配与协作
 
-目标：把不同工作交给职责和工具明确的 Agent，并比较顺序执行和同时执行的结果。
+目标：把通用型 SubAgent 注册成普通工具，让主 Agent 通过固定 JSON 一次传入多个独立任务，并收回固定 JSON 结果。
 
-- 实现 router、agent-as-tool 和 handoff
-- 每个 Agent 使用明确的输入参数、工具列表、最大轮数和 token 限制
-- 支持可以独立完成的子任务同时执行
-- 比较单 Agent、顺序多 Agent 和同时执行多 Agent 的耗时与结果
+- 当前状态：✅ 已完成。核心 Go 实现、本地完整 HTTP 测试、真实 Playwright MCP 和真实 DeepSeek 双 SubAgent 检查均已通过
+- 完整计划：[`openspec/changes/v14-general-subagent-tool/`](openspec/changes/v14-general-subagent-tool/)
+- 注册普通工具 `run_subagent`，输入 JSON 的 `subAgentTasks` 数组保存 `taskId` 和 `task`
+- 输出 JSON 的 `results` 数组保存每个任务的 `taskId`、`status`、`result` 和 `error`
+- `config.Config.MaximumParallelSubAgents` 决定同时执行的 SubAgent 数量，默认 5，硬上限 5
+- SubAgent 使用新的临时消息记录和现有 DeepSeek API
+- SubAgent 可以使用执行时已有的 Bash、Skill、CreateSkill 和 MCP 工具
+- 从 SubAgent 工具表删除 `run_subagent`，禁止继续创建 SubAgent
+- 每个 SubAgent 最多执行 12 轮，全部结果组成一个 JSON `tool_result` 返回主 Agent
+- 第一版不实现 router、固定职能、handoff、独立会话、后台任务或新网页
 
 ## v15：长任务、后台运行与恢复
 

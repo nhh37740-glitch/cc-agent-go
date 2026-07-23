@@ -54,6 +54,7 @@ Go 工具链内建格式化、静态分析、依赖管理，不需要 Prettier/E
 1. **开始前**：查看下方版本追踪表，确认当前版本 → 读取计划文件中对应版本的步骤和 Go 知识点 → 告知用户本版本会学到哪些 Go 概念
    - 先读取根目录 `PROJECT_INDEX.md`；索引未记录当前代码时，读取代码并补充索引。
    - 当前版本存在 OpenSpec change 时，按 `proposal.md`、`specs/`、`design.md`、`tasks.md` 的顺序读取，并只执行 `tasks.md` 中当前被选择的任务。
+   - 使用 Plannotator 展示 OpenSpec 计划时，必须把整个 `openspec/changes/<change-name>/` 目录传给 Plannotator，不得只传 `tasks.md`。打开后确认页面同时包含 `proposal.md`、`specs/`、`design.md` 和 `tasks.md`；计划显示不完整时先修正 Plannotator 输入，不得继续提交、推送或更新 GitHub Project。
 2. **编码中**：遇到新语法/新标准库时主动解释（不需要等用户问）→ 写一段、编译一段，确保 `go build ./...` 通过
    - 修改根目录 `main.go`、`config/`、`model/`、`service/` 或 `tool/` 中的正式 Go 文件时，同步更新 `PROJECT_INDEX.md`。
 3. **编码后**：`go build ./...` + `go vet ./...` 通过 → `go run main.go` 启动 → curl 验证端点 → 更新版本追踪表状态
@@ -306,7 +307,7 @@ if err := action(); err != nil {
 
 ## 7. 版本追踪
 
-**当前主线：v13 ⏳ RAG 与资料检索**
+**当前主线：v15 ⏳ 长任务、后台运行与恢复**
 
 | 版本 | 新 Go 概念 | 涉及文件 | 状态 |
 | :--- | :--- | :--- | :--- |
@@ -323,8 +324,8 @@ if err := action(); err != nil {
 | v10 | `strings.SplitN`（限制分割次数）、`json.Unmarshal`（从 `[]byte` 解析 JSON）、`strings.TrimPrefix`、`log` 包（`log.Printf` 写 stderr，无缓冲）、Tool 接口实现复习（再写一个 Tool 实现巩固接口概念） | `democode/v10/tool/skill.go`、`democode/v10/tool/create_skill.go`、`democode/v10/main.go` | ✅ |
 | v11 | `log/slog`、自定义错误类型、`errors.As`、`errors.Is`、HTTP 状态码映射 | `main.go`、`service/errors.go`、`service/client.go`、`service/stream.go` | ✅ |
 | v12 | JSON-RPC 2.0、MCP lifecycle、`os/exec` 管道、goroutine 持续读取、请求 id 与 channel、动态函数工具、`sync.RWMutex` | `mcp/`、`tool/function.go`、`tool/registry.go`、`main.go`、`index.html` | ✅ |
-| v13 | 文档读取、分段、检索、重排和来源位置 | `rag/` | ⏳ |
-| v14 | router、agent-as-tool、handoff、受控同时执行 | `multiagent/` | ⏳ |
+| v13 | RAG 计划已归档，未实现 | 无正式 Go 文件 | ⏭ 跳过 |
+| v14 | 通用型 agent-as-tool、JSON 输入输出、最多 5 个并行 SubAgent、goroutine + channel、工具表复制 | `config/config.go`、`service/subagent.go`、`tool/registry.go`、`main.go` | ✅ |
 | v15 | taskId、任务状态、checkpoint、取消、超时、重试与后台任务 | `service/workflow.go` | ⏳ |
 | v16 | Agent Card、A2A 任务协议和远程 Agent 调用 | `a2a/` | ⏳ |
 

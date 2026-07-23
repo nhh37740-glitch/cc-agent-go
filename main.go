@@ -102,6 +102,163 @@ func buildSystemPrompt() string {
 var registry = tool.NewRegistry()
 var mcpServerManager *mcp.MCPServerManager
 
+const generalSubAgentToolName = "run_subagent"
+
+const generalSubAgentToolDescription = `同时运行一个或多个临时通用 SubAgent。
+每个 subAgentTasks 元素必须包含唯一 taskId，以及完成任务需要的全部文件位置、执行动作和返回内容。
+只提交彼此独立、可以同时执行的任务。`
+
+var generalSubAgentToolInputSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"subAgentTasks": map[string]any{
+			"type":     "array",
+			"minItems": 1,
+			"maxItems": 5,
+			"items": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"taskId": map[string]any{
+						"type":        "string",
+						"description": "本次工具调用中唯一的任务编号",
+					},
+					"task": map[string]any{
+						"type":        "string",
+						"description": "SubAgent 完成任务需要的全部信息",
+					},
+				},
+				"required": []string{"taskId", "task"},
+			},
+		},
+	},
+	"required": []string{"subAgentTasks"},
+}
+
+// RunSubAgentToolInput 是 run_subagent 工具参数解包后的固定结构。
+type RunSubAgentToolInput struct {
+	SubAgentTasks []service.SubAgentTask `json:"subAgentTasks"`
+}
+
+// RunSubAgentToolOutput 是 run_subagent 返回给主 Agent 的固定 JSON 结构。
+type RunSubAgentToolOutput struct {
+	MaximumParallelSubAgents int                      `json:"maximumParallelSubAgents"`
+	Results                  []service.SubAgentResult `json:"results"`
+}
+
+func decodeAndValidateRunSubAgentToolInput(
+	toolArguments map[string]any,
+	maximumParallelSubAgents int,
+) (RunSubAgentToolInput, error) {
+	var runSubAgentToolInput RunSubAgentToolInput
+
+	runSubAgentToolInputJSONBytes, encodeToolArgumentsError :=
+		json.Marshal(toolArguments)
+	if encodeToolArgumentsError != nil {
+		return runSubAgentToolInput, fmt.Errorf(
+			"run_subagent 参数无法编码为 JSON: %w",
+			encodeToolArgumentsError,
+		)
+	}
+
+	decodeToolArgumentsError := json.Unmarshal(
+		runSubAgentToolInputJSONBytes,
+		&runSubAgentToolInput,
+	)
+	if decodeToolArgumentsError != nil {
+		return runSubAgentToolInput, fmt.Errorf(
+			"run_subagent 参数 JSON 无法解包: %w",
+			decodeToolArgumentsError,
+		)
+	}
+
+	if len(runSubAgentToolInput.SubAgentTasks) == 0 {
+		return runSubAgentToolInput, fmt.Errorf(
+			"run_subagent 的 subAgentTasks 至少需要 1 个任务",
+		)
+	}
+	if len(runSubAgentToolInput.SubAgentTasks) > maximumParallelSubAgents {
+		return runSubAgentToolInput, fmt.Errorf(
+			"run_subagent 收到 %d 个任务，当前配置最多允许 %d 个",
+			len(runSubAgentToolInput.SubAgentTasks),
+			maximumParallelSubAgents,
+		)
+	}
+
+	seenSubAgentTaskIDs := make(map[string]bool)
+	for taskIndex, subAgentTask := range runSubAgentToolInput.SubAgentTasks {
+		trimmedTaskID := strings.TrimSpace(subAgentTask.TaskID)
+		if trimmedTaskID == "" {
+			return runSubAgentToolInput, fmt.Errorf(
+				"run_subagent 的第 %d 个任务缺少非空 taskId",
+				taskIndex+1,
+			)
+		}
+		if strings.TrimSpace(subAgentTask.Task) == "" {
+			return runSubAgentToolInput, fmt.Errorf(
+				"run_subagent 的第 %d 个任务缺少非空 task",
+				taskIndex+1,
+			)
+		}
+		if seenSubAgentTaskIDs[trimmedTaskID] {
+			return runSubAgentToolInput, fmt.Errorf(
+				"run_subagent 的 taskId %q 重复",
+				trimmedTaskID,
+			)
+		}
+		seenSubAgentTaskIDs[trimmedTaskID] = true
+	}
+
+	return runSubAgentToolInput, nil
+}
+
+func registerGeneralSubAgentTool(
+	mainAgentToolRegistry *tool.Registry,
+) error {
+	executeRunSubAgentTool := func(
+		toolArguments map[string]any,
+	) (string, error) {
+		applicationConfig := config.Load()
+		runSubAgentToolInput, decodeToolArgumentsError :=
+			decodeAndValidateRunSubAgentToolInput(
+				toolArguments,
+				applicationConfig.MaximumParallelSubAgents,
+			)
+		if decodeToolArgumentsError != nil {
+			return "", decodeToolArgumentsError
+		}
+
+		availableSubAgentTools :=
+			mainAgentToolRegistry.CopyExcludingTools(generalSubAgentToolName)
+		subAgentResults := service.RunSubAgentsInParallel(
+			runSubAgentToolInput.SubAgentTasks,
+			applicationConfig,
+			availableSubAgentTools,
+		)
+
+		runSubAgentToolOutput := RunSubAgentToolOutput{
+			MaximumParallelSubAgents: applicationConfig.MaximumParallelSubAgents,
+			Results:                  subAgentResults,
+		}
+		runSubAgentToolOutputJSONBytes, encodeToolOutputError :=
+			json.Marshal(runSubAgentToolOutput)
+		if encodeToolOutputError != nil {
+			return "", fmt.Errorf(
+				"run_subagent 返回值无法编码为 JSON: %w",
+				encodeToolOutputError,
+			)
+		}
+
+		return string(runSubAgentToolOutputJSONBytes), nil
+	}
+
+	return mainAgentToolRegistry.RegisterFunctionTool(
+		generalSubAgentToolName,
+		generalSubAgentToolDescription,
+		generalSubAgentToolInputSchema,
+		executeRunSubAgentTool,
+	)
+}
+
 func publicError(err error) (int, model.ErrorResponse) {
 	status := http.StatusInternalServerError
 	resp := model.ErrorResponse{
@@ -652,6 +809,13 @@ func main() {
 		slog.Error("工具注册失败", "component", "startup", "tool_name", "create_skill", "error", err)
 		os.Exit(1)
 	}
+	if registerGeneralSubAgentError := registerGeneralSubAgentTool(registry); registerGeneralSubAgentError != nil {
+		slog.Error("工具注册失败",
+			"component", "startup",
+			"tool_name", generalSubAgentToolName,
+			"error", registerGeneralSubAgentError)
+		os.Exit(1)
+	}
 
 	mcpServerManager, err = mcp.NewMCPServerManager(
 		"config/mcp_servers.json",
@@ -682,9 +846,11 @@ func main() {
 		http.ServeFile(w, r, "index.html")
 	})
 
-	slog.Info("cc-agent-go v12 启动",
+	slog.Info("cc-agent-go v14 启动",
 		"component", "startup",
-		"address", "http://localhost:8080")
+		"address", "http://localhost:8080",
+		"maximum_parallel_subagents",
+		config.Load().MaximumParallelSubAgents)
 
 	httpServer := &http.Server{Addr: ":8080"}
 	httpServerFinished := make(chan error, 1)
