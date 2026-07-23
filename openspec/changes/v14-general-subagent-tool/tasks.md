@@ -60,4 +60,4 @@
 - [x] 7.1 更新 `PROJECT_INDEX.md`，写出 `config/config.go`、`main.go`、`service/subagent.go` 和 `tool/registry.go` 的实际函数、参数、调用顺序和返回值
 - [x] 7.2 更新 `README.md`、`ROADMAP.md` 和 `AGENTS.md`，记录 v14 的固定 JSON 输入输出、配置并行数和最多 5 个临时 SubAgent
 - [x] 7.3 运行 `go fmt ./...`、`go build ./...`、`go vet ./...` 和 `go test ./...`，任何一项失败都先修复
-- [ ] 7.4 检查暂存内容不含 API Key、用户文件或 `workspace/银河争霸战.txt`，然后再提交、推送和更新 GitHub Project
+- [x] 7.4 检查暂存内容不含 API Key、用户文件或 `workspace/银河争霸战.txt`，然后再提交、推送和更新 GitHub Project
