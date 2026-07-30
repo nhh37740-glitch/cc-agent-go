@@ -3,6 +3,8 @@ package config
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -21,11 +23,9 @@ type Config struct {
 	ApiKey                   string
 	ApiEndpoint              string
 	Model                    string
-	MemoryPath               string // AGENT.MD 文件路径，默认 "../../memory/AGENT.MD"
-	SessionsDir              string // 会话 JSON 存储目录，默认 "workspace/data/sessions"
-	CompressionThreshold     int    // token 压缩阈值，默认 100000（和 Java 版一致）
-	MaximumParallelSubAgents int    // 同一次 run_subagent 最多并行执行的 SubAgent 数量
-	MaximumSubAgentRounds    int    // run_subagent 单项任务允许填写的最高轮数
+	CompressionThreshold     int // token 压缩阈值，默认 100000（和 Java 版一致）
+	MaximumParallelSubAgents int // 同一次 run_subagent 最多并行执行的 SubAgent 数量
+	MaximumSubAgentRounds    int // run_subagent 单项任务允许填写的最高轮数
 }
 
 // Load 读取运行配置。DEEPSEEK_API_KEY 环境变量优先；
@@ -35,8 +35,6 @@ func Load() Config {
 		ApiKey:                   loadDeepSeekAPIKey(),
 		ApiEndpoint:              "https://api.deepseek.com/anthropic/v1/messages",
 		Model:                    "deepseek-v4-pro[1m]",
-		MemoryPath:               "workspace/memory/AGENT.MD",
-		SessionsDir:              "data/sessions",
 		CompressionThreshold:     100000,
 		MaximumParallelSubAgents: loadMaximumParallelSubAgents(),
 		MaximumSubAgentRounds:    loadMaximumSubAgentRounds(),
@@ -58,6 +56,18 @@ func loadDeepSeekAPIKey() string {
 
 	localConfigJSON, readLocalConfigError :=
 		os.ReadFile(localConfigFilePath)
+	if os.IsNotExist(readLocalConfigError) &&
+		strings.TrimSpace(os.Getenv("CC_AGENT_LOCAL_CONFIG")) == "" {
+		_, currentSourceFile, _, callerInformationAvailable := runtime.Caller(0)
+		if callerInformationAvailable {
+			localConfigFilePath = filepath.Join(
+				filepath.Dir(currentSourceFile),
+				"local.json",
+			)
+			localConfigJSON, readLocalConfigError =
+				os.ReadFile(localConfigFilePath)
+		}
+	}
 	if readLocalConfigError != nil {
 		return ""
 	}

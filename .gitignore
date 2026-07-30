@@ -6,6 +6,7 @@
 logs/*.jsonl
 **/debug-store.txt
 **/data/sessions/
+**/.cc-agent/
 
 .cache/
 .gocache/

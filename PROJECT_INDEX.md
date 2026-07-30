@@ -1,42 +1,56 @@
 # cc-agent-go 项目索引
 
-本文件记录正式 Go 服务的文件、包名、导出函数和主要调用位置。`democode/` 是历史教学程序，不写入本索引。
+本文件只记录正式服务的实际文件、函数、参数和调用顺序。`democode/` 不写入
+本索引。
 
-更新规则：修改根目录 `main.go`、`config/`、`model/`、`service/` 或 `tool/` 中的正式 Go 文件时，同一次修改更新对应条目。回答代码问题时，先读取本文件；本文件没有该项目时，才读取代码并补充条目。
+## 一次 WebAgent 任务的实际顺序
 
-| 文件 | 包名 | 导出类型和函数 | 调用关系 |
-| --- | --- | --- | --- |
-| `main.go` | `main` | `RunSubAgentToolInput`、`StartedSubAgentTask`、`RunSubAgentToolOutput`、四种后台回复事件类型、`main` | `handleChat` 和 `handleChatStream` 先确定 `conversationId`，调用 `createConversationToolRegistry` 复制当前工具表并注册保留该 ID 的 `run_subagent`，再取得该会话的主 Agent执行锁并调用 `service.Run` 或 `service.RunStream`。`run_subagent` 的每个任务必须包含 `taskId`、`task` 和 `maximumRounds`；启动前同时验证并行数和各任务轮数。验证通过后调用 `service.RunSubAgentsInBackground` 并立即返回 `tasks:[{"taskId","status":"running"}]`。全部 SubAgent完成时调用 `continueMainAgentAfterSubAgents`；该函数取得同一会话执行锁，创建空工具表，调用 `service.ContinueConversationAfterSubAgentsStream`，再把开始、token、完成或失败 JSON 写入会话事件 channel。`handleConversationEvents` 处理 `GET /api/conversations/{id}/events`，一直等待 channel、心跳或浏览器断开。MCP 列表、选择和停止仍由 `MCPServerManager` 处理。 |
-| `config/config.go` | `config` | `Config`、`Load` | `Load` 调用 `loadDeepSeekAPIKey`：先读取 `DEEPSEEK_API_KEY`，空值时读取 `config/local.json` 的 `deepseekApiKey`；`CC_AGENT_LOCAL_CONFIG` 可以替换本地配置文件路径。`Load` 读取 `MAX_PARALLEL_SUBAGENTS`，并行数只接受 1–5，空值或非法值使用 5；还读取 `MAXIMUM_SUBAGENT_ROUNDS`，作为 LLM 给单项任务填写 `maximumRounds` 时允许的最高值，默认 50。API Key 最终仍为空时，`service.Chat` 和 `ChatStream` 返回 `config_error`。 |
-| `model/types.go` | `model` | `MessageContentBlock`、`TextContentBlock`、`ToolUseContentBlock`、`ToolResultContentBlock`、`Message`、`ToolCall`、`ChatRequest`、`ChatResponse`、`ErrorResponse`、`ApiResponse`、`SessionJson`、`ConversationSummary`、`Compressor` | `Message.Content` 保存三种独立内容类型。`ToolUseContentBlock.MarshalJSON` 强制写入 `input`，无参数时写 `{}`；`Message.UnmarshalJSON` 读取每块的 `type` 后创建对应具体类型。`main.go` 和 `service/` 创建并读取这些具体类型。 |
-| `service/agent.go` | `service` | `Run`、`RunStream`、`ContinueConversationAfterSubAgentsStream`、`GenerateConversationId` | `handleChat` 调用 `Run`，`handleChatStream` 调用 `RunStream`。主 Agent一次 DeepSeek 回复中只要成功执行 `run_subagent`，就不执行同一回复中的其他工具，不再调用下一轮 DeepSeek；保存并返回“SubAgent 已启动，完成后会自动返回结果”。SubAgent完成回调调用 `ContinueConversationAfterSubAgentsStream`；它读取最新会话，把 SubAgent结果只放入本次 DeepSeek history，并强制使用空工具表，只让回调主 Agent分析和汇总结果，最终只保存 assistant 回复。 |
-| `service/errors.go` | `service` | `ErrorKind`、`AppError`、`NewAppError` | `Chat`、`ChatStream` 和 `Run` 创建分类错误；`main.go` 使用 `errors.As` 读取 `Kind` 和 `ProviderStatus`。 |
-| `service/client.go` | `service` | `Chat` | 向 DeepSeek 发送非流式请求；检查 API Key、网络错误、HTTP 状态和响应 JSON。 |
-| `service/stream.go` | `service` | `ChatStream` | 向 DeepSeek 发送流式请求；检查 API Key、网络错误和 HTTP 状态，再读取 SSE 数据。 |
-| `service/subagent.go` | `service` | `GeneralSubAgentToolName`、`SubAgentTask`、`SubAgentResult`、`CompletedSubAgentResultsCallback`、`RunSubAgent`、`RunSubAgentsInParallel`、`RunSubAgentsInBackground` | `SubAgentTask.MaximumRounds` 保存调用 LLM 为该任务选择的轮数。`RunSubAgent` 使用只包含本次任务的临时消息记录；最后一轮把工具列表设为空，并要求 DeepSeek整理已经获得的结果。轮数耗尽时同时返回 `status: "limit_reached"`、非空 `result` 和具体 `error`，不丢弃部分结果。`RunSubAgentsInParallel` 把每个任务自己的轮数传入并按输入位置返回结果。`RunSubAgentsInBackground` 启动一个后台 goroutine 后立即返回；后台收齐全部结果后调用一次回调，并明确传回父 `conversationId`。 |
-| `service/conversation_events.go` | `service` | `ConversationEventReceivers`、`NewConversationEventReceivers`；方法：`AddReceiver`、`RemoveReceiver`、`SendEventJSON`、`ReceiverCount` | `handleConversationEvents` 为每个网页 GET 长连接增加一个缓冲 channel并在断开时删除。SubAgent完成回调调用 `SendEventJSON`，同一会话当前打开的全部网页都收到事件。 |
-| `service/conversation_execution.go` | `service` | `ConversationExecutionLocks`、`NewConversationExecutionLocks`；方法：`LockConversation` | 普通聊天处理函数和 SubAgent完成回调在调用主 Agent前使用同一个 `conversationId` 取得同一把锁；不同会话使用不同锁。 |
-| `service/store.go` | `service` | `Store`、`NewStore`、`LoadMemory`；`Store` 方法：`LoadMessages`、`LoadConversation`、`ListConversations`、`DeleteConversation`、`AppendTurn`、`AppendTurnWithCompression` | `main.go` 创建 `Store`；`Run` 和 `RunStream` 调用消息读取和保存方法；`firstUserText` 按完整 Unicode 字符生成最多 40 字符的标题；`ListConversations` 调用 `readableSessionTitle`，旧标题含 `�` 时从第一条完整用户消息重新生成列表标题；存储日志使用 `slog`。 |
-| `service/council.go` | `service` | `Speech`、`CouncilRequest`、`CouncilResponse`、`RunCouncil` | `main.go` 的 `handleCouncil` 调用 `RunCouncil`；`RunCouncil` 调用 `Chat`。 |
-| `tool/tool.go` | `tool` | `Tool` | `BashTool`、`SkillTool` 和 `CreateSkillTool` 都实现 `Tool` 的 `Name`、`Description`、`InputSchema`、`Execute` 方法。 |
-| `tool/registry.go` | `tool` | `Registry`、`NewRegistry`；方法：`CopyExcludingTools` | `main.go` 创建工具表；`Run` 和 `RunStream` 调用 `GetDefinitions` 与 `Execute`；`MCPServerManager` 调用 `RegisterFunctionTool` 和 `Unregister` 动态增加或删除 MCP 工具。`CopyExcludingTools` 复制调用时的工具并排除指定名称。内部使用 `sync.RWMutex` 保护工具 map。 |
-| `tool/function.go` | `tool` | `FunctionTool`、`FunctionToolExecuteFunction`、`NewFunctionTool` | `RegisterFunctionTool` 把工具名称、说明、参数定义和执行函数保存为一个普通 `Tool`。MCP 工具保存的执行函数调用 `MCPServerManager.callMCPServerTool`。 |
-| `tool/bash.go` | `tool` | `BashTool`、`NewBashTool` | `main.go` 注册 `BashTool`；`Registry.Execute` 调用它的 `Execute` 方法。 |
-| `tool/skill.go` | `tool` | `SkillTool`、`NewSkillTool` | `main.go` 注册 `SkillTool`；`Registry.Execute` 调用它的 `Execute` 方法。 |
-| `tool/create_skill.go` | `tool` | `CreateSkillTool`、`NewCreateSkillTool` | `main.go` 注册 `CreateSkillTool`；`Registry.Execute` 调用它的 `Execute` 方法。 |
-| `tool/validator.go` | `tool` | `ValidatePath` | 当前正式服务代码没有调用 `ValidatePath`。 |
-| `mcp/server_configuration.go` | `mcp` | `MCPServerConfigurationFile`、`MCPServerConfiguration` | `NewMCPServerManager` 调用内部 `loadMCPServerConfigurations`，读取 `config/mcp_servers.json`。 |
-| `mcp/protocol_messages.go` | `mcp` | `MCPProtocolMessageTemplates` | `NewMCPServerManager` 读取 `messages.json`；每次 initialize、tools/list、tools/call 和取消请求都调用 `copyProtocolMessageJSON` 拷贝一份消息再填本次数据。 |
-| `mcp/json_rpc_types.go` | `mcp` | `MCPJSONRPCMessage`、`MCPInitializeResult`、`MCPServerToolDefinition`、`MCPToolListResult`、`MCPToolCallResult` | 标准输出读取函数使用这些类型解包 MCP Server 返回的 JSON。 |
-| `mcp/started_server_process.go` | `mcp` | 无包外导出类型 | `startMCPServerProcess` 启动配置中的命令并取得三个管道；一个 goroutine 读取标准输出并按请求 id 返回结果，另一个 goroutine 排空标准错误。 |
-| `mcp/server_manager.go` | `mcp` | `MCPServerManager`、`MCPServerStatus`、`NewMCPServerManager`；方法：`ListConfiguredMCPServers`、`StartSelectedMCPServers`、`CloseAllStartedMCPServers` | `main.go` 创建并调用。内部依次启动进程、initialize、发送 initialized notification、tools/list、注册工具；停止未选中的 Server。MCPServerManager 不保存 Agent 工具注册表。 |
-| `mcp/server_tools.go` | `mcp` | 无包外导出函数 | `registerMCPServerTools` 遍历返回工具并注册 `mcp_<server>__<tool>`；保存的执行函数调用 `callMCPServerTool`，后者发送 tools/call 并把文字结果返回 `Registry.Execute`。 |
-| `mcp/errors.go` | `mcp` | `ErrorKind`、`Error`、`NewError` | MCP 配置、进程、初始化、工具列表、超时和返回 JSON 错误；`main.go` 的 `publicError` 读取错误类别。 |
+1. `index.html` 发送 `workingDirectory`、`conversationId` 和 `message`。
+2. `main.handleChat` 或 `main.handleChatStream` 解包并校验这三个值。
+3. handler 创建 `agent.UserTaskInput` 和 `agent.AgentExecutionEnvironment`。
+4. handler 调用 `service.RunAgentTask(...)`。
+5. `service.RunAgentTask` 把 `service.Chat` 或 `service.ChatStream` 放入
+   `agent.AgentModelCallFunction`，创建 `agent.Agent`。
+6. `agent.Agent.Run(agentTaskInput, executionEnvironment)` 准备当前任务、
+   项目 `AGENTS.md` 和会话文件位置，计算请求 token，然后调用 DeepSeek。
+7. DeepSeek 返回工具调用时，`Agent.Run` 调用
+   `tool.Registry.Execute(toolName, toolArguments, toolExecutionEnvironment)`。
+8. 没有工具调用时，`Agent.Run` 把当前任务和最终回复保存到
+   `<WorkingDirectory>/.cc-agent/sessions/<ConversationID>.json`，返回具体
+   `AgentRunResult`。
 
-`service.Run` 的固定说明：`service` 是包名，来自 `service/agent.go` 的 `package service`。`Run` 是该文件定义的包级函数。`agent.go` 是文件名，不是包名；`Run` 不是接口方法。
+## 正式文件
 
-## 版本状态
+| 文件 | 具体类型或函数 | 实际调用关系 |
+| --- | --- | --- |
+| `agent/execution_environment.go` | `AgentExecutionEnvironment`、`Validate` | 每次 `Agent.Run` 收到 `WorkingDirectory` 和 `ConversationID`；校验绝对目录、目录存在和安全会话编号。`Agent` 字段不保存这两个值。 |
+| `agent/task_input.go` | `UserTaskInput`、`InternalContinuationTaskInput`、`HostedAgentTaskInput` | WebAgent、后台结果回调和外部 Host 分别创建不同类型；三个类型都向 `Agent.Run` 提供本次任务文字。 |
+| `agent/agent.go` | `AgentConfiguration`、`Agent`、`NewAgent`、`Agent.Run` | `Run` 中保存唯一循环：准备请求 → 精确计数 → DeepSeek → 工具 → 下一轮或完成 → 保存项目会话。它只使用 `tool.Registry`，不检查 MCP Server 名称或普通工具名称。 |
+| `agent/model_call.go` | `AgentModelCallRequest`、`AgentModelCallFunction` | `service.RunAgentTask` 提供具体 DeepSeek 调用函数；`Agent.Run` 只调用该函数。 |
+| `agent/result.go` | 三种完成结果和两种记忆保存结果 | 分别表达正常完成、终止工具完成、达到最大轮数，以及记忆保存成功或失败。 |
+| `agent/events.go` | round、文字、工具、压缩、保存和完成事件 | `Agent.Run` 发送具体事件；`main.writeAgentEventSSE` 按具体事件类型编码 JSON。 |
+| `agent/memory_reference.go` | `AgentMemoryReference` | 生成工作目录、`.cc-agent/sessions/<id>.json`、`AGENTS.md` 和允许读取命令的 system instruction。 |
+| `agent/token_counter.go` | `PreparedModelRequest`、`AgentTokenCounter`、`TokenTruncationResult` | `Agent.Run` 在每次模型调用前计数请求，并用相同 tokenizer 限制工具结果和历史文件。 |
+| `memory/conversation_store.go` | `ProjectConversationStore` | 每个读取、保存、列表和删除函数都收到工作目录；同名会话在不同项目生成不同文件。内部锁按完整会话文件路径区分。 |
+| `modeltoken/huggingface_json_token_counter.go` | `HuggingFaceJSONTokenCounter` | 启动时调用 `tokenizers.FromFile` 一次；实现请求计数、文字计数和按 token 截断。 |
+| `config/model_tokenizers.go` | `ModelTokenizerConfiguration`、`LoadModelTokenizerConfiguration` | 按 `Config.Model` 读取 `config/model_tokenizers.json`，返回 tokenizer 文件和上下文窗口。 |
+| `config/config.go` | `Config`、`Load` | 读取 DeepSeek Key、并行 SubAgent 数和 SubAgent 最大轮数；不再提供固定 workspace 或固定 sessions 目录。 |
+| `model/types.go` | 三种消息内容类型、`ChatRequest`、`SessionJson` | `ChatRequest` 的三个必填 JSON 字段是 `workingDirectory`、`conversationId`、`message`；`SessionJson.StoredMemoryTokens` 保存项目会话文件计数。 |
+| `tool/execution_environment.go` | `ToolExecutionEnvironment` | `Agent.Run` 把本次工作目录和会话编号传给 `Registry.Execute`。 |
+| `tool/tool.go` | `Tool` | 每个具体工具的 `Execute` 都收到工具参数和本次 `ToolExecutionEnvironment`。 |
+| `tool/registry.go` | `Registry`、`RegisterFunctionTool`、`RegisterTerminalFunctionTool`、`Execute` | 保存普通工具、MCP 动态工具和 `run_subagent`；终止行为是注册信息，不是 `Agent.Run` 中的工具名称判断。 |
+| `tool/bash.go` | `NewBashTool()`、`BashTool.Execute` | `BashTool` 不保存目录；每次用 `ToolExecutionEnvironment.WorkingDirectory` 设置 `cmd.Dir`。 |
+| `tool/skill.go` | `NewSkillTool()`、`SkillTool.Execute` | 读取本次项目的 `.cc-agent/skills/<skill>.md`。 |
+| `tool/create_skill.go` | `NewCreateSkillTool()`、`CreateSkillTool.Execute` | 写入本次项目的 `.cc-agent/skills/<name>.md`。 |
+| `service/agent_runner.go` | `AgentRunOptions`、`RunAgentTask` | 把 DeepSeek `Chat`/`ChatStream` 适配成 `AgentModelCallFunction`，然后只调用 `Agent.Run`。 |
+| `service/subagent.go` | `RunSubAgent`、`RunSubAgentsInParallel`、`RunSubAgentsInBackground` | `RunSubAgent` 创建 `HostedAgentTaskInput` 和独立 `AgentExecutionEnvironment` 后调用 `RunAgentTask`；这里不再保存第二份模型—工具循环。 |
+| `service/client.go` / `service/stream.go` | `Chat`、`ChatStream` | 只处理 DeepSeek HTTP 请求和响应，不管理 Agent round 或工具。 |
+| `main.go` | HTTP handlers、SubAgent 工具注册、`main` | 启动时加载 tokenizer；WebAgent handler 传入项目目录和会话编号；后台回调创建 `InternalContinuationTaskInput` 并调用同一个 `RunAgentTask`。 |
+| `mcp/server_tools.go` | MCP 动态工具注册和 `tools/call` | 注册的执行函数接受 `ToolExecutionEnvironment`，但浏览器 MCP 不读取本地目录；增加 MCP Server 不修改 `Agent.Run`。 |
+| `host/participant_host.go` | `ParticipantTurn`、`RunParticipantTurn` | 外部主持人选择角色、项目目录、角色会话编号和当前任务，再调用同一个 `Agent.Run`。 |
+| `index.html` | WebAgent 任务页面 | 显示项目目录、会话编号、任务输入、开始按钮、Agent 事件、最终结果和 MCP Server 列表；没有聊天气泡和历史会话卡片。 |
 
-- v13 RAG 已跳过且未实现，归档位于 [`openspec/changes/archive/2026-07-19-v13-local-rag-retrieval/`](openspec/changes/archive/2026-07-19-v13-local-rag-retrieval/)。当前正式代码中不存在 `rag` 包或 `search_local_documents` 工具。
-- v14 已完成：核心 Go 代码、本地完整 HTTP 测试、真实 Playwright MCP 和真实 DeepSeek 双 SubAgent 检查均已通过。
-- v15 第一部分已实现：`run_subagent` 后台返回、每任务 `maximumRounds`、轮数耗尽时保留部分结果、原主 Agent启动后立即结束、只负责汇总的无工具回调、同会话主 Agent执行锁、独立会话事件 SSE 和 Web `EventSource`。取消、重试、checkpoint 和服务重启恢复尚未实现。
+## 当前版本
+
+- v15：✅ `v15-unified-agent-execution-loop` 已实现。
+- v16：下一步，A2A 与远程 Agent 调用。

@@ -49,22 +49,24 @@ v0–v10 已经完成 Agent 基础能力：HTTP、SSE、模型调用、工具循
 - 每个 SubAgent任务由调用 LLM 填写 `maximumRounds`；`MAXIMUM_SUBAGENT_ROUNDS` 配置最高允许值，默认 50
 - 第一版不实现 router、固定职能、handoff、独立会话、后台任务或新网页
 
-## v15：长任务、后台运行与恢复
+## v15：封装统一 Agent 和项目会话记忆
 
-目标：Agent 长任务可以在后台运行，并支持查询、取消和服务重启后继续。
+目标：把当前 Go Agent 封装成可以被 WebAgent、SubAgent 和未来应用共同调用
+的基本 Agent；应用不得修改 Agent 内部循环。
 
-- 当前状态：⏳ 第一部分已实现
-- 当前计划：[`openspec/changes/v15-background-subagent-callback/`](openspec/changes/v15-background-subagent-callback/)
-- `run_subagent` 启动 goroutine 后立即返回每个 `taskId` 和 `status: "running"`
-- 全部 SubAgent完成后直接回调主 Agent，不增加 `get_subagent_results`
-- `run_subagent` 每项任务包含自己的 `maximumRounds`，不再固定为 12 轮
-- 达到 `maximumRounds` 时，最后一轮禁用工具并整理已有内容，返回 `limit_reached`、部分 `result` 和 `error`
-- 原主 Agent成功启动 SubAgent 后立即结束，不继续执行同一回复中的其他工具
-- 完成回调使用空工具表；回调主 Agent只能分析和汇总，不能继续执行 SubAgent工作
-- 同一 `conversationId` 的普通用户消息和完成回调使用同一把主 Agent执行锁
-- `POST /api/chat/stream` 作为短连接固定结束；`GET /api/conversations/{id}/events` 作为长连接接收后台回复
-- Web 页面使用 `EventSource` 接收后台回复开始、token、完成和失败事件
-- 后续仍需实现取消、超时、有限次数重试、checkpoint 和服务重启恢复
+- 当前状态：✅ 已完成
+- 当前计划：[`openspec/changes/v15-unified-agent-execution-loop/`](openspec/changes/v15-unified-agent-execution-loop/)
+- `agent.Agent.Run` 保存唯一的模型调用、工具执行、上下文检查和记忆保存循环
+- 调用者每次传入绝对 `WorkingDirectory`、`ConversationID` 和具体任务类型
+- 会话保存到 `<WorkingDirectory>/.cc-agent/sessions/<ConversationID>.json`
+- 第一次模型调用只发送当前任务和历史文件位置，不自动重放全部历史正文
+- Bash、Skill、CreateSkill、MCP 和 `run_subagent` 都通过 `tool.Registry` 执行
+- 普通工具、动态 MCP 工具和终止当前回复的工具不在 `Agent.Run` 中写名称分支
+- DeepSeek V4 官方 tokenizer 在每次 API 调用前计算实际准备请求 token
+- 工具结果按 token 截断；当前执行和历史文件分别检查与压缩
+- WebAgent 页面要求填写项目目录、会话编号和当前任务，并显示具体 Agent 事件
+- `host.RunParticipantTurn` 展示外部主持人如何用同一个 Agent 执行角色任务
+- v15 不新增取消、重试、checkpoint、A2A、WebSocket 或 MCP 并发控制
 
 ## v16：A2A 与远程 Agent 调用
 

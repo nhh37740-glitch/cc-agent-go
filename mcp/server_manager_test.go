@@ -68,6 +68,7 @@ func TestMCPServerManagerStartsRegistersCallsAndStopsServer(t *testing.T) {
 	agentToolResult, executeToolError := agentToolRegistry.Execute(
 		"mcp_fake__fake_echo",
 		map[string]any{"message": "hello"},
+		tool.ToolExecutionEnvironment{WorkingDirectory: t.TempDir()},
 	)
 	if executeToolError != nil {
 		t.Fatalf("execute registered MCP tool: %v", executeToolError)
@@ -90,6 +91,7 @@ func TestMCPServerManagerStartsRegistersCallsAndStopsServer(t *testing.T) {
 	if _, executeRemovedToolError := agentToolRegistry.Execute(
 		"mcp_fake__fake_echo",
 		map[string]any{},
+		tool.ToolExecutionEnvironment{WorkingDirectory: t.TempDir()},
 	); executeRemovedToolError == nil {
 		t.Fatal("removed MCP tool is still executable")
 	}

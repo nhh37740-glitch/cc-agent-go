@@ -7,15 +7,37 @@ import (
 
 // Registry 持有所有已注册的工具，通过工具名查找和执行。
 type Registry struct {
-	toolsMutex sync.RWMutex
-	tools      map[string]Tool
+	toolsMutex        sync.RWMutex
+	tools             map[string]Tool
+	terminalToolNames map[string]bool
 }
 
 // NewRegistry 创建一个空的工具注册表。
 func NewRegistry() *Registry {
 	return &Registry{
-		tools: make(map[string]Tool),
+		tools:             make(map[string]Tool),
+		terminalToolNames: make(map[string]bool),
 	}
+}
+
+func (r *Registry) RegisterTerminalFunctionTool(
+	toolName string,
+	toolDescription string,
+	toolInputSchema map[string]any,
+	executeFunction FunctionToolExecuteFunction,
+) error {
+	if registerToolError := r.RegisterFunctionTool(
+		toolName,
+		toolDescription,
+		toolInputSchema,
+		executeFunction,
+	); registerToolError != nil {
+		return registerToolError
+	}
+	r.toolsMutex.Lock()
+	r.terminalToolNames[toolName] = true
+	r.toolsMutex.Unlock()
+	return nil
 }
 
 // Register 注册一个工具。如果工具名为空或已存在，返回 error。
@@ -59,17 +81,28 @@ func (r *Registry) Unregister(toolName string) {
 	r.toolsMutex.Lock()
 	defer r.toolsMutex.Unlock()
 	delete(r.tools, toolName)
+	delete(r.terminalToolNames, toolName)
+}
+
+func (r *Registry) IsTerminalTool(toolName string) bool {
+	r.toolsMutex.RLock()
+	defer r.toolsMutex.RUnlock()
+	return r.terminalToolNames[toolName]
 }
 
 // Execute 按名称执行工具，传入参数，返回结果和可能的错误。
-func (r *Registry) Execute(name string, input map[string]any) (string, error) {
+func (r *Registry) Execute(
+	name string,
+	input map[string]any,
+	executionEnvironment ToolExecutionEnvironment,
+) (string, error) {
 	r.toolsMutex.RLock()
 	t, ok := r.tools[name]
 	r.toolsMutex.RUnlock()
 	if !ok {
 		return "", fmt.Errorf("未知工具: %s", name)
 	}
-	return t.Execute(input)
+	return t.Execute(input, executionEnvironment)
 }
 
 // GetDefinitions 返回所有工具的元信息，用于发给 LLM 的 tools 数组。
@@ -108,6 +141,9 @@ func (sourceToolRegistry *Registry) CopyExcludingTools(
 			continue
 		}
 		copiedToolRegistry.tools[registeredToolName] = registeredTool
+		if sourceToolRegistry.terminalToolNames[registeredToolName] {
+			copiedToolRegistry.terminalToolNames[registeredToolName] = true
+		}
 	}
 
 	return copiedToolRegistry

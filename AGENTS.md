@@ -20,17 +20,18 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 | Layer | Technology | Constraint |
 | :--- | :--- | :--- |
-| **Runtime** | Go >= 1.23 | 标准库实现全部功能 |
+| **Runtime** | Go >= 1.23 | Agent 和 HTTP 使用标准库；tokenizer 使用下方唯一第三方依赖 |
 | **HTTP 服务端** | `net/http` | `HandleFunc("POST /api/chat", handler)` Go 1.22+ 增强路由 |
 | **HTTP 客户端** | `net/http` | `http.DefaultClient` 调用 DeepSeek API |
 | **JSON** | `encoding/json` | 结构体 + tag；动态结构用 `map[string]any` |
 | **流式推送** | SSE | `text/event-stream`；`http.Flusher` 逐 token 推送 |
 | **并发** | goroutine + channel | Go 原生轻量并发 |
-| **存储** | JSON 文件 | `workspace/data/sessions/`，与 Java 版格式兼容 |
+| **存储** | JSON 文件 | `<WorkingDirectory>/.cc-agent/sessions/<ConversationID>.json` |
 | **日志** | `log/slog` | JSON 同时写入 stderr 和被 Git 忽略的 `logs/server.jsonl` |
 | **配置** | `os.Getenv` + JSON 文件 | `DEEPSEEK_API_KEY` 优先；空值时读取被 Git 忽略的 `config/local.json` |
 | **外部命令** | `os/exec` | `exec.CommandContext` + `context.WithTimeout` |
-| **依赖管理** | `go.mod` | `require` 块必须为空 —— 零第三方依赖 |
+| **Tokenizer** | `pure-tokenizers v0.1.5` | 只加载仓库内固定 revision 的 DeepSeek V4 `tokenizer.json` |
+| **依赖管理** | `go.mod` | 唯一允许的直接第三方功能依赖是 `github.com/amikos-tech/pure-tokenizers v0.1.5` |
 
 ---
 
@@ -66,25 +67,35 @@ Go 工具链内建格式化、静态分析、依赖管理，不需要 Prettier/E
 go run main.go
 
 # 终端 2：curl 验证
-curl http://localhost:8080/api/chat -X POST -H "Content-Type: application/json" -d '{"message":"你好"}'
-curl "http://localhost:8080/api/chat/stream?message=你好"
+curl http://localhost:8080/api/chat -X POST -H "Content-Type: application/json" -d '{"workingDirectory":"C:/projects/example","conversationId":"main","message":"检查项目"}'
 ```
 
 ---
 
 ## 4. 架构契约
 
-### 主线目标目录结构（v12）
+### 主线实际目录结构（v15）
 
 ```
 cc-agent-go/
 ├── main.go                  # 入口：注册路由，启动 HTTP 服务
 ├── go.mod                   # module cc-agent-go
+├── agent/
+│   ├── agent.go             # 唯一 Agent.Run 模型—工具循环
+│   ├── execution_environment.go # 每次运行的项目目录和会话编号
+│   ├── task_input.go        # 三种具体任务输入
+│   ├── events.go            # 具体 Agent 事件
+│   └── token_counter.go     # Agent 使用的 tokenizer 接口
+├── memory/
+│   └── conversation_store.go # 按项目目录保存会话
+├── modeltoken/
+│   └── huggingface_json_token_counter.go # DeepSeek tokenizer 适配
 ├── config/
 │   ├── config.go            # DeepSeek 配置加载（环境变量优先，本地 JSON 备用）
 │   ├── local.example.json   # 不含真实 Key 的本地配置示例
 │   ├── local.json           # 本机真实 Key；被 .gitignore 排除
-│   └── mcp_servers.json     # MCP Server 名称、命令和参数
+│   ├── mcp_servers.json     # MCP Server 名称、命令和参数
+│   └── model_tokenizers.json # 模型、tokenizer 文件和上下文窗口
 ├── mcp/
 │   ├── server_manager.go    # MCP Server 启动、初始化、工具列表和停止
 │   ├── started_server_process.go # STDIO 进程、请求 id 和返回结果读取
@@ -93,9 +104,8 @@ cc-agent-go/
 ├── model/
 │   └── types.go             # Message 和三种独立消息内容类型，以及 HTTP、会话类型
 ├── service/
-│   ├── agent.go             # Agent 循环：最多 50 轮，工具调用 → API → 工具调用
+│   ├── agent_runner.go      # 把 DeepSeek 调用函数交给 agent.Agent.Run
 │   ├── client.go            # DeepSeek API 调用（非流式 Chat + 流式 ChatStream）
-│   ├── store.go             # 会话 JSON 文件读写 + 超长对话压缩
 │   ├── council.go           # 元老院多 Agent 辩论
 │   ├── stream.go            # SSE 流式推送
 │   └── errors.go            # 自定义错误类型、DeepSeek 状态与网络错误分类
@@ -107,14 +117,11 @@ cc-agent-go/
 │   ├── function.go          # 动态工具：定义、参数和执行函数
 │   ├── registry.go          # 工具注册表：map[string]Tool
 │   └── validator.go         # 路径安全检查：resolve → Clean → HasPrefix
-├── personalities/           # 元老人格 .md 文件
-├── workspace/               # 运行时生成
-│   ├── memory/
-│   │   └── AGENT.MD         # Agent 长期记忆
-│   ├── skills/              # Skill 定义 .md 文件（_template.md 模板）
-│   │   └── _template.md
-│   └── data/
-│       └── sessions/        # 会话 JSON 持久化
+├── host/
+│   └── participant_host.go  # 外部应用调用 Agent 的示例
+├── tokenizers/deepseek-v4-pro/
+│   └── tokenizer.json       # 固定 revision 的官方文件
+└── personalities/           # 旧元老院人格文件；不进入 Agent 内部
 ```
 
 ### Go 编码规则
@@ -301,20 +308,20 @@ if err := action(); err != nil {
 
 ## 6. 绝对红线
 
-1. **零第三方依赖**：`go.mod` 不允许出现 `require` 块。所有功能基于 Go 标准库实现。不使用 Gin、Echo、Chi 等 HTTP 框架
+1. **限制第三方依赖**：唯一允许的直接第三方功能依赖是 `github.com/amikos-tech/pure-tokenizers v0.1.5`；它的间接依赖由 `go mod tidy` 固定。不使用 Gin、Echo、Chi 等 HTTP 框架
 2. **每步可编译运行**：绝不提交无法通过 `go build ./...` 的代码
-3. **不做 SQLite、不做前端**：存储只用 JSON 文件，前端复用 Java 版 `agent.html`
+3. **不做 SQLite**：存储只用项目目录中的 JSON 文件；WebAgent 页面只展示任务输入、Agent 事件和结果，不恢复聊天机器人页面
 4. **路径安全**：所有文件操作经过 `validator.go`（`filepath.Abs → Clean → HasPrefix`），禁止目录逃逸
 5. **Bash 安全**：白名单命令 + 禁止 shell 控制字符（`;` `|` `&&` `$()` 反引号），30 秒超时
 6. **凭证安全**：真实 Key 只能来自 `DEEPSEEK_API_KEY` 或被 Git 忽略的 `config/local.json`，不得写入正式 Go 文件、示例文件或 Git 提交
-7. **行为对齐**：Agent 行为（system prompt、工具定义、压缩策略）和 Java 版 `cc-agent-java` 保持一致。不确定时参考 Java 源码
+7. **Agent 封装**：WebAgent、SubAgent、狼人杀、剧本杀和元老院只能从外部调用 `Agent.Run`；不得把应用名称、角色、回合或页面字段写入 `agent.Agent`
 8. **不猜测**：遇到计划文件未覆盖的实现细节时，向用户确认而非自行决定
 
 ---
 
 ## 7. 版本追踪
 
-**当前主线：v15 ⏳ 后台 SubAgent 回调与长连接**
+**当前主线：v16 ⏳ A2A 与远程 Agent 调用**
 
 | 版本 | 新 Go 概念 | 涉及文件 | 状态 |
 | :--- | :--- | :--- | :--- |
@@ -333,14 +340,14 @@ if err := action(); err != nil {
 | v12 | JSON-RPC 2.0、MCP lifecycle、`os/exec` 管道、goroutine 持续读取、请求 id 与 channel、动态函数工具、`sync.RWMutex` | `mcp/`、`tool/function.go`、`tool/registry.go`、`main.go`、`index.html` | ✅ |
 | v13 | RAG 计划已归档，未实现 | 无正式 Go 文件 | ⏭ 跳过 |
 | v14 | 通用型 agent-as-tool、JSON 输入输出、最多 5 个并行 SubAgent、goroutine + channel、工具表复制 | `config/config.go`、`service/subagent.go`、`tool/registry.go`、`main.go` | ✅ |
-| v15 | 后台 goroutine、每任务 `maximumRounds`、完成回调、按会话加锁、独立 GET SSE 长连接、浏览器 `EventSource`；后续继续 checkpoint、取消、超时和重试 | `config/config.go`、`service/subagent.go`、`service/agent.go`、`service/conversation_events.go`、`service/conversation_execution.go`、`main.go`、`index.html` | ⏳ |
+| v15 | 私有字段 Agent、外部执行环境、三种任务输入、唯一循环、项目会话、精确 tokenizer、具体事件 | `agent/`、`memory/`、`modeltoken/`、`host/`、`service/agent_runner.go`、`main.go`、`index.html` | ✅ |
 | v16 | Agent Card、A2A 任务协议和远程 Agent 调用 | `a2a/` | ⏳ |
 
 v9 新功能：元老院多 Agent 辩论，回合制发言，SSE 流式推送，公民插话，配置化人格 MD 文件。
 v10 新功能：Skill 系统 —— `activate_skill` 工具动态加载 skill prompt，`create_skill` 工具创建新 skill，skill 文件存于 `workspace/skills/`。`Description()` 每次扫目录自动发现新 skill，Execute() 按文件名匹配。Agent 可用 bash 工具增删 skill 文件，无需重启服务。
 v11 完成功能：使用 `slog` 输出 JSON 日志；把配置、网络、DeepSeek、存储和 Agent 轮数错误分类；普通 HTTP 接口返回统一 JSON 错误，SSE 返回统一 error 事件；工具错误继续作为 tool_result 交给下一次 LLM 调用。狼人杀实验仅保留在 `feature/v11-werewolf` 分支。
 v12 完成功能：从 JSON 读取 MCP Server 配置和 MCP 2025-11-25 标准消息；网页选择后启动 Playwright MCP；完成 initialize、notifications/initialized、tools/list、tools/call；把 MCP 工具动态注册到现有工具表；停止选择后删除工具并结束进程。
-v15 当前功能：`run_subagent` 立即返回后台任务已启动，原主 Agent随后结束；调用 LLM 为每项任务填写 `maximumRounds`，配置 `MAXIMUM_SUBAGENT_ROUNDS` 限制最高值；轮数耗尽时最后一轮禁用工具并保留部分结果；全部 SubAgent完成后使用空工具表回调主 Agent，回调只分析和汇总；聊天 POST SSE 固定关闭，会话 GET SSE 固定保持；Web 使用 `EventSource` 接收后台主 Agent回复。
+v15 完成功能：调用者每次传入工作目录、会话编号和具体任务类型；`agent.Agent.Run` 保存唯一循环；第一次模型请求只发送当前任务和历史文件位置；Bash、Skill、MCP 和 SubAgent 使用同一工具表；会话写入项目 `.cc-agent/sessions/`；DeepSeek V4 官方 tokenizer 负责请求、工具结果和记忆文件计数；WebAgent 显示具体事件和最终结果。
 
 每个版本完成后：将对应行状态更新为 ✅，并更新上方的 "当前版本" 字段。
 

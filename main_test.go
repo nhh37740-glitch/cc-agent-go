@@ -19,7 +19,9 @@ import (
 	"testing"
 	"time"
 
+	"cc-agent-go/agent"
 	"cc-agent-go/mcp"
+	"cc-agent-go/memory"
 	"cc-agent-go/model"
 	"cc-agent-go/service"
 	"cc-agent-go/tool"
@@ -86,6 +88,7 @@ func TestConfigureApplicationLoggerWritesJSONToFileAndStandardError(t *testing.T
 
 func TestHandleChatMissingAPIKeyDoesNotLogUserMessage(t *testing.T) {
 	t.Setenv("DEEPSEEK_API_KEY", "")
+	t.Setenv("CC_AGENT_LOCAL_CONFIG", filepath.Join(t.TempDir(), "missing.json"))
 	t.Chdir(t.TempDir())
 
 	var logs bytes.Buffer
@@ -94,9 +97,14 @@ func TestHandleChatMissingAPIKeyDoesNotLogUserMessage(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(oldLogger) })
 
 	const userMessage = "V11_PRIVATE_TEST_MESSAGE"
+	workingDirectory, _ := os.Getwd()
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/chat",
-		strings.NewReader(`{"message":"`+userMessage+`"}`))
+		strings.NewReader(fmt.Sprintf(
+			`{"workingDirectory":%q,"conversationId":"missing-key","message":%q}`,
+			workingDirectory,
+			userMessage,
+		)))
 
 	handleChat(recorder, request)
 
@@ -126,11 +134,16 @@ func TestHandleChatMissingAPIKeyDoesNotLogUserMessage(t *testing.T) {
 
 func TestHandleChatStreamMissingAPIKey(t *testing.T) {
 	t.Setenv("DEEPSEEK_API_KEY", "")
+	t.Setenv("CC_AGENT_LOCAL_CONFIG", filepath.Join(t.TempDir(), "missing.json"))
 	t.Chdir(t.TempDir())
+	workingDirectory, _ := os.Getwd()
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/chat/stream",
-		strings.NewReader(`{"message":"test"}`))
+		strings.NewReader(fmt.Sprintf(
+			`{"workingDirectory":%q,"conversationId":"missing-key-stream","message":"test"}`,
+			workingDirectory,
+		)))
 
 	handleChatStream(recorder, request)
 
@@ -619,6 +632,10 @@ func TestRegisteredGeneralSubAgentToolRejectsInvalidInputBeforeDeepSeekCall(
 				validSubAgentToolTask("four"),
 			},
 		},
+		tool.ToolExecutionEnvironment{
+			WorkingDirectory: t.TempDir(),
+			ConversationID:   "test-conversation",
+		},
 	)
 	if executeRunSubAgentToolError == nil {
 		t.Fatal("registered run_subagent accepted more than two tasks")
@@ -650,11 +667,12 @@ func TestHandleChatReceivesParallelSubAgentJSONToolResult(t *testing.T) {
 	)
 
 	httpResponseRecorder := httptest.NewRecorder()
+	workingDirectory, _ := os.Getwd()
 	httpRequest := httptest.NewRequest(
 		http.MethodPost,
 		"/api/chat",
 		strings.NewReader(
-			`{"message":"同时完成两个独立任务",`+
+			fmt.Sprintf(`{"workingDirectory":%q,"message":"同时完成两个独立任务",`, workingDirectory)+
 				`"conversationId":"`+conversationID+`"}`,
 		),
 	)
@@ -708,11 +726,12 @@ func TestHandleChatStreamReceivesParallelSubAgentJSONToolResult(t *testing.T) {
 	)
 
 	httpResponseRecorder := httptest.NewRecorder()
+	workingDirectory, _ := os.Getwd()
 	httpRequest := httptest.NewRequest(
 		http.MethodPost,
 		"/api/chat/stream",
 		strings.NewReader(
-			`{"message":"同时完成两个独立任务",`+
+			fmt.Sprintf(`{"workingDirectory":%q,"message":"同时完成两个独立任务",`, workingDirectory)+
 				`"conversationId":"`+conversationID+`"}`,
 		),
 	)
@@ -821,6 +840,10 @@ func TestRunSubAgentUsesToolsFromStartedPlaywrightMCPServer(t *testing.T) {
 					validSubAgentToolTask("first"),
 					validSubAgentToolTask("second"),
 				},
+			},
+			tool.ToolExecutionEnvironment{
+				WorkingDirectory: t.TempDir(),
+				ConversationID:   "playwright-test-conversation",
 			},
 		)
 	if executeRunSubAgentToolError != nil {
@@ -1015,7 +1038,7 @@ func (providerTransport *parallelSubAgentProviderTransport) RoundTrip(
 
 	if mainIntegrationMessagesContainText(
 		deepSeekRequest.Messages,
-		"你之前启动的一批 SubAgent 已经执行完毕",
+		"此前启动的 SubAgent 已经完成",
 	) {
 		providerTransport.callbackToolCount.Store(
 			int32(len(deepSeekRequest.Tools)),
@@ -1083,16 +1106,25 @@ func configureMainIntegrationTestGlobals(t *testing.T) func() {
 	originalHTTPClient := http.DefaultClient
 	originalConversationEventReceivers := conversationEventReceivers
 	originalConversationExecutionLocks := conversationExecutionLocks
+	originalProjectConversationStore := projectConversationStore
+	originalTokenCounter := configuredTokenCounter
+	originalModelContextWindowTokens := configuredModelContextWindowTokens
 
 	registry = tool.NewRegistry()
 	mainIntegrationFakeMCPToolExecutions.Store(0)
 	conversationEventReceivers = service.NewConversationEventReceivers()
 	conversationExecutionLocks = service.NewConversationExecutionLocks()
+	projectConversationStore = memory.NewProjectConversationStore()
+	configuredTokenCounter = fixedTestTokenCounter{}
+	configuredModelContextWindowTokens = 1_000_000
 	registerFakeMCPToolError := registry.RegisterFunctionTool(
 		"mcp_playwright__read_page",
 		"fake MCP tool used by the integration test",
 		map[string]any{"type": "object"},
-		func(toolArguments map[string]any) (string, error) {
+		func(
+			toolArguments map[string]any,
+			_ tool.ToolExecutionEnvironment,
+		) (string, error) {
 			mainIntegrationFakeMCPToolExecutions.Add(1)
 			return "fake MCP result", nil
 		},
@@ -1106,6 +1138,9 @@ func configureMainIntegrationTestGlobals(t *testing.T) func() {
 		http.DefaultClient = originalHTTPClient
 		conversationEventReceivers = originalConversationEventReceivers
 		conversationExecutionLocks = originalConversationExecutionLocks
+		projectConversationStore = originalProjectConversationStore
+		configuredTokenCounter = originalTokenCounter
+		configuredModelContextWindowTokens = originalModelContextWindowTokens
 	}
 }
 
@@ -1217,20 +1252,50 @@ func assertOnlyMainAgentSessionWasSaved(t *testing.T) {
 	t.Helper()
 
 	sessionFilePaths, readSessionDirectoryError := filepath.Glob(
-		filepath.Join("data", "sessions", "*.json"),
+		filepath.Join(".cc-agent", "sessions", "*.json"),
 	)
 	if readSessionDirectoryError != nil {
 		t.Fatalf("read session directory: %v", readSessionDirectoryError)
 	}
-	if len(sessionFilePaths) != 1 {
+	if len(sessionFilePaths) != 3 {
 		t.Fatalf(
-			"session file count = %d, want only the main Agent session",
+			"session file count = %d, want main Agent plus two SubAgent sessions",
 			len(sessionFilePaths),
 		)
 	}
 	if _, readSessionError := os.ReadFile(sessionFilePaths[0]); readSessionError != nil {
 		t.Fatalf("read main Agent session: %v", readSessionError)
 	}
+}
+
+type fixedTestTokenCounter struct{}
+
+func (fixedTestTokenCounter) CountPreparedModelRequest(
+	preparedModelRequest agent.PreparedModelRequest,
+) (int, error) {
+	encodedRequest, encodeRequestError := json.Marshal(preparedModelRequest)
+	return len(encodedRequest), encodeRequestError
+}
+
+func (fixedTestTokenCounter) CountText(textToCount string) (int, error) {
+	return len([]rune(textToCount)), nil
+}
+
+func (fixedTestTokenCounter) TruncateText(
+	textToTruncate string,
+	maximumTokens int,
+) (agent.TokenTruncationResult, error) {
+	textRunes := []rune(textToTruncate)
+	if len(textRunes) <= maximumTokens {
+		return agent.TokenTruncationResult{
+			Text: textToTruncate, OriginalTokens: len(textRunes),
+			TruncatedTokens: len(textRunes),
+		}, nil
+	}
+	return agent.TokenTruncationResult{
+		Text: string(textRunes[:maximumTokens]), OriginalTokens: len(textRunes),
+		TruncatedTokens: maximumTokens, WasTruncated: true,
+	}, nil
 }
 
 func regularDeepSeekToolCallHTTPResponse() *http.Response {

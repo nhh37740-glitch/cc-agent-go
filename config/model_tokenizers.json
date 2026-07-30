@@ -1,0 +1,10 @@
+{
+  "deepseek-v4-pro[1m]": {
+    "tokenizerType": "huggingface_json",
+    "tokenizerFile": "tokenizers/deepseek-v4-pro/tokenizer.json",
+    "maximumContextTokens": 1048576,
+    "source": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/blob/b5968e9190ef611bbf34a7229255be88a0e937c1/tokenizer.json",
+    "revision": "b5968e9190ef611bbf34a7229255be88a0e937c1",
+    "sha256": "8f9f37ca37fdc4f5fd36d5cf4d3b0e8392edb4e894fd10cc0d70b4957c8633cf"
+  }
+}

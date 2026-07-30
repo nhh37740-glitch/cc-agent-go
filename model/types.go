@@ -183,8 +183,9 @@ type ToolCall struct {
 
 // ChatRequest 前端发来的 JSON 请求体
 type ChatRequest struct {
-	Message        string `json:"message"`
-	ConversationId string `json:"conversationId,omitempty"` // 可选：不传时服务端自动生成
+	WorkingDirectory string `json:"workingDirectory"`
+	ConversationId   string `json:"conversationId"`
+	Message          string `json:"message"`
 }
 
 // ChatResponse 返回给前端的 JSON 响应体
@@ -219,6 +220,7 @@ type SessionJson struct {
 	ConversationId           string    `json:"conversationId"`
 	Title                    string    `json:"title"`
 	RunningTotalTokens       int       `json:"runningTotalTokens"`
+	StoredMemoryTokens       int       `json:"storedMemoryTokens"`
 	ContextWindowLimitTokens int       `json:"contextWindowLimitTokens"`
 	LastInputTokens          int       `json:"lastInputTokens"`
 	LastOutputTokens         int       `json:"lastOutputTokens"`

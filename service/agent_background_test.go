@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"cc-agent-go/agent"
+	"cc-agent-go/memory"
 	"cc-agent-go/model"
 	"cc-agent-go/tool"
 )
@@ -15,6 +17,8 @@ import (
 func TestContinueConversationAfterSubAgentsStreamLoadsLatestHistoryAndHidesInternalInput(
 	t *testing.T,
 ) {
+	projectWorkingDirectory := t.TempDir()
+	t.Chdir(projectWorkingDirectory)
 	var receivedDeepSeekRequest recordedDeepSeekRequest
 	deepSeekTestServer := httptest.NewServer(http.HandlerFunc(
 		func(responseWriter http.ResponseWriter, httpRequest *http.Request) {
@@ -45,12 +49,12 @@ func TestContinueConversationAfterSubAgentsStreamLoadsLatestHistoryAndHidesInter
 
 	applicationConfig :=
 		newSubAgentTestConfig(deepSeekTestServer.URL)
-	applicationConfig.SessionsDir = t.TempDir()
 	applicationConfig.CompressionThreshold = 100000
-	conversationStore := NewStore(applicationConfig.SessionsDir)
 	const conversationID = "background-callback-conversation"
 
-	saveExistingConversationError := conversationStore.AppendTurn(
+	projectConversationStore := memory.NewProjectConversationStore()
+	_, saveExistingConversationError := projectConversationStore.AppendConversationTurn(
+		projectWorkingDirectory,
 		conversationID,
 		[]model.Message{
 			{
@@ -66,8 +70,7 @@ func TestContinueConversationAfterSubAgentsStreamLoadsLatestHistoryAndHidesInter
 				},
 			},
 		},
-		5,
-		nil,
+		5, 0, 5, 100000,
 	)
 	if saveExistingConversationError != nil {
 		t.Fatalf(
@@ -82,45 +85,62 @@ func TestContinueConversationAfterSubAgentsStreamLoadsLatestHistoryAndHidesInter
 		"forbidden_callback_tool",
 		"回调主 Agent 不应收到的工具",
 		map[string]any{"type": "object"},
-		func(toolArguments map[string]any) (string, error) {
+		func(
+			toolArguments map[string]any,
+			_ tool.ToolExecutionEnvironment,
+		) (string, error) {
 			return "不应执行", nil
 		},
 	)
 	if registerCallbackToolError != nil {
 		t.Fatalf("register callback tool: %v", registerCallbackToolError)
 	}
-	backgroundReplyText, returnedConversationID, continueConversationError :=
-		ContinueConversationAfterSubAgentsStream(
-			[]SubAgentResult{
-				{
-					TaskID: "research",
-					Status: subAgentStatusCompleted,
-					Result: "SubAgent 完成的结果",
-					Error:  "",
-				},
+	internalContinuationTask, encodeInternalTaskError :=
+		agent.EncodeInternalContinuationTask([]SubAgentResult{
+			{
+				TaskID: "research",
+				Status: subAgentStatusCompleted,
+				Result: "SubAgent 完成的结果",
+				Error:  "",
 			},
-			conversationID,
-			"main agent system prompt",
-			applicationConfig,
-			callbackToolRegistry,
-			conversationStore,
-			func(token string) {
-				streamedReply.WriteString(token)
+		})
+	if encodeInternalTaskError != nil {
+		t.Fatal(encodeInternalTaskError)
+	}
+	tokenCounter, modelContextWindowTokens, loadTokenCounterError :=
+		loadConfiguredTokenCounter(applicationConfig.Model)
+	if loadTokenCounterError != nil {
+		t.Fatal(loadTokenCounterError)
+	}
+	backgroundReplyResult, continueConversationError := RunAgentTask(
+		internalContinuationTask,
+		agent.AgentExecutionEnvironment{
+			WorkingDirectory: projectWorkingDirectory,
+			ConversationID:   conversationID,
+		},
+		"main agent system prompt",
+		applicationConfig,
+		tool.NewRegistry(),
+		projectConversationStore,
+		tokenCounter,
+		modelContextWindowTokens,
+		AgentRunOptions{
+			StreamText: true,
+			ReceiveEvent: func(receivedAgentEvent agent.AgentEvent) {
+				if textDeltaEvent, isTextDelta :=
+					receivedAgentEvent.(agent.AgentTextDeltaEvent); isTextDelta {
+					streamedReply.WriteString(textDeltaEvent.Text)
+				}
 			},
-		)
+		},
+	)
 	if continueConversationError != nil {
 		t.Fatalf(
 			"ContinueConversationAfterSubAgentsStream: %v",
 			continueConversationError,
 		)
 	}
-	if returnedConversationID != conversationID {
-		t.Fatalf(
-			"conversation ID = %q, want %q",
-			returnedConversationID,
-			conversationID,
-		)
-	}
+	backgroundReplyText := backgroundReplyResult.FinalText()
 	if backgroundReplyText != "后台主 Agent 回复" {
 		t.Fatalf("reply = %q", backgroundReplyText)
 	}
@@ -134,21 +154,14 @@ func TestContinueConversationAfterSubAgentsStreamLoadsLatestHistoryAndHidesInter
 		)
 	}
 
-	if len(receivedDeepSeekRequest.Messages) != 3 {
+	if len(receivedDeepSeekRequest.Messages) != 1 {
 		t.Fatalf(
-			"DeepSeek message count = %d, want 3",
+			"DeepSeek message count = %d, want 1",
 			len(receivedDeepSeekRequest.Messages),
 		)
 	}
-	if firstTextInMessage(receivedDeepSeekRequest.Messages[1]) !=
-		"最新的主 Agent 回复" {
-		t.Fatalf(
-			"latest saved message = %q",
-			firstTextInMessage(receivedDeepSeekRequest.Messages[1]),
-		)
-	}
 	internalSubAgentResultText :=
-		firstTextInMessage(receivedDeepSeekRequest.Messages[2])
+		firstTextInMessage(receivedDeepSeekRequest.Messages[0])
 	if !strings.Contains(
 		internalSubAgentResultText,
 		"SubAgent 完成的结果",
@@ -159,25 +172,28 @@ func TestContinueConversationAfterSubAgentsStreamLoadsLatestHistoryAndHidesInter
 		)
 	}
 
-	savedMessages, loadSavedMessagesError :=
-		conversationStore.LoadMessages(conversationID)
+	savedConversation, loadSavedMessagesError :=
+		projectConversationStore.LoadConversation(
+			projectWorkingDirectory,
+			conversationID,
+		)
 	if loadSavedMessagesError != nil {
 		t.Fatalf("load saved messages: %v", loadSavedMessagesError)
 	}
-	if len(savedMessages) != 3 {
+	if savedConversation == nil || len(savedConversation.Messages) != 3 {
 		t.Fatalf(
 			"saved message count = %d, want 3",
-			len(savedMessages),
+			len(savedConversation.Messages),
 		)
 	}
-	if savedMessages[2].Role != "assistant" ||
-		firstTextInMessage(savedMessages[2]) != "后台主 Agent 回复" {
+	if savedConversation.Messages[2].Role != "assistant" ||
+		firstTextInMessage(savedConversation.Messages[2]) != "后台主 Agent 回复" {
 		t.Fatalf(
 			"saved final message = %#v",
-			savedMessages[2],
+			savedConversation.Messages[2],
 		)
 	}
-	for _, savedMessage := range savedMessages {
+	for _, savedMessage := range savedConversation.Messages {
 		if strings.Contains(
 			firstTextInMessage(savedMessage),
 			"SubAgent 完成的结果",

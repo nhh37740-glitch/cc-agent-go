@@ -20,11 +20,14 @@ func TestCopyExcludingToolsCopiesCurrentToolsAndExcludesSelectedTools(t *testing
 	if _, executeExcludedToolError := copiedToolRegistry.Execute(
 		"run_subagent",
 		map[string]any{},
+		ToolExecutionEnvironment{},
 	); executeExcludedToolError == nil {
 		t.Fatal("copied Registry still contains run_subagent")
 	}
 
-	bashResult, executeBashError := copiedToolRegistry.Execute("bash", map[string]any{})
+	bashResult, executeBashError := copiedToolRegistry.Execute(
+		"bash", map[string]any{}, ToolExecutionEnvironment{},
+	)
 	if executeBashError != nil {
 		t.Fatalf("execute copied bash tool: %v", executeBashError)
 	}
@@ -35,6 +38,7 @@ func TestCopyExcludingToolsCopiesCurrentToolsAndExcludesSelectedTools(t *testing
 	mcpResult, executeMCPToolError := copiedToolRegistry.Execute(
 		"mcp_playwright__read_page",
 		map[string]any{},
+		ToolExecutionEnvironment{},
 	)
 	if executeMCPToolError != nil {
 		t.Fatalf("execute copied MCP tool: %v", executeMCPToolError)
@@ -56,6 +60,7 @@ func TestCopyExcludingToolsDoesNotFollowLaterSourceChanges(t *testing.T) {
 	existingResult, executeExistingToolError := copiedToolRegistry.Execute(
 		"existing_tool",
 		map[string]any{},
+		ToolExecutionEnvironment{},
 	)
 	if executeExistingToolError != nil {
 		t.Fatalf("copied Registry lost existing tool: %v", executeExistingToolError)
@@ -67,6 +72,7 @@ func TestCopyExcludingToolsDoesNotFollowLaterSourceChanges(t *testing.T) {
 	if _, executeLaterToolError := copiedToolRegistry.Execute(
 		"later_tool",
 		map[string]any{},
+		ToolExecutionEnvironment{},
 	); executeLaterToolError == nil {
 		t.Fatal("copied Registry contains a tool registered after copying")
 	}
@@ -84,7 +90,10 @@ func registerTestFunctionTool(
 		toolName,
 		fmt.Sprintf("%s description", toolName),
 		map[string]any{"type": "object"},
-		func(toolArguments map[string]any) (string, error) {
+		func(
+			toolArguments map[string]any,
+			_ ToolExecutionEnvironment,
+		) (string, error) {
 			return toolResult, nil
 		},
 	)

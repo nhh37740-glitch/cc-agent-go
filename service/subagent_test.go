@@ -58,7 +58,7 @@ func TestRunSubAgentStartsWithOnlyTheSuppliedTaskAndReturnsFinalText(t *testing.
 			subAgentMaximumOutputTokens,
 		)
 	}
-	if receivedDeepSeekRequest.System != generalSubAgentSystemPrompt {
+	if !strings.Contains(receivedDeepSeekRequest.System, generalSubAgentSystemPrompt) {
 		t.Fatal("DeepSeek request did not receive the SubAgent system prompt")
 	}
 	if len(receivedDeepSeekRequest.Messages) != 1 {
@@ -107,7 +107,7 @@ func TestRunSubAgentExecutesToolAndSendsToolResultToNextRound(t *testing.T) {
 		t,
 		availableSubAgentTools,
 		"read_test_file",
-		func(toolArguments map[string]any) (string, error) {
+		func(toolArguments map[string]any, _ tool.ToolExecutionEnvironment) (string, error) {
 			return "file content", nil
 		},
 	)
@@ -206,8 +206,8 @@ func TestRunSubAgentTruncatesLongToolResult(t *testing.T) {
 		t,
 		availableSubAgentTools,
 		"long_result_tool",
-		func(toolArguments map[string]any) (string, error) {
-			return strings.Repeat("x", subAgentMaximumToolResultCharacters+25), nil
+		func(toolArguments map[string]any, _ tool.ToolExecutionEnvironment) (string, error) {
+			return strings.Repeat("abcdefghijklmnopqrstuvwxyz", 10000), nil
 		},
 	)
 
@@ -222,14 +222,11 @@ func TestRunSubAgentTruncatesLongToolResult(t *testing.T) {
 	}
 
 	toolResultText := findToolResultText(secondRoundDeepSeekRequest.Messages)
-	if !strings.Contains(toolResultText, "原始长度 8025 字符") {
+	if !strings.Contains(toolResultText, "结果已按 token 截断") {
 		t.Fatalf("truncated tool result = %q", toolResultText)
 	}
-	if !strings.HasPrefix(
-		toolResultText,
-		strings.Repeat("x", subAgentMaximumToolResultCharacters),
-	) {
-		t.Fatal("truncated tool result does not preserve the first 8000 characters")
+	if !strings.HasPrefix(toolResultText, "abcdefghijklmnopqrstuvwxyz") {
+		t.Fatal("truncated tool result does not preserve the beginning")
 	}
 }
 
@@ -269,7 +266,7 @@ func TestRunSubAgentUsesTaskSpecificMaximumRounds(t *testing.T) {
 		t,
 		availableSubAgentTools,
 		"continue_tool",
-		func(toolArguments map[string]any) (string, error) {
+		func(toolArguments map[string]any, _ tool.ToolExecutionEnvironment) (string, error) {
 			return "continue", nil
 		},
 	)
@@ -310,7 +307,7 @@ func TestRunSubAgentUsesTaskSpecificMaximumRounds(t *testing.T) {
 	}
 	finalRoundMessage :=
 		finalRoundDeepSeekRequest.Messages[len(finalRoundDeepSeekRequest.Messages)-1]
-	if !messageContainsText(finalRoundMessage, "不得再调用任何工具") {
+	if !messageContainsText(finalRoundMessage, "不得再调用工具") {
 		t.Fatalf("final round message = %#v", finalRoundMessage)
 	}
 	if deepSeekCallCount.Load() != taskMaximumRounds {
@@ -353,7 +350,7 @@ func TestRunSubAgentsInParallelMarksLimitReachedAndKeepsPartialResult(
 		t,
 		availableSubAgentTools,
 		"continue_tool",
-		func(toolArguments map[string]any) (string, error) {
+		func(toolArguments map[string]any, _ tool.ToolExecutionEnvironment) (string, error) {
 			return "已经读取到一部分内容", nil
 		},
 	)
@@ -649,7 +646,7 @@ func newSubAgentTestConfig(apiEndpoint string) config.Config {
 	return config.Config{
 		ApiKey:                   "test-key",
 		ApiEndpoint:              apiEndpoint,
-		Model:                    "test-model",
+		Model:                    "deepseek-v4-pro[1m]",
 		MaximumParallelSubAgents: 5,
 		MaximumSubAgentRounds:    50,
 	}

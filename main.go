@@ -16,9 +16,12 @@ import (
 	"syscall"
 	"time"
 
+	"cc-agent-go/agent"
 	"cc-agent-go/config"
 	"cc-agent-go/mcp"
+	"cc-agent-go/memory"
 	"cc-agent-go/model"
+	"cc-agent-go/modeltoken"
 	"cc-agent-go/service"
 	"cc-agent-go/tool"
 )
@@ -60,50 +63,18 @@ func loadPersonalities(dir string) (map[string]string, error) {
 
 var personalities map[string]string
 
-// ============================================================================
-// System Prompt
-// ============================================================================
-// System Prompt + Memory
-// ============================================================================
-
-const memoryRule = `## memory/AGENT.MD 长期记忆规则
-
-memory/AGENT.MD 是你的长期记忆文件。如果用户在对话中表达了会反复使用的偏好、项目规则、任务状态或重要决策，你必须主动用 bash 工具创建或更新该文件。
-更新方式：bash 执行 echo "内容" >> memory/AGENT.MD
-（bash 工具的工作目录已经是 workspace/，所以直接写 memory/AGENT.MD 即可）`
-
 const systemPromptBase = `你是一个 AI 助手。你可以使用 bash 工具执行 shell 命令来操作文件。
 当用户要求创建文件、读文件、执行命令时，你必须调用 bash 工具，不要只用文字说明。
-你需要结合对话历史中的上下文来理解用户的追问和省略表达。
-如果 activate_skill 工具列出的技能和用户需求匹配，先调用 activate_skill 激活技能再回答。`
-
-// loadMemory 读取 memory/AGENT.MD（相对于工作目录 workspace/）。
-func loadMemory() string {
-	data, err := os.ReadFile("workspace/memory/AGENT.MD")
-	if err != nil {
-		return ""
-	}
-	return string(data)
-}
-
-// buildSystemPrompt 拼装完整提示词：基础提示词 + 记忆规则 + 当前记忆内容。
-func buildSystemPrompt() string {
-	var sb strings.Builder
-	sb.WriteString(systemPromptBase)
-	sb.WriteString("\n\n")
-	sb.WriteString(memoryRule)
-	mem := loadMemory()
-	if mem != "" {
-		sb.WriteString("\n\n当前 workspace/memory/AGENT.MD 内容：\n")
-		sb.WriteString(mem)
-	}
-	return sb.String()
-}
+需要旧会话信息时，按照本次 system message 提供的会话文件位置读取必要片段。
+如果 activate_skill 工具列出的技能和用户需求匹配，先调用 activate_skill。`
 
 var registry = tool.NewRegistry()
 var mcpServerManager *mcp.MCPServerManager
 var conversationEventReceivers = service.NewConversationEventReceivers()
 var conversationExecutionLocks = service.NewConversationExecutionLocks()
+var projectConversationStore = memory.NewProjectConversationStore()
+var configuredTokenCounter agent.AgentTokenCounter
+var configuredModelContextWindowTokens int
 
 const generalSubAgentToolName = service.GeneralSubAgentToolName
 
@@ -260,6 +231,7 @@ func registerGeneralSubAgentTool(
 
 	executeRunSubAgentTool := func(
 		toolArguments map[string]any,
+		toolExecutionEnvironment tool.ToolExecutionEnvironment,
 	) (string, error) {
 		runSubAgentToolInput, decodeToolArgumentsError :=
 			decodeAndValidateRunSubAgentToolInput(
@@ -279,6 +251,12 @@ func registerGeneralSubAgentTool(
 			applicationConfig,
 			availableSubAgentTools,
 			completedResultsCallback,
+			service.SubAgentHostEnvironment{
+				WorkingDirectory:         toolExecutionEnvironment.WorkingDirectory,
+				ConversationStore:        projectConversationStore,
+				TokenCounter:             configuredTokenCounter,
+				ModelContextWindowTokens: configuredModelContextWindowTokens,
+			},
 		)
 
 		startedSubAgentTasks := make(
@@ -311,7 +289,7 @@ func registerGeneralSubAgentTool(
 		return string(runSubAgentToolOutputJSONBytes), nil
 	}
 
-	return mainAgentToolRegistry.RegisterFunctionTool(
+	return mainAgentToolRegistry.RegisterTerminalFunctionTool(
 		generalSubAgentToolName,
 		generalSubAgentToolDescription,
 		buildGeneralSubAgentToolInputSchema(
@@ -436,6 +414,7 @@ func sendBackgroundAgentReplyFailed(
 }
 
 func continueMainAgentAfterSubAgents(
+	workingDirectory string,
 	parentConversationID string,
 	subAgentResults []service.SubAgentResult,
 ) {
@@ -453,28 +432,51 @@ func continueMainAgentAfterSubAgents(
 	defer unlockConversationExecution()
 
 	applicationConfig := config.Load()
-	conversationStore := service.NewStore(applicationConfig.SessionsDir)
 	backgroundReplyToolRegistry := tool.NewRegistry()
-
-	backgroundReplyText, _, continueMainAgentError :=
-		service.ContinueConversationAfterSubAgentsStream(
-			subAgentResults,
+	internalContinuationTask, encodeSubAgentResultsError :=
+		agent.EncodeInternalContinuationTask(subAgentResults)
+	if encodeSubAgentResultsError != nil {
+		sendBackgroundAgentReplyFailed(
 			parentConversationID,
-			buildSystemPrompt(),
-			applicationConfig,
-			backgroundReplyToolRegistry,
-			conversationStore,
-			func(token string) {
+			BackgroundAgentReplyFailedEvent{
+				Type:      "background_reply_failed",
+				MessageID: backgroundReplyMessageID,
+				Message:   "SubAgent 结果无法编码。",
+			},
+		)
+		return
+	}
+	backgroundReplyResult, continueMainAgentError := service.RunAgentTask(
+		internalContinuationTask,
+		agent.AgentExecutionEnvironment{
+			WorkingDirectory: workingDirectory,
+			ConversationID:   parentConversationID,
+		},
+		systemPromptBase,
+		applicationConfig,
+		backgroundReplyToolRegistry,
+		projectConversationStore,
+		configuredTokenCounter,
+		configuredModelContextWindowTokens,
+		service.AgentRunOptions{
+			StreamText: true,
+			ReceiveEvent: func(agentEvent agent.AgentEvent) {
+				textDeltaEvent, isTextDelta :=
+					agentEvent.(agent.AgentTextDeltaEvent)
+				if !isTextDelta {
+					return
+				}
 				sendBackgroundAgentReplyToken(
 					parentConversationID,
 					BackgroundAgentReplyTokenEvent{
 						Type:      "background_reply_token",
 						MessageID: backgroundReplyMessageID,
-						Token:     token,
+						Token:     textDeltaEvent.Text,
 					},
 				)
 			},
-		)
+		},
+	)
 	if continueMainAgentError != nil {
 		slog.Error(
 			"SubAgent 完成后调用主 Agent失败",
@@ -500,20 +502,30 @@ func continueMainAgentAfterSubAgents(
 		BackgroundAgentReplyCompletedEvent{
 			Type:      "background_reply_completed",
 			MessageID: backgroundReplyMessageID,
-			Text:      backgroundReplyText,
+			Text:      backgroundReplyResult.FinalText(),
 		},
 	)
 }
 
 func createConversationToolRegistry(
 	parentConversationID string,
+	workingDirectory string,
 ) (*tool.Registry, error) {
 	conversationToolRegistry :=
 		registry.CopyExcludingTools(generalSubAgentToolName)
 	registerGeneralSubAgentError := registerGeneralSubAgentTool(
 		conversationToolRegistry,
 		parentConversationID,
-		continueMainAgentAfterSubAgents,
+		func(
+			completedParentConversationID string,
+			subAgentResults []service.SubAgentResult,
+		) {
+			continueMainAgentAfterSubAgents(
+				workingDirectory,
+				completedParentConversationID,
+				subAgentResults,
+			)
+		},
 	)
 	if registerGeneralSubAgentError != nil {
 		return nil, registerGeneralSubAgentError
@@ -774,21 +786,32 @@ func handleSelectMCPServers(responseWriter http.ResponseWriter, httpRequest *htt
 // ============================================================================
 
 func handleChat(w http.ResponseWriter, r *http.Request) {
-	var req model.ChatRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	var webAgentTaskRequest model.ChatRequest
+	if err := json.NewDecoder(r.Body).Decode(&webAgentTaskRequest); err != nil {
 		writeAPIError(w, "handleChat.decode", "",
 			invalidRequestError("handleChat.decode", err))
 		return
 	}
-	cfg := config.Load()
-	store := service.NewStore(cfg.SessionsDir)
-
-	conversationID := req.ConversationId
-	if conversationID == "" {
-		conversationID = service.GenerateConversationId()
+	if validateWebAgentTaskError := validateWebAgentTaskRequest(
+		webAgentTaskRequest,
+	); validateWebAgentTaskError != nil {
+		writeAPIError(w, "handleChat.validate", webAgentTaskRequest.ConversationId,
+			invalidRequestError("handleChat.validate", validateWebAgentTaskError))
+		return
 	}
+	cfg := config.Load()
+	if strings.TrimSpace(cfg.ApiKey) == "" {
+		writeAPIError(w, "handleChat.config", webAgentTaskRequest.ConversationId,
+			service.NewAppError(service.ErrorConfig, "handleChat.config", 0,
+				fmt.Errorf("DEEPSEEK_API_KEY 未配置")))
+		return
+	}
+	conversationID := webAgentTaskRequest.ConversationId
 	conversationToolRegistry, createToolRegistryError :=
-		createConversationToolRegistry(conversationID)
+		createConversationToolRegistry(
+			conversationID,
+			webAgentTaskRequest.WorkingDirectory,
+		)
 	if createToolRegistryError != nil {
 		writeAPIError(
 			w,
@@ -803,19 +826,34 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 		conversationExecutionLocks.LockConversation(conversationID)
 	defer unlockConversationExecution()
 
-	reply, convId, err := service.Run(req.Message, conversationID,
-		buildSystemPrompt(), cfg, conversationToolRegistry, store)
-	if err != nil {
-		writeAPIError(w, "handleChat.run", convId, err)
+	runResult, runAgentError := service.RunAgentTask(
+		agent.UserTaskInput{Message: webAgentTaskRequest.Message},
+		agent.AgentExecutionEnvironment{
+			WorkingDirectory: webAgentTaskRequest.WorkingDirectory,
+			ConversationID:   conversationID,
+		},
+		systemPromptBase,
+		cfg,
+		conversationToolRegistry,
+		projectConversationStore,
+		configuredTokenCounter,
+		configuredModelContextWindowTokens,
+		service.AgentRunOptions{},
+	)
+	if runAgentError != nil {
+		writeAPIError(w, "handleChat.run", conversationID, runAgentError)
 		return
 	}
-	resp := model.ChatResponse{ConversationId: convId, Reply: reply}
+	resp := model.ChatResponse{
+		ConversationId: conversationID,
+		Reply:          runResult.FinalText(),
+	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		slog.Error("聊天响应 JSON 写入失败",
 			"component", "http",
 			"operation", "handleChat.encode",
-			"conversation_id", convId,
+			"conversation_id", conversationID,
 			"error_kind", service.ErrorInternal,
 			"error", err)
 	}
@@ -832,18 +870,26 @@ func handleChatStream(w http.ResponseWriter, r *http.Request) {
 				fmt.Errorf("ResponseWriter 不支持 http.Flusher")))
 		return
 	}
-	var req model.ChatRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	var webAgentTaskRequest model.ChatRequest
+	if err := json.NewDecoder(r.Body).Decode(&webAgentTaskRequest); err != nil {
 		writeSSEError(w, flusher, "handleChatStream.decode", "",
 			invalidRequestError("handleChatStream.decode", err))
 		return
 	}
 
-	// 预先生成 conversationId，作为首帧 SSE 发送
-	conversationId := req.ConversationId
-	if conversationId == "" {
-		conversationId = service.GenerateConversationId()
+	if validateWebAgentTaskError := validateWebAgentTaskRequest(
+		webAgentTaskRequest,
+	); validateWebAgentTaskError != nil {
+		writeSSEError(
+			w,
+			flusher,
+			"handleChatStream.validate",
+			webAgentTaskRequest.ConversationId,
+			invalidRequestError("handleChatStream.validate", validateWebAgentTaskError),
+		)
+		return
 	}
+	conversationId := webAgentTaskRequest.ConversationId
 	convIdJSON, _ := json.Marshal(map[string]string{
 		"type":           "conversation_id",
 		"conversationId": conversationId,
@@ -852,9 +898,17 @@ func handleChatStream(w http.ResponseWriter, r *http.Request) {
 	flusher.Flush()
 
 	cfg := config.Load()
-	store := service.NewStore(cfg.SessionsDir)
+	if strings.TrimSpace(cfg.ApiKey) == "" {
+		writeSSEError(w, flusher, "handleChatStream.config", conversationId,
+			service.NewAppError(service.ErrorConfig, "handleChatStream.config", 0,
+				fmt.Errorf("DEEPSEEK_API_KEY 未配置")))
+		return
+	}
 	conversationToolRegistry, createToolRegistryError :=
-		createConversationToolRegistry(conversationId)
+		createConversationToolRegistry(
+			conversationId,
+			webAgentTaskRequest.WorkingDirectory,
+		)
 	if createToolRegistryError != nil {
 		writeSSEError(
 			w,
@@ -873,27 +927,133 @@ func handleChatStream(w http.ResponseWriter, r *http.Request) {
 			conversationExecutionLocks.LockConversation(conversationId)
 		defer unlockConversationExecution()
 
-		reply, _, err := service.RunStream(req.Message, conversationId,
-			buildSystemPrompt(), cfg, conversationToolRegistry, store,
-			func(token string) {
-				if len(token) > 0 && token[0] == '{' {
-					fmt.Fprintf(w, "data: %s\n\n", token)
-				} else {
-					jsonToken, _ := json.Marshal(token)
-					fmt.Fprintf(w, "data: %s\n\n", jsonToken)
-				}
-				flusher.Flush()
-			})
-		if err != nil {
-			writeSSEError(w, flusher, "handleChatStream.run", conversationId, err)
+		runResult, runAgentError := service.RunAgentTask(
+			agent.UserTaskInput{Message: webAgentTaskRequest.Message},
+			agent.AgentExecutionEnvironment{
+				WorkingDirectory: webAgentTaskRequest.WorkingDirectory,
+				ConversationID:   conversationId,
+			},
+			systemPromptBase,
+			cfg,
+			conversationToolRegistry,
+			projectConversationStore,
+			configuredTokenCounter,
+			configuredModelContextWindowTokens,
+			service.AgentRunOptions{
+				StreamText: true,
+				ReceiveEvent: func(agentEvent agent.AgentEvent) {
+					writeAgentEventSSE(w, flusher, agentEvent)
+				},
+			},
+		)
+		if runAgentError != nil {
+			writeSSEError(w, flusher, "handleChatStream.run", conversationId, runAgentError)
+			return
 		}
-		if reply != "" {
-			doneJSON, _ := json.Marshal(map[string]string{"type": "done", "text": reply})
+		if runResult.FinalText() != "" {
+			doneJSON, _ := json.Marshal(map[string]string{
+				"type": "done",
+				"text": runResult.FinalText(),
+			})
 			fmt.Fprintf(w, "data: %s\n\n", doneJSON)
 			flusher.Flush()
 		}
 	}()
 	<-done
+}
+
+func validateWebAgentTaskRequest(webAgentTaskRequest model.ChatRequest) error {
+	if strings.TrimSpace(webAgentTaskRequest.Message) == "" {
+		return fmt.Errorf("message 不能为空")
+	}
+	return (agent.AgentExecutionEnvironment{
+		WorkingDirectory: webAgentTaskRequest.WorkingDirectory,
+		ConversationID:   webAgentTaskRequest.ConversationId,
+	}).Validate()
+}
+
+func writeAgentEventSSE(
+	responseWriter http.ResponseWriter,
+	responseWriterFlusher http.Flusher,
+	receivedAgentEvent agent.AgentEvent,
+) {
+	eventJSONFields := map[string]any{}
+	switch concreteAgentEvent := receivedAgentEvent.(type) {
+	case agent.AgentMemoryReferenceReadyEvent:
+		eventJSONFields = map[string]any{
+			"type":           "memory_reference_ready",
+			"conversationId": concreteAgentEvent.ConversationID,
+			"sessionFile":    concreteAgentEvent.RelativeSessionFilePath,
+		}
+	case agent.AgentRoundStartedEvent:
+		eventJSONFields = map[string]any{
+			"type":                  "round_started",
+			"round":                 concreteAgentEvent.Round,
+			"preparedRequestTokens": concreteAgentEvent.PreparedRequestTokens,
+		}
+	case agent.AgentTextDeltaEvent:
+		eventJSONFields = map[string]any{
+			"type": "text_delta",
+			"text": concreteAgentEvent.Text,
+		}
+	case agent.AgentToolStartedEvent:
+		eventJSONFields = map[string]any{
+			"type":      "tool_started",
+			"round":     concreteAgentEvent.Round,
+			"toolUseId": concreteAgentEvent.ToolUseID,
+			"toolName":  concreteAgentEvent.ToolName,
+		}
+	case agent.AgentToolSucceededEvent:
+		eventJSONFields = map[string]any{
+			"type":      "tool_succeeded",
+			"round":     concreteAgentEvent.Round,
+			"toolUseId": concreteAgentEvent.ToolUseID,
+			"toolName":  concreteAgentEvent.ToolName,
+		}
+	case agent.AgentToolFailedEvent:
+		eventJSONFields = map[string]any{
+			"type":      "tool_failed",
+			"round":     concreteAgentEvent.Round,
+			"toolUseId": concreteAgentEvent.ToolUseID,
+			"toolName":  concreteAgentEvent.ToolName,
+			"message":   concreteAgentEvent.Cause.Error(),
+		}
+	case agent.AgentCurrentRunCompactedEvent:
+		eventJSONFields = map[string]any{
+			"type":           "current_run_compacted",
+			"messagesBefore": concreteAgentEvent.MessagesBefore,
+			"messagesAfter":  concreteAgentEvent.MessagesAfter,
+		}
+	case agent.AgentStoredMemoryCompressedEvent:
+		eventJSONFields = map[string]any{
+			"type":         "stored_memory_compressed",
+			"tokensBefore": concreteAgentEvent.TokensBefore,
+			"tokensAfter":  concreteAgentEvent.TokensAfter,
+		}
+	case agent.AgentStoredMemoryCompressionFailedEvent:
+		eventJSONFields = map[string]any{
+			"type":    "stored_memory_compression_failed",
+			"message": concreteAgentEvent.Cause.Error(),
+		}
+	case agent.AgentMemorySaveFailedEvent:
+		eventJSONFields = map[string]any{
+			"type":    "memory_save_failed",
+			"message": concreteAgentEvent.Cause.Error(),
+		}
+	case agent.AgentCompletedEvent:
+		eventJSONFields = map[string]any{
+			"type": "agent_completed",
+			"text": concreteAgentEvent.Result.FinalText(),
+		}
+	default:
+		return
+	}
+	encodedAgentEvent, encodeAgentEventError := json.Marshal(eventJSONFields)
+	if encodeAgentEventError != nil {
+		return
+	}
+	fmt.Fprintf(responseWriter, "data: %s\n\n", encodedAgentEvent)
+	responseWriterFlusher.Flush()
 }
 
 // ============================================================================
@@ -973,9 +1133,14 @@ func handleConversationEvents(
 }
 
 func handleListConversations(w http.ResponseWriter, r *http.Request) {
-	cfg := config.Load()
-	store := service.NewStore(cfg.SessionsDir)
-	summaries, err := store.ListConversations()
+	workingDirectory := r.URL.Query().Get("workingDirectory")
+	if !filepath.IsAbs(workingDirectory) {
+		writeAPIError(w, "handleListConversations.validate", "",
+			invalidRequestError("handleListConversations.validate",
+				fmt.Errorf("workingDirectory 必须是绝对路径")))
+		return
+	}
+	summaries, err := projectConversationStore.ListConversations(workingDirectory)
 	if err != nil {
 		writeAPIError(w, "handleListConversations.list", "",
 			service.NewAppError(service.ErrorStorageRead,
@@ -988,9 +1153,8 @@ func handleListConversations(w http.ResponseWriter, r *http.Request) {
 
 func handleGetConversation(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	cfg := config.Load()
-	store := service.NewStore(cfg.SessionsDir)
-	session, err := store.LoadConversation(id)
+	workingDirectory := r.URL.Query().Get("workingDirectory")
+	session, err := projectConversationStore.LoadConversation(workingDirectory, id)
 	if err != nil {
 		writeAPIError(w, "handleGetConversation.load", id,
 			service.NewAppError(service.ErrorStorageRead,
@@ -1007,9 +1171,8 @@ func handleGetConversation(w http.ResponseWriter, r *http.Request) {
 
 func handleDeleteConversation(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	cfg := config.Load()
-	store := service.NewStore(cfg.SessionsDir)
-	if err := store.DeleteConversation(id); err != nil {
+	workingDirectory := r.URL.Query().Get("workingDirectory")
+	if err := projectConversationStore.DeleteConversation(workingDirectory, id); err != nil {
 		writeAPIError(w, "handleDeleteConversation.delete", id,
 			service.NewAppError(service.ErrorStorageWrite,
 				"store.DeleteConversation", 0, err))
@@ -1184,6 +1347,32 @@ func main() {
 		defer applicationLogFile.Close()
 	}
 
+	applicationConfig := config.Load()
+	modelTokenizerConfiguration, loadTokenizerConfigurationError :=
+		config.LoadModelTokenizerConfiguration(applicationConfig.Model)
+	if loadTokenizerConfigurationError != nil {
+		slog.Error("模型 tokenizer 配置加载失败",
+			"component", "startup",
+			"operation", "config.LoadModelTokenizerConfiguration",
+			"error_kind", service.ErrorConfig,
+			"error", loadTokenizerConfigurationError)
+		os.Exit(1)
+	}
+	loadedTokenCounter, createTokenCounterError :=
+		modeltoken.NewHuggingFaceJSONTokenCounter(modelTokenizerConfiguration)
+	if createTokenCounterError != nil {
+		slog.Error("模型 tokenizer 启动失败",
+			"component", "startup",
+			"operation", "modeltoken.NewHuggingFaceJSONTokenCounter",
+			"error_kind", service.ErrorConfig,
+			"error", createTokenCounterError)
+		os.Exit(1)
+	}
+	defer loadedTokenCounter.Close()
+	configuredTokenCounter = loadedTokenCounter
+	configuredModelContextWindowTokens =
+		modelTokenizerConfiguration.MaximumContextTokens
+
 	var err error
 	personalities, err = loadPersonalities("personalities")
 	if err != nil {
@@ -1205,15 +1394,15 @@ func main() {
 		"personality_count", len(names),
 		"personality_names", strings.Join(names, ", "))
 
-	if err := registry.Register(tool.NewBashTool("workspace")); err != nil {
+	if err := registry.Register(tool.NewBashTool()); err != nil {
 		slog.Error("工具注册失败", "component", "startup", "tool_name", "bash", "error", err)
 		os.Exit(1)
 	}
-	if err := registry.Register(tool.NewSkillTool("workspace/skills")); err != nil {
+	if err := registry.Register(tool.NewSkillTool()); err != nil {
 		slog.Error("工具注册失败", "component", "startup", "tool_name", "activate_skill", "error", err)
 		os.Exit(1)
 	}
-	if err := registry.Register(tool.NewCreateSkillTool("workspace/skills")); err != nil {
+	if err := registry.Register(tool.NewCreateSkillTool()); err != nil {
 		slog.Error("工具注册失败", "component", "startup", "tool_name", "create_skill", "error", err)
 		os.Exit(1)
 	}
@@ -1250,7 +1439,6 @@ func main() {
 		http.ServeFile(w, r, "index.html")
 	})
 
-	applicationConfig := config.Load()
 	slog.Info("cc-agent-go v15 启动",
 		"component", "startup",
 		"address", "http://localhost:8080",

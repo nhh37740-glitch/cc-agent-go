@@ -40,6 +40,7 @@ func (mcpServerManager *MCPServerManager) registerMCPServerTools(
 
 		executeRegisteredMCPServerTool := func(
 			toolArguments map[string]any,
+			_ tool.ToolExecutionEnvironment,
 		) (string, error) {
 			return mcpServerManager.callMCPServerTool(
 				registeredMCPServerName,

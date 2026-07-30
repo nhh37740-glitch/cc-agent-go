@@ -1,57 +1,100 @@
 # cc-agent-go
 
-## 项目目的
+用 Go 实现可复用的 AI Agent。当前主线不是聊天机器人，而是一个可以被
+WebAgent、SubAgent 和其他应用共同调用的 `agent.Agent`。
 
-用 Go 重写 Java 版 `cc-agent`，在功能逐步对齐的过程中学习 Go，并构建一个可验证的 AI Agent HTTP 服务。
+## v15 已完成的执行方式
 
-本项目面向有 Java 背景、正在入门 Go 的开发者：每个版本只引入一组新的 Go 概念，代码必须可以编译、运行和验证。
+调用者每次执行都传入三个具体值：
 
-## 当前进度
+```json
+{
+  "workingDirectory": "C:/projects/example",
+  "conversationId": "webagent-main",
+  "message": "检查当前项目并给出结果"
+}
+```
 
-- 已完成：Demo v0–v10；v10 核心 Agent 已迁移至仓库根目录
-- 已完成：v11 结构化日志、错误分类与统一错误返回
-- 已完成：v12 可配置的 MCP Client、Playwright MCP 和动态工具注册
-- 已跳过：v13 RAG 与资料检索（未实现，计划已归档）
-- 已完成：v14 通用型 SubAgent 工具（固定 JSON 输入输出、配置并行数、最多 5 个；真实 DeepSeek 与 Playwright MCP 检查通过）
-- 当前主线：v15 后台 SubAgent 回调；已完成长短连接分离，取消、重试和恢复尚未实现
-- 后续路线：长任务恢复 → A2A
-- 狼人杀实验仅保留在 `feature/v11-werewolf` 分支，不进入主线 Agent 服务
-- 项目看板：[cc-agent-go Project](https://github.com/users/nhh37740-glitch/projects/1/views/1)
-- 详细路线：[ROADMAP.md](ROADMAP.md)
-- v15 当前实施计划：[OpenSpec v15-background-subagent-callback](openspec/changes/v15-background-subagent-callback/tasks.md)
+`main.handleChatStream` 将它们分别放入：
 
-## 技术约束
+- `agent.UserTaskInput.Message`
+- `agent.AgentExecutionEnvironment.WorkingDirectory`
+- `agent.AgentExecutionEnvironment.ConversationID`
 
-- Go 标准库实现，不引入第三方依赖
-- `net/http` 提供 HTTP 与 SSE 服务
-- JSON 文件保存会话数据
-- `log/slog` 输出结构化日志
-- Go 标准库实现 MCP 2025-11-25 STDIO Client
-- MCP Server 列表由 `config/mcp_servers.json` 维护
+随后 `service.RunAgentTask` 创建配置完成的 `agent.Agent`，并调用：
 
-## 服务日志
+```go
+configuredAgent.Run(agentTaskInput, executionEnvironment)
+```
 
-Go 服务每次启动时自动创建 `logs/server.jsonl`。每条 `slog` JSON 同时写入 stderr 和该文件。日志不记录用户正文、模型回复、工具参数或 API Key。
+`Agent.Run` 中只有一份模型和工具循环。普通 WebAgent 任务、后台 SubAgent
+结果回调、SubAgent 任务和 `host.RunParticipantTurn` 都使用这一份循环。
 
-## 后台 SubAgent 回复
+## 项目目录和历史记录
 
-`POST /api/chat/stream` 只处理一条用户消息，回复完成后固定关闭。网页同时为当前会话建立 `GET /api/conversations/{conversationId}/events` 长连接。`run_subagent` 启动后台任务后，原主 Agent立即返回并结束；同一条模型回复中的其他工具不会执行。每个任务由调用 LLM 填写 `maximumRounds`，`MAXIMUM_SUBAGENT_ROUNDS` 配置允许的最高值，默认 50。达到轮数上限时，SubAgent最后一轮不再收到工具，而是整理已有结果，并返回 `limit_reached`、`result` 和 `error`。全部 SubAgent完成时，Go 使用空工具表回调主 Agent；回调主 Agent只分析和汇总结果，再通过会话事件长连接推送新回复。
+Agent 不保存固定 workspace。调用者传入的 `workingDirectory` 必须是已经
+存在的绝对目录。
 
-## DeepSeek Key 配置
+会话文件固定写入：
 
-正式服务按下面的顺序读取 DeepSeek Key：
+```text
+<WorkingDirectory>/.cc-agent/sessions/<ConversationID>.json
+```
 
-1. 读取 `DEEPSEEK_API_KEY` 环境变量。
-2. 环境变量为空时，读取 `config/local.json` 的 `deepseekApiKey`。
+第一次 DeepSeek 调用只发送当前任务。system message 会告诉 DeepSeek
+当前工作目录、会话编号、会话文件位置和 `AGENTS.md` 位置；不会自动发送
+会话文件中的全部旧正文。需要旧信息时，DeepSeek 可以调用 bash，使用
+`rg`、`head`、`tail` 或 `cat` 读取必要片段。
 
-本地文件格式参考 `config/local.example.json`。真实的 `config/local.json` 已加入 `.gitignore`，不会提交到 GitHub。需要从其他路径读取时，可用 `CC_AGENT_LOCAL_CONFIG` 环境变量指定文件路径。
+狼人杀、剧本杀、元老院和其他应用负责角色、回合、顺序和胜负。它们只把
+一个角色的工作目录、角色会话编号和当前任务传给 `Agent.Run`，不得把应用
+模式写入 `agent.Agent`。
 
-## MCP Server 配置
+## Tokenizer
 
-`config/mcp_servers.json` 保存 MCP Server 名称、命令和参数。增加一台 STDIO MCP Server 时编辑这个 JSON 并重启 Go 服务，不需要修改或重新编译 Go 代码。
+唯一直接引入的第三方功能依赖是
+`github.com/amikos-tech/pure-tokenizers v0.1.5`。它读取仓库中的 DeepSeek
+V4 官方 `tokenizer.json`：
 
-MCP 标准消息位于 `mcp/protocol/2025-11-25/messages.json`。同目录 `schema.json` 来自 [MCP 官方 2025-11-25 Schema](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2025-11-25/schema/2025-11-25/schema.json)。
+- 配置：`config/model_tokenizers.json`
+- 文件：`tokenizers/deepseek-v4-pro/tokenizer.json`
+- 固定 revision：`b5968e9190ef611bbf34a7229255be88a0e937c1`
+- SHA-256：`8f9f37ca37fdc4f5fd36d5cf4d3b0e8392edb4e894fd10cc0d70b4957c8633cf`
 
-当前配置包含 Playwright MCP `0.0.78`，使用 `--image-responses omit`，不向模型返回截图。
+`pure-tokenizers` 第一次运行会把匹配当前操作系统的原生库放入用户缓存。
+加载 tokenizer 文件或原生库失败时，HTTP 服务不会启动，也不会回退到字符
+数量估算。
 
-详细的协作与教学规则见 [AGENTS.md](AGENTS.md)。
+## DeepSeek Key
+
+服务先读取 `DEEPSEEK_API_KEY`，空值时读取被 Git 忽略的
+`config/local.json`：
+
+```json
+{"deepseekApiKey":"your-key"}
+```
+
+也可以用 `CC_AGENT_LOCAL_CONFIG` 指定另一个本地 JSON 文件。
+
+## MCP Server
+
+`config/mcp_servers.json` 保存 MCP Server 名称、命令和参数。网页选中 Server
+后，`MCPServerManager` 启动进程、完成 MCP 初始化、获取工具列表，并把每个
+动态工具注册进同一个 `tool.Registry`。增加 MCP Server 不修改 `Agent.Run`。
+
+## 运行与验证
+
+```text
+go run .
+go fmt ./...
+go build ./...
+go vet ./...
+go test ./...
+```
+
+打开 `http://localhost:8080/`，填写项目绝对目录、会话编号和当前任务。
+页面显示 round、工具、记忆保存和最终结果事件，不显示聊天气泡或历史会话卡片。
+
+项目看板：[GitHub Project #1](https://github.com/users/nhh37740-glitch/projects/1/views/1)。
+完整版本顺序见 [ROADMAP.md](ROADMAP.md)，实际文件和函数见
+[PROJECT_INDEX.md](PROJECT_INDEX.md)。
