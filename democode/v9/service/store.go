@@ -33,8 +33,8 @@ import (
 
 type Store struct {
 	sessionsDir string
-	mu          sync.Mutex              // 保护 locks map 本身的并发访问
-	locks       map[string]*sync.Mutex  // 每个 conversationId 一个锁
+	mu          sync.Mutex             // 保护 locks map 本身的并发访问
+	locks       map[string]*sync.Mutex // 每个 conversationId 一个锁
 }
 
 // ========================================================================
@@ -334,7 +334,7 @@ func (s *Store) AppendTurn(conversationId string, newMessages []model.Message,
 	}
 
 	// 更新元数据
-	existing.LastInputTokens = 0  // 由 agent 层后续更新（或保持为 0）
+	existing.LastInputTokens = 0 // 由 agent 层后续更新（或保持为 0）
 	existing.LastOutputTokens = totalOutputTokens
 	existing.UpdatedAt = nowInstant
 

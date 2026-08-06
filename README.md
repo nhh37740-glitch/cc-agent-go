@@ -5,17 +5,19 @@ WebAgent、SubAgent 和其他应用共同调用的 `agent.Agent`。
 
 ## v15 已完成的执行方式
 
-调用者每次执行都传入三个具体值：
+WebAgent 每次执行发送三个字段。新会话的 `conversationId` 是空字符串：
 
 ```json
 {
   "workingDirectory": "C:/projects/example",
-  "conversationId": "webagent-main",
+  "conversationId": "",
   "message": "检查当前项目并给出结果"
 }
 ```
 
-`main.handleChatStream` 将它们分别放入：
+`main.handleChatStream` 先检查 `conversationId`。空值时调用
+`service.GenerateConversationId()` 创建实际编号，并在第一条 SSE 事件中返回。
+选择已有会话时沿用页面发送的实际编号。随后 handler 将它们分别放入：
 
 - `agent.UserTaskInput.Message`
 - `agent.AgentExecutionEnvironment.WorkingDirectory`
@@ -82,6 +84,19 @@ V4 官方 `tokenizer.json`：
 后，`MCPServerManager` 启动进程、完成 MCP 初始化、获取工具列表，并把每个
 动态工具注册进同一个 `tool.Registry`。增加 MCP Server 不修改 `Agent.Run`。
 
+## WebAgent 页面
+
+打开项目后，页面调用：
+
+- `GET /api/conversations?workingDirectory=...`：显示当前项目全部会话。
+- `GET /api/conversations/{id}?workingDirectory=...`：显示选中会话的历史记录。
+- `GET /api/logs?limit=200`：显示 `logs/server.jsonl` 最近的脱敏 JSON 日志。
+- `GET /api/mcp/servers`：显示 MCP Server、运行状态和已注册工具数量。
+
+页面不会要求用户填写会话编号。点击“新建会话”后，第一次执行由 Go 创建
+编号。MCP 请求失败时页面显示实际 HTTP 状态和后端错误 JSON；如果 Go 服务
+未运行，页面明确显示连接失败。
+
 ## 运行与验证
 
 ```text
@@ -92,8 +107,9 @@ go vet ./...
 go test ./...
 ```
 
-打开 `http://localhost:8080/`，填写项目绝对目录、会话编号和当前任务。
-页面显示 round、工具、记忆保存和最终结果事件，不显示聊天气泡或历史会话卡片。
+打开 `http://localhost:8080/`，填写项目绝对目录并点击“加载项目”。左侧显示
+该目录的全部会话和 MCP Server；中间显示会话历史、当前任务和结果；右侧显示
+本次 Agent 事件及服务端 JSON 日志。
 
 项目看板：[GitHub Project #1](https://github.com/users/nhh37740-glitch/projects/1/views/1)。
 完整版本顺序见 [ROADMAP.md](ROADMAP.md)，实际文件和函数见

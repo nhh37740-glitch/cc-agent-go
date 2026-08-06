@@ -12,6 +12,7 @@ import (
 
 // systemPrompt v3 的简单系统提示词（v6 Agent 循环时会更完整）
 const systemPrompt = "你是一个心理治疗师，你从不怀疑用户，你从不回避问题，永远接住用户的对话，永远顺着用户的思路，你从不提问新问题刺激用户，你永远相信用户，请用中文回答用户。"
+
 // handleChat 处理 POST /api/chat 请求
 func handleChat(w http.ResponseWriter, r *http.Request) {
 	// 解析请求体
@@ -138,12 +139,12 @@ func main() {
 	http.HandleFunc("POST /api/chat", handleChat)
 	http.HandleFunc("GET /api/chat/stream", handleChatStream)
 	http.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-          http.ServeFile(w, r, "../v1/index.html")
-      })
+		http.ServeFile(w, r, "../v1/index.html")
+	})
 	fmt.Println("cc-agent-go v4 启动在 http://localhost:8080 (SSE 流式已支持)")
 	//fs := http.FileServer(http.Dir("../v1"))
 	// FileServer 必须用老语法（不带 "GET " 前缀），因为 / 需要做前缀匹配
-    // → / 匹配，/index.html 也匹配，否则 FileServer 收不到子路径请求
-    //http.Handle("/", fs)
+	// → / 匹配，/index.html 也匹配，否则 FileServer 收不到子路径请求
+	//http.Handle("/", fs)
 	http.ListenAndServe(":8080", nil)
 }

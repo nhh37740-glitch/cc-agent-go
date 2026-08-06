@@ -97,6 +97,57 @@ func TestLoadMaximumParallelSubAgents(t *testing.T) {
 	}
 }
 
+func TestLoadMaximumHarnessAgents(t *testing.T) {
+	testCases := []struct {
+		testName              string
+		configuredValue       string
+		expectedMaximumAgents int
+	}{
+		{
+			testName:              "empty value uses default",
+			configuredValue:       "",
+			expectedMaximumAgents: 11,
+		},
+		{
+			testName:              "valid value is preserved",
+			configuredValue:       "7",
+			expectedMaximumAgents: 7,
+		},
+		{
+			testName:              "non integer uses default",
+			configuredValue:       "many",
+			expectedMaximumAgents: 11,
+		},
+		{
+			testName:              "zero uses default",
+			configuredValue:       "0",
+			expectedMaximumAgents: 11,
+		},
+		{
+			testName:              "negative value uses default",
+			configuredValue:       "-3",
+			expectedMaximumAgents: 11,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.testName, func(t *testing.T) {
+			t.Setenv("MAX_HARNESS_AGENTS", testCase.configuredValue)
+
+			applicationConfig := Load()
+
+			if applicationConfig.MaximumHarnessAgents !=
+				testCase.expectedMaximumAgents {
+				t.Fatalf(
+					"MaximumHarnessAgents = %d, want %d",
+					applicationConfig.MaximumHarnessAgents,
+					testCase.expectedMaximumAgents,
+				)
+			}
+		})
+	}
+}
+
 func TestLoadMaximumSubAgentRounds(t *testing.T) {
 	testCases := []struct {
 		testName              string

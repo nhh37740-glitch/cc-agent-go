@@ -583,26 +583,62 @@ AgentCompletedEvent
 
 记忆引用事件只返回 conversation ID 和相对会话文件路径，不发送历史正文。HTTP SSE 根据具体事件类型编码，删除 `token[0] == '{'`。
 
-### 16. WebAgent页面接收项目目录和会话ID
+### 16. WebAgent页面管理项目会话、日志和MCP Server
 
-WebAgent 页面固定输入：
+页面固定输入只有：
 
 ```text
 项目工作目录：文本输入
-会话ID：文本输入
 当前任务：多行文本输入
 开始执行：按钮
 ```
 
-页面请求：
+页面不要求用户填写会话 ID。点击“新建会话”后，页面把空
+`conversationId` 发送给 `main.handleChatStream`。handler 调用
+`service.GenerateConversationId()` 得到实际 ID，把该 ID 写入第一条
+`conversation_id` SSE 事件，然后再调用 `Agent.Run()`。
+
+选择已有会话时，页面发送该会话实际 ID：
 
 ```json
 {
   "workingDirectory": "C:/Users/Z/Documents/project/code/example",
-  "conversationId": "main-agent",
+  "conversationId": "已有会话的实际ID或空字符串",
   "message": "检查这个项目当前的编译错误"
 }
 ```
+
+项目会话读取顺序：
+
+```text
+工作目录输入发生变化或用户点击刷新
+→ GET /api/conversations?workingDirectory=<实际绝对目录>
+→ main.handleListConversations
+→ ProjectConversationStore.ListConversations
+→ 页面显示该目录中的会话标题、更新时间和token
+
+用户点击一项会话
+→ GET /api/conversations/<实际ID>?workingDirectory=<实际绝对目录>
+→ main.handleGetConversation
+→ 页面显示该会话的user和assistant历史消息
+```
+
+日志读取顺序：
+
+```text
+页面加载或用户点击刷新日志
+→ GET /api/logs?limit=200
+→ main.handleListRecentLogs
+→ 读取logs/server.jsonl最后200条有效JSON
+→ 页面显示time、level、component、operation、msg和error
+```
+
+日志接口只读取正式服务已经脱敏的结构化日志，不读取用户正文、模型回复、
+工具参数或API Key。
+
+MCP Server 列表继续使用 `GET /api/mcp/servers`。页面必须检查
+`response.ok`；失败时显示实际 HTTP 状态和后端错误 JSON。Go 服务未启动时，
+浏览器显示网络连接失败，不能显示“没有配置 MCP Server”。
 
 Go 后端不让浏览器读取文件。它只接收路径字符串，校验该目录存在，然后让 Agent 和工具在该目录工作。
 

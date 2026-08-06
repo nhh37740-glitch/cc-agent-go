@@ -27,10 +27,10 @@ func main() {
 	fmt.Println("cc-agent-go 启动在 http://localhost:8080")
 	// ListenAndServe：阻塞监听端口，第二个参数 nil 表示用默认路由
 	// FileServer 自动把目录下的 index.html 作为默认页
-    // 浏览器访问 http://localhost:8080 就返回 code_artifact.html
-    fs := http.FileServer(http.Dir("democode/v1"))
-    // FileServer 必须用老语法（不带 "GET " 前缀），因为 / 需要做前缀匹配
-    // → / 匹配，/index.html 也匹配，否则 FileServer 收不到子路径请求
-    http.Handle("/", fs)
+	// 浏览器访问 http://localhost:8080 就返回 code_artifact.html
+	fs := http.FileServer(http.Dir("democode/v1"))
+	// FileServer 必须用老语法（不带 "GET " 前缀），因为 / 需要做前缀匹配
+	// → / 匹配，/index.html 也匹配，否则 FileServer 收不到子路径请求
+	http.Handle("/", fs)
 	http.ListenAndServe(":8080", nil)
 }

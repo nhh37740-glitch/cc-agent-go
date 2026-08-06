@@ -5,11 +5,11 @@ package model
 type ContentBlock struct {
 	Type      string         `json:"type"`
 	Text      string         `json:"text,omitempty"`
-	ID        string         `json:"id,omitempty"`        // tool_use 使用
-	Name      string         `json:"name,omitempty"`      // tool_use 使用
-	Input     map[string]any `json:"input,omitempty"`     // tool_use 使用
+	ID        string         `json:"id,omitempty"`          // tool_use 使用
+	Name      string         `json:"name,omitempty"`        // tool_use 使用
+	Input     map[string]any `json:"input,omitempty"`       // tool_use 使用
 	ToolUseID string         `json:"tool_use_id,omitempty"` // tool_result 使用
-	Content   string         `json:"content,omitempty"`   // tool_result 使用（纯文本结果）
+	Content   string         `json:"content,omitempty"`     // tool_result 使用（纯文本结果）
 }
 
 // Message 对话历史中的一条消息

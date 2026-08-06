@@ -359,7 +359,7 @@ func main() {
 
 	registry.Register(tool.NewBashTool("workspace"))
 	registry.Register(tool.NewSkillTool("workspace/skills"))
-		registry.Register(tool.NewCreateSkillTool("workspace/skills"))
+	registry.Register(tool.NewCreateSkillTool("workspace/skills"))
 
 	http.HandleFunc("POST /api/chat", handleChat)
 	http.HandleFunc("POST /api/chat/stream", handleChatStream)

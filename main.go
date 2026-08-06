@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,12 +13,14 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"cc-agent-go/agent"
 	"cc-agent-go/config"
+	"cc-agent-go/harness"
 	"cc-agent-go/mcp"
 	"cc-agent-go/memory"
 	"cc-agent-go/model"
@@ -75,6 +78,8 @@ var conversationExecutionLocks = service.NewConversationExecutionLocks()
 var projectConversationStore = memory.NewProjectConversationStore()
 var configuredTokenCounter agent.AgentTokenCounter
 var configuredModelContextWindowTokens int
+var harnessPrompts harness.Prompts
+var harnessPromptsLoadError error
 
 const generalSubAgentToolName = service.GeneralSubAgentToolName
 
@@ -792,6 +797,7 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 			invalidRequestError("handleChat.decode", err))
 		return
 	}
+	assignWebAgentConversationID(&webAgentTaskRequest)
 	if validateWebAgentTaskError := validateWebAgentTaskRequest(
 		webAgentTaskRequest,
 	); validateWebAgentTaskError != nil {
@@ -877,6 +883,7 @@ func handleChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	assignWebAgentConversationID(&webAgentTaskRequest)
 	if validateWebAgentTaskError := validateWebAgentTaskRequest(
 		webAgentTaskRequest,
 	); validateWebAgentTaskError != nil {
@@ -960,6 +967,14 @@ func handleChatStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	<-done
+}
+
+func assignWebAgentConversationID(webAgentTaskRequest *model.ChatRequest) {
+	webAgentTaskRequest.ConversationId =
+		strings.TrimSpace(webAgentTaskRequest.ConversationId)
+	if webAgentTaskRequest.ConversationId == "" {
+		webAgentTaskRequest.ConversationId = service.GenerateConversationId()
+	}
 }
 
 func validateWebAgentTaskRequest(webAgentTaskRequest model.ChatRequest) error {
@@ -1054,6 +1069,293 @@ func writeAgentEventSSE(
 	}
 	fmt.Fprintf(responseWriter, "data: %s\n\n", encodedAgentEvent)
 	responseWriterFlusher.Flush()
+}
+
+// ============================================================================
+// Harness 路由
+// ============================================================================
+
+// buildHarnessRuntimeDependencies 用当前全局资源装配一个项目目录的
+// Harness Runtime 依赖。被管理 Agent 的工具表现取全局注册表（排除
+// run_subagent），bash、activate_skill、create_skill 和当前全局 MCP
+// 工具自动全部可见，不按 Agent 过滤。
+func buildHarnessRuntimeDependencies(
+	applicationConfig config.Config,
+) harness.RuntimeDependencies {
+	return harness.BuildRuntimeDependencies(
+		harnessPrompts,
+		applicationConfig,
+		projectConversationStore,
+		configuredTokenCounter,
+		configuredModelContextWindowTokens,
+		conversationEventReceivers,
+		conversationExecutionLocks,
+		harnessMCPLiveStatusText,
+		func() *tool.Registry {
+			return registry.CopyExcludingTools(generalSubAgentToolName)
+		},
+	)
+}
+
+// harnessMCPLiveStatusText 生成当前运行中的 MCP Server 及工具名称的
+// 自然语言实况；没有运行中的 Server 时明确说明无 MCP 资源。
+func harnessMCPLiveStatusText() string {
+	noMCPResourceText := "- 当前没有运行中的 MCP Server；" +
+		"被管理 Agent 只有 bash、activate_skill、create_skill 三个基础工具。"
+	if mcpServerManager == nil {
+		return noMCPResourceText
+	}
+	runningServerLines := make([]string, 0)
+	for _, mcpServerStatus := range mcpServerManager.ListConfiguredMCPServers() {
+		if mcpServerStatus.Status != "running" {
+			continue
+		}
+		runningServerLines = append(runningServerLines, fmt.Sprintf(
+			"- %s：工具 %s",
+			mcpServerStatus.Name,
+			strings.Join(mcpServerStatus.RegisteredAgentToolNames, "、"),
+		))
+	}
+	if len(runningServerLines) == 0 {
+		return noMCPResourceText
+	}
+	return strings.Join(runningServerLines, "\n")
+}
+
+// validateHarnessChatRequest 校验 Harness 对话请求：message 必填，
+// workingDirectory 必须是存在的绝对目录；Harness 会话编号固定为 harness。
+func validateHarnessChatRequest(harnessChatRequest model.ChatRequest) error {
+	if strings.TrimSpace(harnessChatRequest.Message) == "" {
+		return fmt.Errorf("message 不能为空")
+	}
+	return (agent.AgentExecutionEnvironment{
+		WorkingDirectory: harnessChatRequest.WorkingDirectory,
+		ConversationID:   harness.HarnessConversationID,
+	}).Validate()
+}
+
+// validateHarnessRequestCommon 校验 workingDirectory 和 Harness prompt 配置，
+// 三个 Harness 路由共用；返回 nil 表示可以继续。
+func validateHarnessRequestCommon(
+	responseWriter http.ResponseWriter,
+	operation string,
+	workingDirectory string,
+) bool {
+	if validateEnvironmentError := (agent.AgentExecutionEnvironment{
+		WorkingDirectory: workingDirectory,
+		ConversationID:   harness.HarnessConversationID,
+	}).Validate(); validateEnvironmentError != nil {
+		writeAPIError(responseWriter, operation, harness.HarnessConversationID,
+			invalidRequestError(operation, validateEnvironmentError))
+		return false
+	}
+	if harnessPromptsLoadError != nil {
+		writeAPIError(responseWriter, operation, harness.HarnessConversationID,
+			service.NewAppError(service.ErrorConfig, operation, 0,
+				harnessPromptsLoadError))
+		return false
+	}
+	return true
+}
+
+func handleHarnessChatStream(
+	responseWriter http.ResponseWriter,
+	httpRequest *http.Request,
+) {
+	var harnessChatRequest model.ChatRequest
+	if decodeRequestError := json.NewDecoder(httpRequest.Body).Decode(
+		&harnessChatRequest,
+	); decodeRequestError != nil {
+		writeAPIError(responseWriter, "handleHarnessChatStream.decode", "",
+			invalidRequestError("handleHarnessChatStream.decode", decodeRequestError))
+		return
+	}
+	// 先校验再设置 SSE 头：校验失败返回真实的 400 JSON 错误。
+	if validateRequestError := validateHarnessChatRequest(harnessChatRequest); validateRequestError != nil {
+		writeAPIError(responseWriter, "handleHarnessChatStream.validate",
+			harness.HarnessConversationID,
+			invalidRequestError("handleHarnessChatStream.validate", validateRequestError))
+		return
+	}
+	if harnessPromptsLoadError != nil {
+		writeAPIError(responseWriter, "handleHarnessChatStream.prompts",
+			harness.HarnessConversationID,
+			service.NewAppError(service.ErrorConfig,
+				"handleHarnessChatStream.prompts", 0, harnessPromptsLoadError))
+		return
+	}
+	cfg := config.Load()
+	if strings.TrimSpace(cfg.ApiKey) == "" {
+		writeAPIError(responseWriter, "handleHarnessChatStream.config",
+			harness.HarnessConversationID,
+			service.NewAppError(service.ErrorConfig,
+				"handleHarnessChatStream.config", 0,
+				fmt.Errorf("DEEPSEEK_API_KEY 未配置")))
+		return
+	}
+
+	responseWriter.Header().Set("Content-Type", "text/event-stream;charset=UTF-8")
+	responseWriter.Header().Set("Cache-Control", "no-cache")
+	responseWriter.Header().Set("Connection", "keep-alive")
+	flusher, ok := responseWriter.(http.Flusher)
+	if !ok {
+		writeAPIError(responseWriter, "handleHarnessChatStream.flusher", "",
+			service.NewAppError(service.ErrorInternal,
+				"handleHarnessChatStream.flusher", 0,
+				fmt.Errorf("ResponseWriter 不支持 http.Flusher")))
+		return
+	}
+
+	harnessRuntime, createRuntimeError := harness.GetOrCreateRuntime(
+		harnessChatRequest.WorkingDirectory,
+		buildHarnessRuntimeDependencies(cfg),
+	)
+	if createRuntimeError != nil {
+		writeSSEError(responseWriter, flusher,
+			"handleHarnessChatStream.runtime", harness.HarnessConversationID,
+			createRuntimeError)
+		return
+	}
+
+	conversationIDJSON, _ := json.Marshal(map[string]string{
+		"type":           "conversation_id",
+		"conversationId": harness.HarnessConversationID,
+	})
+	fmt.Fprintf(responseWriter, "data: %s\n\n", conversationIDJSON)
+	flusher.Flush()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		unlockConversationExecution :=
+			conversationExecutionLocks.LockConversation(
+				harness.HarnessConversationID,
+			)
+		defer unlockConversationExecution()
+
+		runResult, runAgentError := service.RunAgentTask(
+			agent.UserTaskInput{Message: harnessChatRequest.Message},
+			agent.AgentExecutionEnvironment{
+				WorkingDirectory: harnessChatRequest.WorkingDirectory,
+				ConversationID:   harness.HarnessConversationID,
+			},
+			harnessRuntime.HarnessSystemPromptWithLiveStatus(),
+			cfg,
+			harnessRuntime.HarnessTools(),
+			projectConversationStore,
+			configuredTokenCounter,
+			configuredModelContextWindowTokens,
+			service.AgentRunOptions{
+				StreamText: true,
+				ReceiveEvent: func(receivedAgentEvent agent.AgentEvent) {
+					writeAgentEventSSE(responseWriter, flusher, receivedAgentEvent)
+				},
+			},
+		)
+		if runAgentError != nil {
+			writeSSEError(responseWriter, flusher,
+				"handleHarnessChatStream.run", harness.HarnessConversationID,
+				runAgentError)
+			return
+		}
+		if runResult.FinalText() != "" {
+			doneJSON, _ := json.Marshal(map[string]string{
+				"type": "done",
+				"text": runResult.FinalText(),
+			})
+			fmt.Fprintf(responseWriter, "data: %s\n\n", doneJSON)
+			flusher.Flush()
+		}
+	}()
+	<-done
+}
+
+func handleHarnessAgents(
+	responseWriter http.ResponseWriter,
+	httpRequest *http.Request,
+) {
+	workingDirectory := httpRequest.URL.Query().Get("workingDirectory")
+	if !validateHarnessRequestCommon(
+		responseWriter,
+		"handleHarnessAgents",
+		workingDirectory,
+	) {
+		return
+	}
+	harnessRuntime, createRuntimeError := harness.GetOrCreateRuntime(
+		workingDirectory,
+		buildHarnessRuntimeDependencies(config.Load()),
+	)
+	if createRuntimeError != nil {
+		writeAPIError(responseWriter, "handleHarnessAgents.runtime",
+			harness.HarnessConversationID, createRuntimeError)
+		return
+	}
+	agentRegistry := harnessRuntime.AgentRegistry()
+	responseWriter.Header().Set("Content-Type", "application/json;charset=UTF-8")
+	if encodeAgentsError := json.NewEncoder(responseWriter).Encode(map[string]any{
+		"agents":        agentRegistry.ListAgents(),
+		"maximumAgents": agentRegistry.MaximumAgents(),
+		"runningAgents": agentRegistry.RunningAgentCount(),
+	}); encodeAgentsError != nil {
+		slog.Error("Harness 名单 JSON 写入失败",
+			"component", "http",
+			"operation", "handleHarnessAgents.encode",
+			"error_kind", service.ErrorInternal,
+			"error", encodeAgentsError)
+	}
+}
+
+func handleHarnessAgentMemory(
+	responseWriter http.ResponseWriter,
+	httpRequest *http.Request,
+) {
+	workingDirectory := httpRequest.URL.Query().Get("workingDirectory")
+	if !validateHarnessRequestCommon(
+		responseWriter,
+		"handleHarnessAgentMemory",
+		workingDirectory,
+	) {
+		return
+	}
+	agentName := httpRequest.PathValue("name")
+	harnessRuntime, createRuntimeError := harness.GetOrCreateRuntime(
+		workingDirectory,
+		buildHarnessRuntimeDependencies(config.Load()),
+	)
+	if createRuntimeError != nil {
+		writeAPIError(responseWriter, "handleHarnessAgentMemory.runtime",
+			harness.HarnessConversationID, createRuntimeError)
+		return
+	}
+	agentRecord, agentFound :=
+		harnessRuntime.AgentRegistry().GetAgent(agentName)
+	if !agentFound {
+		writeAPIError(responseWriter, "handleHarnessAgentMemory.agent",
+			harness.HarnessConversationID,
+			invalidRequestError("handleHarnessAgentMemory.agent",
+				fmt.Errorf("没有名为 %q 的 Agent", agentName)))
+		return
+	}
+	agentSession, loadSessionError := projectConversationStore.LoadConversation(
+		workingDirectory,
+		agentRecord.ConversationID,
+	)
+	if loadSessionError != nil {
+		writeAPIError(responseWriter, "handleHarnessAgentMemory.load",
+			harness.HarnessConversationID,
+			service.NewAppError(service.ErrorStorageRead,
+				"handleHarnessAgentMemory.load", 0, loadSessionError))
+		return
+	}
+	responseWriter.Header().Set("Content-Type", "application/json;charset=UTF-8")
+	if encodeMemoryError := json.NewEncoder(responseWriter).Encode(agentSession); encodeMemoryError != nil {
+		slog.Error("Harness Agent 记忆 JSON 写入失败",
+			"component", "http",
+			"operation", "handleHarnessAgentMemory.encode",
+			"error_kind", service.ErrorInternal,
+			"error", encodeMemoryError)
+	}
 }
 
 // ============================================================================
@@ -1179,6 +1481,111 @@ func handleDeleteConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type RecentApplicationLogsJSON struct {
+	Logs []json.RawMessage `json:"logs"`
+}
+
+func handleListRecentApplicationLogs(
+	responseWriter http.ResponseWriter,
+	httpRequest *http.Request,
+) {
+	const defaultMaximumLogEntries = 200
+	const hardMaximumLogEntries = 500
+
+	maximumLogEntries := defaultMaximumLogEntries
+	if requestedLimit := strings.TrimSpace(
+		httpRequest.URL.Query().Get("limit"),
+	); requestedLimit != "" {
+		convertedLimit, convertLimitError := strconv.Atoi(requestedLimit)
+		if convertLimitError != nil ||
+			convertedLimit < 1 ||
+			convertedLimit > hardMaximumLogEntries {
+			writeAPIError(
+				responseWriter,
+				"handleListRecentApplicationLogs.validateLimit",
+				"",
+				invalidRequestError(
+					"handleListRecentApplicationLogs.validateLimit",
+					fmt.Errorf("limit 必须是 1 到 %d 的整数", hardMaximumLogEntries),
+				),
+			)
+			return
+		}
+		maximumLogEntries = convertedLimit
+	}
+
+	recentApplicationLogs, readLogsError :=
+		readRecentApplicationLogs(applicationLogFilePath, maximumLogEntries)
+	if readLogsError != nil {
+		writeAPIError(
+			responseWriter,
+			"handleListRecentApplicationLogs.read",
+			"",
+			service.NewAppError(
+				service.ErrorStorageRead,
+				"handleListRecentApplicationLogs.read",
+				0,
+				readLogsError,
+			),
+		)
+		return
+	}
+
+	responseWriter.Header().Set("Content-Type", "application/json;charset=UTF-8")
+	if encodeLogsError := json.NewEncoder(responseWriter).Encode(
+		RecentApplicationLogsJSON{Logs: recentApplicationLogs},
+	); encodeLogsError != nil {
+		slog.Error(
+			"最近日志 JSON 写入失败",
+			"component", "http",
+			"operation", "handleListRecentApplicationLogs.encode",
+			"error_kind", service.ErrorInternal,
+			"error", encodeLogsError,
+		)
+	}
+}
+
+func readRecentApplicationLogs(
+	logFilePath string,
+	maximumLogEntries int,
+) ([]json.RawMessage, error) {
+	if maximumLogEntries < 1 {
+		return nil, fmt.Errorf("maximumLogEntries 必须大于 0")
+	}
+	applicationLogFile, openLogFileError := os.Open(logFilePath)
+	if os.IsNotExist(openLogFileError) {
+		return []json.RawMessage{}, nil
+	}
+	if openLogFileError != nil {
+		return nil, fmt.Errorf("打开日志文件失败: %w", openLogFileError)
+	}
+	defer applicationLogFile.Close()
+
+	recentApplicationLogs := make([]json.RawMessage, 0, maximumLogEntries)
+	logLineScanner := bufio.NewScanner(applicationLogFile)
+	logLineScanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	for logLineScanner.Scan() {
+		logLine := append([]byte(nil), logLineScanner.Bytes()...)
+		if !json.Valid(logLine) {
+			continue
+		}
+		if len(recentApplicationLogs) == maximumLogEntries {
+			copy(recentApplicationLogs, recentApplicationLogs[1:])
+			recentApplicationLogs[len(recentApplicationLogs)-1] =
+				json.RawMessage(logLine)
+			continue
+		}
+		recentApplicationLogs = append(
+			recentApplicationLogs,
+			json.RawMessage(logLine),
+		)
+	}
+	if scanLogFileError := logLineScanner.Err(); scanLogFileError != nil {
+		return nil, fmt.Errorf("读取日志文件失败: %w", scanLogFileError)
+	}
+	return recentApplicationLogs, nil
 }
 
 // ============================================================================
@@ -1406,6 +1813,10 @@ func main() {
 		slog.Error("工具注册失败", "component", "startup", "tool_name", "create_skill", "error", err)
 		os.Exit(1)
 	}
+	if err := registry.Register(tool.NewFileTool()); err != nil {
+		slog.Error("工具注册失败", "component", "startup", "tool_name", "create_skill", "error", err)
+		os.Exit(1)
+	}
 	mcpServerManager, err = mcp.NewMCPServerManager(
 		"config/mcp_servers.json",
 		"mcp/protocol/2025-11-25/messages.json",
@@ -1419,6 +1830,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Harness prompt 缺失时服务继续启动，但 Harness 路由返回配置错误。
+	harnessPrompts, harnessPromptsLoadError = harness.LoadPrompts(
+		"harness/system_prompt.md",
+		"harness/managed_agent_prompt.md",
+	)
+	if harnessPromptsLoadError != nil {
+		slog.Error("Harness prompt 加载失败，Harness 路由将返回配置错误",
+			"component", "startup",
+			"operation", "harness.LoadPrompts",
+			"error_kind", service.ErrorConfig,
+			"error", harnessPromptsLoadError)
+	}
+
 	http.HandleFunc("POST /api/chat", handleChat)
 	http.HandleFunc("POST /api/chat/stream", handleChatStream)
 	http.HandleFunc("GET /api/mcp/servers", handleListMCPServers)
@@ -1430,8 +1854,18 @@ func main() {
 	)
 	http.HandleFunc("GET /api/conversations/{id}", handleGetConversation)
 	http.HandleFunc("DELETE /api/conversations/{id}", handleDeleteConversation)
+	http.HandleFunc("GET /api/logs", handleListRecentApplicationLogs)
 	http.HandleFunc("POST /api/council", handleCouncil)
 	http.HandleFunc("POST /api/council/stream", handleCouncilStream)
+	http.HandleFunc("POST /api/harness/chat/stream", handleHarnessChatStream)
+	http.HandleFunc("GET /api/harness/agents", handleHarnessAgents)
+	http.HandleFunc(
+		"GET /api/harness/agents/{name}/memory",
+		handleHarnessAgentMemory,
+	)
+	http.HandleFunc("GET /harness", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "harness.html")
+	})
 	http.HandleFunc("GET /council", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "council.html")
 	})

@@ -11,8 +11,8 @@ import (
 	"cc-agent-go/democode/v10/tool"
 )
 
-const maxRounds = 50       // 最大工具调用轮数，和 Java 版一致
-const maxToolResult = 8000 // 工具结果最大字符数，超长截断
+const maxRounds = 50          // 最大工具调用轮数，和 Java 版一致
+const maxToolResult = 8000    // 工具结果最大字符数，超长截断
 const defaultMaxTokens = 4096 // 默认 API max_tokens
 
 // Run 执行 Agent 循环（非流式）。v7 新增会话持久化：

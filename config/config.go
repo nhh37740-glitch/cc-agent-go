@@ -12,6 +12,7 @@ import (
 const defaultMaximumParallelSubAgents = 5
 const hardMaximumParallelSubAgents = 5
 const defaultMaximumSubAgentRounds = 50
+const defaultMaximumHarnessAgents = 11
 const defaultLocalConfigFilePath = "config/local.json"
 
 type localConfigFile struct {
@@ -26,6 +27,7 @@ type Config struct {
 	CompressionThreshold     int // token 压缩阈值，默认 100000（和 Java 版一致）
 	MaximumParallelSubAgents int // 同一次 run_subagent 最多并行执行的 SubAgent 数量
 	MaximumSubAgentRounds    int // run_subagent 单项任务允许填写的最高轮数
+	MaximumHarnessAgents     int // Harness 被管理 Agent 池容量上限
 }
 
 // Load 读取运行配置。DEEPSEEK_API_KEY 环境变量优先；
@@ -38,6 +40,7 @@ func Load() Config {
 		CompressionThreshold:     100000,
 		MaximumParallelSubAgents: loadMaximumParallelSubAgents(),
 		MaximumSubAgentRounds:    loadMaximumSubAgentRounds(),
+		MaximumHarnessAgents:     loadMaximumHarnessAgents(),
 	}
 }
 
@@ -113,4 +116,20 @@ func loadMaximumSubAgentRounds() int {
 	}
 
 	return maximumSubAgentRounds
+}
+
+func loadMaximumHarnessAgents() int {
+	configuredMaximumHarnessAgents :=
+		os.Getenv("MAX_HARNESS_AGENTS")
+	if configuredMaximumHarnessAgents == "" {
+		return defaultMaximumHarnessAgents
+	}
+
+	maximumHarnessAgents, convertConfigurationError :=
+		strconv.Atoi(configuredMaximumHarnessAgents)
+	if convertConfigurationError != nil || maximumHarnessAgents < 1 {
+		return defaultMaximumHarnessAgents
+	}
+
+	return maximumHarnessAgents
 }

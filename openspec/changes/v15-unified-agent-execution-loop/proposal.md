@@ -17,7 +17,9 @@
 - 主 Agent 与 SubAgent 调用同一个 `Agent.Run()`；SubAgent、后台回调和未来应用都由调用者传入自己的工作目录和会话 ID。
 - 狼人杀、剧本杀、元老院作为 Agent 外部的第二次包装：它们保存自己的角色、回合和规则，然后把工作目录、角色对应的会话 ID 和当前任务传给 `Agent.Run()`；不得在 `agent` 包中增加应用名称或应用分支。
 - 使用不同的具体事件类型表示轮次、文字、工具、记忆读取、记忆压缩、记忆保存和 Agent 完成；删除首字符 `{` 判断。
-- 保留浏览器 WebAgent，页面增加工作目录和会话 ID 输入；页面只提交任务并显示执行结果，不继续实现聊天机器人页面。
+- 保留浏览器 WebAgent。用户选择项目工作目录后，页面读取该项目的全部会话摘要；点击会话后加载历史消息。用户开始新会话时不填写会话 ID，由 Go HTTP handler 调用 `service.GenerateConversationId()` 创建，再把实际 ID 传给 `Agent.Run()`。
+- WebAgent 页面显示本次 Agent SSE 事件和服务端结构化日志；日志接口只返回 `logs/server.jsonl` 中已经脱敏的最近记录。
+- WebAgent 页面读取并管理 MCP Server 列表；请求失败时显示实际 HTTP 状态和后端错误 JSON，不能把“Go 服务未启动”和“配置中没有 MCP Server”显示成同一个结果。
 - 非目标：本次不实现狼人杀、剧本杀或元老院的新版本；不修改 `RunCouncil`；不增加取消、重试、checkpoint、服务重启恢复、A2A、WebSocket 或 MCP 并发控制。
 
 ## Capabilities
@@ -37,6 +39,7 @@
 - 新增 `modeltoken/` 和模型 tokenizer 配置文件；`go.mod` 允许且只为 tokenizer 增加 `github.com/amikos-tech/pure-tokenizers v0.1.5`。启动服务时加载固定版本的原生 tokenizer 库和 DeepSeek V4 官方 `tokenizer.json`，不得在每次 Agent 请求中重新下载。
 - 修改 `tool/`，让工具执行函数收到本次 Agent 的工作目录和会话 ID；`BashTool` 不再保存固定 workspace。
 - 修改 `service/agent.go` 和 `service/subagent.go`，创建具体 Agent 运行环境与任务输入并调用 `Agent.Run()`，不再拥有模型—工具循环或手工加载全部会话消息。
-- 修改 `main.go` 和 HTTP 请求类型，接收前端传来的 `workingDirectory`、`conversationId` 和任务，按具体 Agent 事件编码 HTTP/SSE。
-- 修改 `index.html`，增加项目工作目录和会话 ID 输入，保留 WebAgent 浏览器入口。
+- 修改 `main.go` 和 HTTP 请求类型，接收前端传来的 `workingDirectory`、可为空的 `conversationId` 和任务；为空时由 handler 创建 ID，再按具体 Agent 事件编码 HTTP/SSE。
+- 修改 `main.go`，保留按项目目录列出、读取和删除会话的接口，并增加只读取最近脱敏 JSON 日志的接口。
+- 修改 `index.html`，实现项目会话列表、历史消息、新会话、任务输入、运行日志、最终结果和 MCP Server 管理。
 - 更新 `PROJECT_INDEX.md`、`ROADMAP.md`、`README.md` 和 `AGENTS.md` 中的实际调用关系与版本状态。

@@ -155,6 +155,7 @@ if err := action(); err != nil {
 | `GET` | `/api/conversations/{id}` | 加载指定会话 |
 | `GET` | `/api/conversations/{id}/events` | 保持会话事件 SSE，接收后台主 Agent回复 |
 | `DELETE` | `/api/conversations/{id}` | 删除指定会话 |
+| `GET` | `/api/logs` | 返回 `logs/server.jsonl` 最近的脱敏 JSON 日志 |
 | `POST` | `/api/council` | 非流式元老院讨论 |
 | `POST` | `/api/council/stream` | SSE 元老院讨论 |
 
@@ -310,7 +311,7 @@ if err := action(); err != nil {
 
 1. **限制第三方依赖**：唯一允许的直接第三方功能依赖是 `github.com/amikos-tech/pure-tokenizers v0.1.5`；它的间接依赖由 `go mod tidy` 固定。不使用 Gin、Echo、Chi 等 HTTP 框架
 2. **每步可编译运行**：绝不提交无法通过 `go build ./...` 的代码
-3. **不做 SQLite**：存储只用项目目录中的 JSON 文件；WebAgent 页面只展示任务输入、Agent 事件和结果，不恢复聊天机器人页面
+3. **不做 SQLite**：存储只用项目目录中的 JSON 文件；WebAgent 页面展示项目会话列表、历史记录、任务、Agent 事件、日志和结果，不恢复聊天气泡页面
 4. **路径安全**：所有文件操作经过 `validator.go`（`filepath.Abs → Clean → HasPrefix`），禁止目录逃逸
 5. **Bash 安全**：白名单命令 + 禁止 shell 控制字符（`;` `|` `&&` `$()` 反引号），30 秒超时
 6. **凭证安全**：真实 Key 只能来自 `DEEPSEEK_API_KEY` 或被 Git 忽略的 `config/local.json`，不得写入正式 Go 文件、示例文件或 Git 提交
@@ -347,7 +348,7 @@ v9 新功能：元老院多 Agent 辩论，回合制发言，SSE 流式推送，
 v10 新功能：Skill 系统 —— `activate_skill` 工具动态加载 skill prompt，`create_skill` 工具创建新 skill，skill 文件存于 `workspace/skills/`。`Description()` 每次扫目录自动发现新 skill，Execute() 按文件名匹配。Agent 可用 bash 工具增删 skill 文件，无需重启服务。
 v11 完成功能：使用 `slog` 输出 JSON 日志；把配置、网络、DeepSeek、存储和 Agent 轮数错误分类；普通 HTTP 接口返回统一 JSON 错误，SSE 返回统一 error 事件；工具错误继续作为 tool_result 交给下一次 LLM 调用。狼人杀实验仅保留在 `feature/v11-werewolf` 分支。
 v12 完成功能：从 JSON 读取 MCP Server 配置和 MCP 2025-11-25 标准消息；网页选择后启动 Playwright MCP；完成 initialize、notifications/initialized、tools/list、tools/call；把 MCP 工具动态注册到现有工具表；停止选择后删除工具并结束进程。
-v15 完成功能：调用者每次传入工作目录、会话编号和具体任务类型；`agent.Agent.Run` 保存唯一循环；第一次模型请求只发送当前任务和历史文件位置；Bash、Skill、MCP 和 SubAgent 使用同一工具表；会话写入项目 `.cc-agent/sessions/`；DeepSeek V4 官方 tokenizer 负责请求、工具结果和记忆文件计数；WebAgent 显示具体事件和最终结果。
+v15 完成功能：调用者每次传入工作目录、会话编号和具体任务类型；WebAgent 新会话由 Go HTTP handler 创建编号；`agent.Agent.Run` 保存唯一循环；第一次模型请求只发送当前任务和历史文件位置；Bash、Skill、MCP 和 SubAgent 使用同一工具表；会话写入项目 `.cc-agent/sessions/`；DeepSeek V4 官方 tokenizer 负责请求、工具结果和记忆文件计数；WebAgent 显示当前项目会话、历史、Agent 事件、脱敏服务日志、最终结果和 MCP Server。
 
 每个版本完成后：将对应行状态更新为 ✅，并更新上方的 "当前版本" 字段。
 

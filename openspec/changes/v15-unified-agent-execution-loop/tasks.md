@@ -139,3 +139,18 @@
 - [x] 15.10 使用不同工作目录和相同会话 ID，确认两份历史记录完全分开
 - [x] 15.11 检查 Git 差异不包含 API Key、用户项目数据、`.cc-agent/sessions/`、日志或无关文件
 - [x] 15.12 运行 `openspec validate v15-unified-agent-execution-loop --strict --json`
+
+## 16. 修正 WebAgent 项目会话、日志和 MCP 页面
+
+- [x] 16.1 WebAgent 新任务允许 `conversationId` 为空；`handleChat` 和 `handleChatStream` 调用 `service.GenerateConversationId()` 创建实际 ID
+- [x] 16.2 增加 handler 测试，确认新会话由 Go 创建 ID，已有会话继续使用原 ID
+- [x] 16.3 页面删除会话 ID 输入，增加“新建会话”和当前实际会话 ID 显示
+- [x] 16.4 页面调用 `GET /api/conversations?workingDirectory=...` 显示当前项目全部会话
+- [x] 16.5 点击会话后调用 `GET /api/conversations/{id}?workingDirectory=...` 并显示 user、assistant 历史记录
+- [x] 16.6 增加 `GET /api/logs?limit=...`，只返回 `logs/server.jsonl` 最近的有效脱敏 JSON 日志
+- [x] 16.7 页面增加运行日志区域，显示 Agent SSE 事件和服务端结构化日志
+- [x] 16.8 MCP 列表和启动请求检查 HTTP 状态，显示真实后端错误；服务恢复后可以重新刷新
+- [x] 16.9 重新设计桌面和窄屏布局，保留工作目录、项目会话、历史、任务、日志、结果和 MCP Server
+- [x] 16.10 更新 `PROJECT_INDEX.md`、`README.md`、`ROADMAP.md` 和 `AGENTS.md`
+- [x] 16.11 运行格式化、测试、静态检查、编译和 OpenSpec 严格校验
+- [x] 16.12 启动 Go 服务，在浏览器验证新会话编号、项目会话列表、历史加载、日志和 MCP Server 列表

@@ -64,7 +64,7 @@ v0–v10 已经完成 Agent 基础能力：HTTP、SSE、模型调用、工具循
 - 普通工具、动态 MCP 工具和终止当前回复的工具不在 `Agent.Run` 中写名称分支
 - DeepSeek V4 官方 tokenizer 在每次 API 调用前计算实际准备请求 token
 - 工具结果按 token 截断；当前执行和历史文件分别检查与压缩
-- WebAgent 页面要求填写项目目录、会话编号和当前任务，并显示具体 Agent 事件
+- WebAgent 页面要求填写项目目录和当前任务；新会话编号由 Go 创建；页面按项目目录显示全部会话与历史，同时显示 Agent 事件、服务端 JSON 日志和 MCP Server 状态
 - `host.RunParticipantTurn` 展示外部主持人如何用同一个 Agent 执行角色任务
 - v15 不新增取消、重试、checkpoint、A2A、WebSocket 或 MCP 并发控制
 

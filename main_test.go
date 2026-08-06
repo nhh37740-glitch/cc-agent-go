@@ -159,6 +159,109 @@ func TestHandleChatStreamMissingAPIKey(t *testing.T) {
 	}
 }
 
+func TestHandleChatStreamGeneratesConversationIDWhenMissing(t *testing.T) {
+	t.Setenv("DEEPSEEK_API_KEY", "")
+	t.Setenv("CC_AGENT_LOCAL_CONFIG", filepath.Join(t.TempDir(), "missing.json"))
+	workingDirectory := t.TempDir()
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/chat/stream",
+		strings.NewReader(fmt.Sprintf(
+			`{"workingDirectory":%q,"conversationId":"","message":"test"}`,
+			workingDirectory,
+		)),
+	)
+
+	handleChatStream(recorder, request)
+
+	responseFrames := strings.Split(recorder.Body.String(), "\n\n")
+	if len(responseFrames) < 1 {
+		t.Fatalf("SSE response has no frame: %s", recorder.Body.String())
+	}
+	firstDataLine := strings.TrimPrefix(responseFrames[0], "data: ")
+	var conversationIDEvent struct {
+		Type           string `json:"type"`
+		ConversationID string `json:"conversationId"`
+	}
+	if decodeConversationIDError := json.Unmarshal(
+		[]byte(firstDataLine),
+		&conversationIDEvent,
+	); decodeConversationIDError != nil {
+		t.Fatalf("decode conversation ID event: %v", decodeConversationIDError)
+	}
+	if conversationIDEvent.Type != "conversation_id" {
+		t.Fatalf("event type = %q, want conversation_id", conversationIDEvent.Type)
+	}
+	if conversationIDEvent.ConversationID == "" {
+		t.Fatal("generated conversation ID is empty")
+	}
+	if _, buildSessionPathError := projectConversationStore.SessionFilePath(
+		workingDirectory,
+		conversationIDEvent.ConversationID,
+	); buildSessionPathError != nil {
+		t.Fatalf("generated conversation ID is not safe: %v", buildSessionPathError)
+	}
+}
+
+func TestHandleChatStreamKeepsSelectedConversationID(t *testing.T) {
+	t.Setenv("DEEPSEEK_API_KEY", "")
+	t.Setenv("CC_AGENT_LOCAL_CONFIG", filepath.Join(t.TempDir(), "missing.json"))
+	workingDirectory := t.TempDir()
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/chat/stream",
+		strings.NewReader(fmt.Sprintf(
+			`{"workingDirectory":%q,"conversationId":"selected-conversation","message":"test"}`,
+			workingDirectory,
+		)),
+	)
+
+	handleChatStream(recorder, request)
+
+	if !strings.Contains(
+		recorder.Body.String(),
+		`"conversationId":"selected-conversation"`,
+	) {
+		t.Fatalf(
+			"SSE response did not keep selected conversation ID: %s",
+			recorder.Body.String(),
+		)
+	}
+}
+
+func TestReadRecentApplicationLogsKeepsOnlyRecentValidJSON(t *testing.T) {
+	logFilePath := filepath.Join(t.TempDir(), "server.jsonl")
+	logFileContents := strings.Join([]string{
+		`{"time":"first","level":"INFO"}`,
+		`not-json`,
+		`{"time":"second","level":"WARN"}`,
+		`{"time":"third","level":"ERROR"}`,
+	}, "\n")
+	if writeLogFileError := os.WriteFile(
+		logFilePath,
+		[]byte(logFileContents),
+		0o644,
+	); writeLogFileError != nil {
+		t.Fatalf("write test log file: %v", writeLogFileError)
+	}
+
+	recentLogs, readLogsError := readRecentApplicationLogs(logFilePath, 2)
+	if readLogsError != nil {
+		t.Fatalf("read recent application logs: %v", readLogsError)
+	}
+	if len(recentLogs) != 2 {
+		t.Fatalf("recent log count = %d, want 2", len(recentLogs))
+	}
+	if !strings.Contains(string(recentLogs[0]), `"time":"second"`) ||
+		!strings.Contains(string(recentLogs[1]), `"time":"third"`) {
+		t.Fatalf("recent logs are not the last two valid entries: %s", recentLogs)
+	}
+}
+
 func TestHandleConversationEventsSendsEventAndRemovesDisconnectedReceiver(
 	t *testing.T,
 ) {

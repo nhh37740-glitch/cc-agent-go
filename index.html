@@ -1,317 +1,2391 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="classic" data-panels-open="false">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>cc-agent-go WebAgent</title>
+    <title>cc-agent-go</title>
     <style>
-        :root {
-            color-scheme: light;
-            font-family: Inter, "Microsoft YaHei", system-ui, sans-serif;
-            background: #f4f7fb;
-            color: #172033;
+        /* ============================================================
+           基础变量（默认 = 经典 Classic）
+           ============================================================ */
+        :root, html[data-theme="classic"] {
+            color-scheme: dark;
+            --bg: #090b10;
+            --panel: #11141b;
+            --panel-2: #171b24;
+            --panel-3: #1d222d;
+            --border: #272d3a;
+            --border-strong: #394154;
+            --text: #e8ecf4;
+            --text-dim: #8f99aa;
+            --text-faint: #626c7e;
+            --accent: #75a7ff;
+            --accent-strong: #4b86f7;
+            --accent-soft: rgba(81, 137, 241, .13);
+            --green: #4ed0a0;
+            --yellow: #efc76b;
+            --red: #ff7d8a;
+            --bubble-user-bg: #141c2a;
+            --bubble-user-border: #2d3e5d;
+            --topbar-bg: rgba(13, 16, 22, .96);
+            --radius: 14px;
+            --radius-sm: 9px;
+            --font-ui: Inter, "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+            --font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+            --font-body: var(--font-ui);
         }
+
         * { box-sizing: border-box; }
-        body { margin: 0; }
-        main { max-width: 1120px; margin: 0 auto; padding: 32px 20px 60px; }
-        header { margin-bottom: 24px; }
-        h1 { margin: 0 0 8px; font-size: 30px; }
-        .subtitle { margin: 0; color: #62708a; }
-        .layout { display: grid; grid-template-columns: 390px 1fr; gap: 20px; }
-        .panel {
-            background: white;
-            border: 1px solid #dfe6f1;
-            border-radius: 16px;
-            box-shadow: 0 12px 30px rgba(31, 50, 81, .07);
-            padding: 20px;
-        }
-        label { display: block; margin: 0 0 7px; font-size: 13px; font-weight: 700; }
-        input, textarea {
-            width: 100%;
-            border: 1px solid #cfd9e8;
-            border-radius: 10px;
-            padding: 11px 12px;
-            font: inherit;
-            color: #172033;
-            background: #fbfcfe;
-        }
-        input:focus, textarea:focus {
-            outline: 2px solid #a8c7ff;
-            border-color: #72a3f7;
-        }
-        textarea { min-height: 180px; resize: vertical; line-height: 1.6; }
-        .field { margin-bottom: 16px; }
-        button {
-            border: 0;
-            border-radius: 10px;
-            padding: 11px 15px;
-            font: inherit;
-            font-weight: 700;
-            cursor: pointer;
-        }
-        button:disabled { opacity: .55; cursor: not-allowed; }
-        .primary { width: 100%; color: white; background: #2563eb; }
-        .secondary { color: #1e4e98; background: #e8f0ff; }
-        .status {
-            margin-top: 14px;
-            border-radius: 10px;
-            padding: 10px 12px;
-            color: #53627b;
-            background: #f2f5fa;
-            font-size: 13px;
-        }
-        .status.running { color: #795700; background: #fff5cc; }
-        .status.failed { color: #9f1d2b; background: #ffe9ec; }
-        .status.completed { color: #116b46; background: #e2f8ee; }
-        .panel-title { margin: 0 0 15px; font-size: 17px; }
-        #event-list { display: grid; gap: 9px; max-height: 420px; overflow: auto; }
-        .event {
-            display: grid;
-            grid-template-columns: 150px 1fr;
-            gap: 12px;
-            border: 1px solid #e2e8f2;
-            border-radius: 10px;
-            padding: 10px 12px;
-            background: #fafcff;
-            font-size: 13px;
-        }
-        .event-name { color: #315d9f; font-family: ui-monospace, monospace; }
-        .event-value { color: #44516a; white-space: pre-wrap; overflow-wrap: anywhere; }
-        #final-result {
-            min-height: 150px;
+        body {
             margin: 0;
-            white-space: pre-wrap;
-            line-height: 1.65;
-            overflow-wrap: anywhere;
+            min-height: 100vh;
+            overflow: hidden;
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font-body);
         }
-        .stack { display: grid; gap: 20px; }
-        .mcp-row {
+        button, input, textarea, select { font: inherit; }
+        button { color: inherit; }
+
+        /* 主题装饰层：默认全部隐藏，由对应主题启用 */
+        .fx { display: none; }
+
+        .app {
+            height: 100vh;
+            overflow: hidden;
+            display: grid;
+            grid-template-rows: auto minmax(0, 1fr);
+        }
+
+        /* ============================================================
+           顶栏
+           ============================================================ */
+        .topbar {
+            min-height: 58px;
+            position: relative;
+            z-index: 60;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 12px;
-            border-top: 1px solid #edf0f5;
-            padding: 10px 0;
+            gap: 18px;
+            padding: 0 20px;
+            border-bottom: 1px solid var(--border);
+            background: var(--topbar-bg);
         }
-        .mcp-row:first-child { border-top: 0; }
-        .mcp-name { font-weight: 700; }
-        .mcp-state { color: #68768e; font-size: 12px; }
-        .actions { display: flex; gap: 8px; margin-bottom: 10px; }
-        @media (max-width: 850px) {
-            .layout { grid-template-columns: 1fr; }
+        .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+        .brand-mark {
+            width: 28px;
+            height: 28px;
+            display: grid;
+            place-items: center;
+            border: 1px solid #4777cf;
+            border-radius: 9px;
+            color: #a8c5ff;
+            background: #172445;
+            font: 700 13px var(--font-mono);
+        }
+        .brand-name { font-weight: 720; letter-spacing: -.02em; }
+        .brand-version { color: var(--text-faint); font-size: 12px; }
+        .topbar-tools { display: flex; align-items: center; gap: 12px; }
+
+        .theme-picker { display: flex; align-items: center; gap: 7px; }
+        .theme-picker-label { color: var(--text-dim); font-size: 12px; }
+        .theme-picker select {
+            height: 32px;
+            padding: 0 8px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: var(--panel-2);
+            color: var(--text);
+            cursor: pointer;
+        }
+
+        .server-state { display: flex; align-items: center; gap: 8px; color: var(--text-dim); font-size: 12px; }
+        .server-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-faint);
+            box-shadow: 0 0 0 3px rgba(98, 108, 126, .13);
+        }
+        .server-dot.online { background: var(--green); box-shadow: 0 0 0 3px rgba(78, 208, 160, .13); }
+        .server-dot.offline { background: var(--red); box-shadow: 0 0 0 3px rgba(255, 125, 138, .13); }
+
+        /* 面板开关：只在抽屉式主题中显示 */
+        .panels-toggle { display: none; }
+
+        /* 项目目录选择（顶栏中间） */
+        .project-picker {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            max-width: 560px;
+            min-width: 0;
+        }
+        .project-picker-icon { font-size: 14px; }
+        .project-picker input {
+            flex: 1;
+            height: 34px;
+            min-width: 0;
+            padding: 0 11px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: var(--panel-2);
+            color: var(--text);
+            outline: none;
+            font-size: 12px;
+            font-family: var(--font-mono);
+        }
+        .project-picker input:focus { border-color: var(--accent-strong); box-shadow: 0 0 0 3px var(--accent-soft); }
+        .project-picker input::placeholder { color: var(--text-faint); }
+
+        /* 日志标签页 */
+        .diagnostics-tabs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px;
+            padding: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+        .tab-button {
+            height: 31px;
+            border: 0;
+            border-radius: 8px;
+            color: var(--text-dim);
+            background: transparent;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .tab-button.active { color: var(--text); background: var(--panel-3); }
+        .log-pane { display: none; }
+        .log-pane.active { display: block; }
+        html[data-theme="terminal"] .tab-button { border-radius: 0; }
+        html[data-theme="terminal"] .project-picker input { border-radius: 0; }
+        html[data-theme="zen"] .project-picker input {
+            border: 0;
+            border-bottom: 1px solid var(--border-strong);
+            border-radius: 0;
+            background: transparent;
+        }
+
+        /* 默认提示词设置弹出面板 */
+        .prompt-settings { position: relative; }
+        .prompt-settings summary { list-style: none; user-select: none; }
+        .prompt-settings summary::-webkit-details-marker { display: none; }
+        .prompt-active-dot {
+            display: none;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--green);
+        }
+        .prompt-active-dot.active { display: inline-block; }
+        .prompt-popover {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            z-index: 70;
+            width: min(340px, 90vw);
+            padding: 14px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: var(--panel-2);
+            box-shadow: 0 14px 40px rgba(0, 0, 0, .35);
+        }
+        .prompt-popover-title {
+            margin-bottom: 8px;
+            color: var(--text-dim);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: .05em;
+        }
+        .prompt-popover textarea {
+            width: 100%;
+            min-height: 110px;
+            resize: vertical;
+            padding: 10px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: var(--bg);
+            color: var(--text);
+            font-size: 12px;
+            line-height: 1.6;
+            outline: none;
+        }
+        .prompt-popover textarea:focus { border-color: var(--accent-strong); }
+        .prompt-popover-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .prompt-popover-hint { margin-right: auto; color: var(--text-faint); font-size: 10px; }
+        .prompt-popover-hint.active { color: var(--green); }
+        html[data-theme="terminal"] .prompt-popover { border-radius: 0; box-shadow: 0 0 18px rgba(51, 255, 102, .25); }
+        html[data-theme="paper"] .prompt-popover { box-shadow: 3px 3px 0 var(--panel-3); }
+        html[data-theme="neon"] .prompt-popover { background: var(--panel-3); backdrop-filter: blur(14px); }
+
+        /* ============================================================
+           工作区：默认三栏（经典）
+           ============================================================ */
+        .workspace {
+            min-height: 0;
+            display: grid;
+            grid-template-columns: 276px minmax(0, 1fr) 370px;
+        }
+        .panel {
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--border);
+            background: var(--panel);
+        }
+        .panel-chat { background: var(--bg); position: relative; }
+        .panel:last-child { border-right: 0; }
+
+        .section-header {
+            min-height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 0 14px;
+            border-bottom: 1px solid var(--border);
+        }
+        .section-title {
+            margin: 0;
+            font-size: 12px;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+        }
+        .section-count {
+            min-width: 24px;
+            height: 22px;
+            display: grid;
+            place-items: center;
+            padding: 0 7px;
+            border-radius: 999px;
+            color: var(--text-dim);
+            background: var(--panel-3);
+            font-size: 11px;
+        }
+
+        /* 会话列表 */
+        .conversation-list { flex: 1; min-height: 120px; overflow: auto; padding: 8px; }
+        .conversation-card {
+            width: 100%;
+            display: block;
+            margin: 0 0 5px;
+            padding: 10px 11px;
+            border: 1px solid transparent;
+            border-radius: 10px;
+            text-align: left;
+            background: transparent;
+            cursor: pointer;
+        }
+        .conversation-card:hover { background: var(--panel-2); }
+        .conversation-card.active { border-color: var(--accent-strong); background: var(--accent-soft); }
+        .conversation-title {
+            display: block;
+            overflow: hidden;
+            color: var(--text);
+            font-size: 13px;
+            font-weight: 650;
+            line-height: 1.4;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .conversation-meta {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            margin-top: 6px;
+            color: var(--text-faint);
+            font-size: 10px;
+        }
+
+        /* MCP 面板：用原生 details 折叠，所有主题通用 */
+        .mcp-panel { border-top: 1px solid var(--border); }
+        .mcp-panel summary {
+            min-height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 14px;
+            color: var(--text-dim);
+            font-size: 12px;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            cursor: pointer;
+            list-style: none;
+        }
+        .mcp-panel summary::-webkit-details-marker { display: none; }
+        .mcp-panel summary::after { content: "▸"; color: var(--text-faint); }
+        .mcp-panel[open] summary::after { content: "▾"; }
+        .mcp-actions { display: flex; gap: 6px; padding: 4px 14px 8px; }
+        .mcp-list { max-height: 240px; overflow: auto; padding: 2px 14px 12px; }
+        .mcp-row {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 9px;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .mcp-row:last-child { border-bottom: 0; }
+        .mcp-row input { width: 15px; height: 15px; margin: 0; accent-color: var(--accent-strong); }
+        .mcp-name { display: block; overflow: hidden; font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+        .mcp-detail { color: var(--text-faint); font-size: 10px; }
+        .state-pill { padding: 3px 7px; border-radius: 999px; color: var(--text-dim); background: var(--panel-3); font-size: 10px; }
+        .state-pill.running { color: var(--green); background: rgba(78, 208, 160, .11); }
+
+        /* 当前会话条 */
+        .active-session {
+            min-height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 0 18px;
+            border-bottom: 1px solid var(--border);
+        }
+        .active-session-copy { min-width: 0; }
+        .active-session-label { color: var(--text-faint); font-size: 10px; text-transform: uppercase; letter-spacing: .07em; }
+        .active-session-value {
+            margin-top: 3px;
+            overflow: hidden;
+            color: var(--text-dim);
+            font: 11px var(--font-mono);
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .run-status { display: flex; align-items: center; gap: 7px; color: var(--text-dim); font-size: 11px; }
+        .run-status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); }
+        .run-status.running .run-status-dot { background: var(--yellow); animation: pulse 1.4s infinite; }
+        .run-status.completed .run-status-dot { background: var(--green); }
+        .run-status.failed .run-status-dot { background: var(--red); }
+        @keyframes pulse { 50% { opacity: .35; } }
+
+        /* 对话区 */
+        .history {
+            flex: 1;
+            min-height: 200px;
+            overflow: auto;
+            padding: 24px clamp(18px, 4vw, 54px);
+        }
+        .empty-state {
+            height: 100%;
+            min-height: 160px;
+            display: grid;
+            place-items: center;
+            color: var(--text-faint);
+            text-align: center;
+        }
+        .empty-state strong { display: block; margin-bottom: 7px; color: var(--text-dim); font-size: 14px; }
+
+        .message { max-width: 820px; margin: 0 auto 22px; }
+        .message-role {
+            margin-bottom: 7px;
+            color: var(--text-faint);
+            font-size: 10px;
+            font-weight: 750;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+        .message-body {
+            color: var(--text);
+            font-size: 14px;
+            line-height: 1.75;
+            overflow-wrap: anywhere;
+        }
+        /* 用户消息靠右，气泡内文字保持左对齐 */
+        .message.user { text-align: right; }
+        .message.user .message-body {
+            display: inline-block;
+            padding: 10px 13px;
+            border: 1px solid var(--bubble-user-border);
+            border-radius: 12px;
+            background: var(--bubble-user-bg);
+            white-space: pre-wrap;
+            text-align: left;
+        }
+        .message.tool .message-body {
+            padding: 10px 12px;
+            border-left: 2px solid var(--border-strong);
+            color: var(--text-dim);
+            font: 11px/1.6 var(--font-mono);
+            white-space: pre-wrap;
+        }
+        .message.error .message-body {
+            padding: 10px 13px;
+            border: 1px solid rgba(255, 125, 138, .3);
+            border-radius: 10px;
+            color: var(--red);
+            background: rgba(255, 125, 138, .07);
+        }
+
+        /* 流式光标 */
+        .message.streaming .message-body::after {
+            content: "▍";
+            color: var(--accent);
+            animation: blink 1s steps(2) infinite;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        /* 思考动画 */
+        .thinking-dots { display: inline-flex; gap: 5px; padding: 4px 0; }
+        .thinking-dots span {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--text-faint);
+            animation: think 1.2s infinite;
+        }
+        .thinking-dots span:nth-child(2) { animation-delay: .2s; }
+        .thinking-dots span:nth-child(3) { animation-delay: .4s; }
+        @keyframes think { 0%, 60%, 100% { opacity: .3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-4px); } }
+
+        /* Markdown 渲染样式 */
+        .message-body p { margin: 0 0 .7em; }
+        .message-body p:last-child { margin-bottom: 0; }
+        .md-h { margin: 1em 0 .5em; line-height: 1.4; }
+        .md-h:first-child { margin-top: 0; }
+        .md-pre {
+            margin: .7em 0;
+            padding: 12px 14px;
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: var(--panel-2);
+            font: 12px/1.6 var(--font-mono);
+        }
+        .md-code {
+            padding: 1px 5px;
+            border-radius: 5px;
+            background: var(--panel-3);
+            font: .92em var(--font-mono);
+        }
+        .md-pre .md-code, .md-pre code { padding: 0; background: none; }
+        .md-quote {
+            margin: .7em 0;
+            padding: 4px 14px;
+            border-left: 3px solid var(--border-strong);
+            color: var(--text-dim);
+        }
+        .md-hr { margin: 1em 0; border: 0; border-top: 1px solid var(--border); }
+        .message-body ul, .message-body ol { margin: .5em 0; padding-left: 1.6em; }
+        .message-body li { margin: .2em 0; }
+        .message-body a { color: var(--accent); }
+
+        /* 回到最新按钮 */
+        .back-to-bottom {
+            position: absolute;
+            right: 26px;
+            bottom: 118px;
+            z-index: 10;
+            display: none;
+            align-items: center;
+            gap: 6px;
+            height: 34px;
+            padding: 0 14px;
+            border: 1px solid var(--border-strong);
+            border-radius: 999px;
+            background: var(--panel-2);
+            color: var(--text-dim);
+            cursor: pointer;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
+        }
+        .back-to-bottom.visible { display: inline-flex; }
+        .back-to-bottom:hover { color: var(--text); border-color: var(--accent); }
+
+        /* 输入区 */
+        .composer { padding: 14px 18px 16px; border-top: 1px solid var(--border); background: var(--panel); }
+        .composer textarea {
+            width: 100%;
+            min-height: 92px;
+            max-height: 260px;
+            resize: vertical;
+            padding: 12px 13px;
+            border: 1px solid var(--border);
+            border-radius: 11px;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.55;
+            outline: none;
+        }
+        .composer textarea:focus { border-color: var(--accent-strong); box-shadow: 0 0 0 3px var(--accent-soft); }
+        .composer textarea::placeholder { color: var(--text-faint); }
+        .composer-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 9px; }
+        .composer-help { color: var(--text-faint); font-size: 10px; }
+
+        /* 按钮 */
+        .button {
+            height: 36px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 0 13px;
+            background: var(--panel-2);
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .button:hover { border-color: var(--border-strong); background: var(--panel-3); }
+        .button:disabled { opacity: .48; cursor: not-allowed; }
+        .button.primary { border-color: var(--accent-strong); background: var(--accent-strong); color: #fff; }
+        .button.ghost { background: transparent; }
+        .button.small { height: 30px; padding: 0 10px; font-size: 12px; }
+
+        /* 运行日志 */
+        .log-list { flex: 1; min-height: 0; overflow: auto; padding: 8px; }
+        .log-row {
+            display: grid;
+            grid-template-columns: 66px minmax(0, 1fr);
+            gap: 8px;
+            padding: 9px 8px;
+            border-bottom: 1px solid var(--border);
+            font: 10px/1.55 var(--font-mono);
+        }
+        .log-time { color: var(--text-faint); }
+        .log-main { min-width: 0; overflow-wrap: anywhere; }
+        .log-name { color: var(--accent); }
+        .log-message { margin-top: 3px; color: var(--text-dim); white-space: pre-wrap; }
+        .muted-copy { padding: 12px 5px; color: var(--text-faint); font-size: 11px; }
+        .inline-error {
+            margin: 9px 4px;
+            padding: 10px;
+            border: 1px solid rgba(255, 125, 138, .28);
+            border-radius: 9px;
+            color: var(--red);
+            background: rgba(255, 125, 138, .07);
+            font-size: 11px;
+            line-height: 1.55;
+            white-space: pre-wrap;
+        }
+
+        /* 底部状态栏：默认隐藏，终端 / 曜石启用 */
+        .statusbar { display: none; }
+
+        /* ============================================================
+           主题 2 · 纸墨 Paper —— 对话即文档
+           布局：顶部横向会话条 + 居中阅读栏 + 右侧抽屉日志
+           ============================================================ */
+        html[data-theme="paper"] {
+            color-scheme: light;
+            --bg: #f3eee3;
+            --panel: #faf6ec;
+            --panel-2: #fffdf7;
+            --panel-3: #ece5d3;
+            --border: #e0d7c2;
+            --border-strong: #c5b892;
+            --text: #2d2820;
+            --text-dim: #7d7462;
+            --text-faint: #a89e88;
+            --accent: #b3442c;
+            --accent-strong: #b3442c;
+            --accent-soft: rgba(179, 68, 44, .08);
+            --green: #3d8a5f;
+            --yellow: #b8892a;
+            --red: #c04a4a;
+            --bubble-user-bg: #fffdf7;
+            --bubble-user-border: #c5b892;
+            --topbar-bg: #faf6ec;
+            --font-body: Georgia, "Noto Serif SC", "Songti SC", "SimSun", serif;
+            --radius: 6px;
+            --radius-sm: 4px;
+        }
+        html[data-theme="paper"] .brand-mark { border-color: var(--accent); color: var(--accent); background: transparent; border-radius: 2px; }
+        html[data-theme="paper"] .brand-name { font-variant: small-caps; letter-spacing: .04em; }
+        html[data-theme="paper"] .panels-toggle { display: inline-flex; }
+        html[data-theme="paper"] .workspace { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+        html[data-theme="paper"] .panel-sessions {
+            border-right: 0;
+            border-bottom: 2px solid var(--border-strong);
+            background: var(--panel);
+        }
+        html[data-theme="paper"] .panel-sessions .section-header { min-height: 40px; border-bottom: 0; padding-bottom: 0; }
+        html[data-theme="paper"] .panel-sessions .conversation-list {
+            display: flex;
+            gap: 12px;
+            overflow-x: auto;
+            min-height: 0;
+            padding: 4px 14px 12px;
+        }
+        html[data-theme="paper"] .conversation-card {
+            min-width: 210px;
+            max-width: 240px;
+            margin: 0;
+            border: 1px solid var(--border);
+            background: var(--panel-2);
+            box-shadow: 2px 2px 0 var(--panel-3);
+        }
+        html[data-theme="paper"] .conversation-card.active { border-color: var(--accent); box-shadow: 2px 2px 0 var(--accent-soft); }
+        html[data-theme="paper"] .mcp-panel { border-top: 1px solid var(--border); }
+        html[data-theme="paper"] .panel-chat { background: var(--bg); }
+        html[data-theme="paper"] .history { padding: 36px 20px; }
+        html[data-theme="paper"] .message { max-width: 720px; }
+        html[data-theme="paper"] .message-role { font-variant: small-caps; letter-spacing: .12em; }
+        html[data-theme="paper"] .message.assistant .message-role { color: var(--accent); }
+        html[data-theme="paper"] .message.assistant .message-body {
+            padding-left: 20px;
+            border-left: 1px solid var(--border-strong);
+            font-size: 15px;
+            line-height: 1.9;
+        }
+        html[data-theme="paper"] .message.user .message-body {
+            border: 0;
+            border-right: 3px solid var(--accent);
+            border-radius: 0;
+            background: transparent;
+            padding: 4px 16px 4px 0;
+            font-style: italic;
+        }
+        html[data-theme="paper"] .message.tool .message-body { background: var(--panel); border-left-color: var(--border-strong); }
+        html[data-theme="paper"] .active-session { background: var(--panel); border-bottom: 1px solid var(--border); }
+        html[data-theme="paper"] .composer { background: var(--panel); }
+        html[data-theme="paper"] .composer textarea { background: var(--panel-2); font-family: var(--font-body); }
+        html[data-theme="paper"] .button { border-radius: 3px; box-shadow: 1px 1px 0 var(--panel-3); }
+        html[data-theme="paper"] .button.primary { color: #fffdf7; }
+        html[data-theme="paper"] .md-pre { background: var(--panel); border-color: var(--border); }
+        html[data-theme="paper"] .panel-diagnostics {
+            position: fixed;
+            top: 58px;
+            right: 0;
+            z-index: 40;
+            width: min(430px, 94vw);
+            height: calc(100vh - 58px);
+            border-left: 2px solid var(--border-strong);
+            background: var(--panel-2);
+            box-shadow: -12px 0 32px rgba(80, 66, 40, .18);
+            transform: translateX(105%);
+            transition: transform .25s ease;
+        }
+        html[data-theme="paper"][data-panels-open="true"] .panel-diagnostics { transform: none; }
+
+        /* ============================================================
+           主题 3 · 终端 Terminal —— 一切都是命令行
+           布局：整页纵向堆叠（对话 → 会话 → 日志）+ 扫描线 + 状态栏
+           ============================================================ */
+        html[data-theme="terminal"] {
+            color-scheme: dark;
+            --bg: #040804;
+            --panel: #071007;
+            --panel-2: #0a180a;
+            --panel-3: #0f220f;
+            --border: #14421e;
+            --border-strong: #1f6b30;
+            --text: #b8ffc8;
+            --text-dim: #4fce6f;
+            --text-faint: #2a7a3f;
+            --accent: #33ff66;
+            --accent-strong: #33ff66;
+            --accent-soft: rgba(51, 255, 102, .1);
+            --green: #33ff66;
+            --yellow: #ffb000;
+            --red: #ff5555;
+            --bubble-user-bg: #0a180a;
+            --bubble-user-border: #1f6b30;
+            --topbar-bg: #071007;
+            --font-body: "Cascadia Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+            --font-ui: var(--font-body);
+            --radius: 0;
+            --radius-sm: 0;
+        }
+        html[data-theme="terminal"] body { overflow: auto; text-shadow: 0 0 6px rgba(51, 255, 102, .25); }
+        html[data-theme="terminal"] .fx-scanlines {
+            display: block;
+            position: fixed;
+            inset: 0;
+            z-index: 90;
+            pointer-events: none;
+            background: repeating-linear-gradient(0deg, rgba(0, 0, 0, .22) 0 1px, transparent 1px 3px);
+            mix-blend-mode: multiply;
+        }
+        html[data-theme="terminal"] .app { display: block; height: auto; min-height: 100vh; overflow: visible; }
+        html[data-theme="terminal"] .topbar { border-bottom: 1px solid var(--border-strong); }
+        html[data-theme="terminal"] .brand-mark { border-color: var(--accent); color: var(--accent); background: transparent; border-radius: 0; }
+        html[data-theme="terminal"] .brand-name::before { content: "~/"; color: var(--text-faint); }
+        html[data-theme="terminal"] .theme-picker select { border-radius: 0; background: var(--panel-2); font-family: var(--font-body); }
+        html[data-theme="terminal"] .workspace { display: block; }
+        html[data-theme="terminal"] .panel { border-right: 0; border-bottom: 1px solid var(--border-strong); background: var(--panel); }
+        html[data-theme="terminal"] .panel-chat .history { height: 56vh; min-height: 320px; }
+        html[data-theme="terminal"] .panel-sessions .conversation-list,
+        html[data-theme="terminal"] .panel-diagnostics .log-list { max-height: 260px; }
+        html[data-theme="terminal"] .section-title::before { content: "[ "; color: var(--text-faint); }
+        html[data-theme="terminal"] .section-title::after { content: " ]"; color: var(--text-faint); }
+        html[data-theme="terminal"] .message { max-width: 100%; }
+        html[data-theme="terminal"] .message-role::before { content: "▸ "; color: var(--accent); }
+        html[data-theme="terminal"] .message.user { text-align: left; }
+        html[data-theme="terminal"] .message.user .message-body { border-radius: 0; }
+        html[data-theme="terminal"] .message.user .message-body::before { content: "you@cc:~$ "; color: var(--accent); }
+        html[data-theme="terminal"] .conversation-card { border-radius: 0; }
+        html[data-theme="terminal"] .conversation-card.active { outline: 1px dashed var(--accent); border-color: transparent; }
+        html[data-theme="terminal"] .button { border-radius: 0; text-transform: uppercase; }
+        html[data-theme="terminal"] .button.primary { color: #040804; font-weight: 700; }
+        html[data-theme="terminal"] .composer textarea { border-radius: 0; background: var(--panel-2); font-family: var(--font-body); }
+        html[data-theme="terminal"] .md-pre { border-color: var(--border-strong); background: var(--panel-2); border-radius: 0; }
+        html[data-theme="terminal"] .md-code { background: var(--panel-3); }
+        html[data-theme="terminal"] .back-to-bottom { border-radius: 0; box-shadow: none; }
+        html[data-theme="terminal"] .statusbar {
+            display: flex;
+            position: sticky;
+            bottom: 0;
+            z-index: 20;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 6px 14px;
+            border-top: 1px solid var(--border-strong);
+            background: var(--panel-2);
+            color: var(--text-dim);
+            font: 11px var(--font-body);
+        }
+
+        /* ============================================================
+           主题 4 · 霓虹 Neon —— 赛博控制台
+           布局：左侧圆形会话轨 + 居中玻璃卡片 + 右侧玻璃抽屉
+           ============================================================ */
+        html[data-theme="neon"] {
+            color-scheme: dark;
+            --bg: #0a0618;
+            --panel: rgba(20, 14, 44, .72);
+            --panel-2: rgba(32, 24, 64, .78);
+            --panel-3: rgba(48, 36, 92, .8);
+            --border: rgba(124, 92, 240, .28);
+            --border-strong: rgba(34, 211, 238, .5);
+            --text: #ece9ff;
+            --text-dim: #a79fd0;
+            --text-faint: #6f659e;
+            --accent: #22d3ee;
+            --accent-strong: #e879f9;
+            --accent-soft: rgba(232, 121, 249, .12);
+            --green: #34f5c5;
+            --yellow: #ffd166;
+            --red: #ff6b9d;
+            --bubble-user-bg: rgba(34, 211, 238, .1);
+            --bubble-user-border: rgba(34, 211, 238, .4);
+            --topbar-bg: rgba(14, 9, 34, .85);
+            --radius: 18px;
+            --radius-sm: 12px;
+        }
+        html[data-theme="neon"] .fx-orbs { display: block; position: fixed; inset: 0; z-index: -1; overflow: hidden; }
+        html[data-theme="neon"] .fx-orbs span {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(90px);
+            opacity: .5;
+            animation: orb 26s ease-in-out infinite alternate;
+        }
+        html[data-theme="neon"] .fx-orbs span:nth-child(1) { width: 480px; height: 480px; left: -120px; top: -80px; background: #3b2f9e; }
+        html[data-theme="neon"] .fx-orbs span:nth-child(2) { width: 380px; height: 380px; right: -100px; top: 30%; background: #7c2f7e; animation-delay: -8s; }
+        html[data-theme="neon"] .fx-orbs span:nth-child(3) { width: 420px; height: 420px; left: 35%; bottom: -160px; background: #123f6e; animation-delay: -16s; }
+        @keyframes orb { to { transform: translate(60px, -40px) scale(1.12); } }
+        html[data-theme="neon"] .panels-toggle { display: inline-flex; }
+        html[data-theme="neon"] .topbar { backdrop-filter: blur(14px); border-bottom-color: var(--border); }
+        html[data-theme="neon"] .brand-mark {
+            border: 1px solid transparent;
+            background: linear-gradient(#150d33, #150d33) padding-box, linear-gradient(135deg, var(--accent), var(--accent-strong)) border-box;
+            color: var(--accent);
+        }
+        html[data-theme="neon"] .workspace { grid-template-columns: 88px minmax(0, 1fr); }
+        html[data-theme="neon"] .panel { border-right: 0; background: transparent; }
+        html[data-theme="neon"] .panel-sessions { border-right: 1px solid var(--border); align-items: center; }
+        html[data-theme="neon"] .panel-sessions .section-header { flex-direction: column; gap: 4px; padding: 10px 4px; min-height: 64px; }
+        html[data-theme="neon"] .panel-sessions .section-title { writing-mode: vertical-rl; font-size: 10px; }
+        html[data-theme="neon"] .panel-sessions .conversation-list {
+            counter-reset: neoncard;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            padding: 12px 4px;
+        }
+        html[data-theme="neon"] .conversation-card {
+            counter-increment: neoncard;
+            width: 54px;
+            height: 54px;
+            margin: 0;
+            padding: 0;
+            display: grid;
+            place-items: center;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: var(--panel-2);
+        }
+        html[data-theme="neon"] .conversation-card .conversation-meta { display: none; }
+        html[data-theme="neon"] .conversation-card .conversation-title { font-size: 0; width: auto; }
+        html[data-theme="neon"] .conversation-card .conversation-title::before {
+            content: counter(neoncard);
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-dim);
+        }
+        html[data-theme="neon"] .conversation-card.active {
+            border-color: transparent;
+            background: linear-gradient(var(--panel-3), var(--panel-3)) padding-box,
+                        linear-gradient(135deg, var(--accent), var(--accent-strong)) border-box;
+            box-shadow: 0 0 16px rgba(34, 211, 238, .35);
+        }
+        html[data-theme="neon"] .conversation-card.active .conversation-title::before { color: var(--accent); }
+        html[data-theme="neon"] .mcp-panel {
+            position: fixed;
+            right: 0;
+            top: 62vh;
+            z-index: 40;
+            width: min(430px, 94vw);
+            height: 38vh;
+            overflow: auto;
+            border-left: 1px solid var(--border);
+            border-top: 1px solid var(--border);
+            background: var(--panel-2);
+            backdrop-filter: blur(18px);
+            transform: translateX(105%);
+            transition: transform .25s ease;
+        }
+        html[data-theme="neon"][data-panels-open="true"] .mcp-panel { transform: none; }
+        html[data-theme="neon"] .panel-diagnostics {
+            position: fixed;
+            top: 58px;
+            right: 0;
+            z-index: 40;
+            width: min(430px, 94vw);
+            height: calc(62vh - 58px);
+            border-left: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            background: var(--panel-2);
+            backdrop-filter: blur(18px);
+            transform: translateX(105%);
+            transition: transform .25s ease;
+        }
+        html[data-theme="neon"][data-panels-open="true"] .panel-diagnostics { transform: none; }
+        html[data-theme="neon"] .panel-chat { background: transparent; }
+        html[data-theme="neon"] .active-session { border-bottom-color: var(--border); }
+        html[data-theme="neon"] .message { max-width: 760px; }
+        html[data-theme="neon"] .message.assistant .message-body,
+        html[data-theme="neon"] .message.tool .message-body {
+            padding: 14px 18px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: var(--panel);
+            backdrop-filter: blur(12px);
+        }
+        html[data-theme="neon"] .message.user .message-body {
+            border-radius: var(--radius);
+            box-shadow: 0 0 14px rgba(34, 211, 238, .18);
+        }
+        html[data-theme="neon"] .message-role {
+            background: linear-gradient(90deg, var(--accent), var(--accent-strong));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        html[data-theme="neon"] .composer { background: transparent; border-top-color: var(--border); }
+        html[data-theme="neon"] .composer textarea { background: var(--panel); backdrop-filter: blur(12px); border-radius: var(--radius-sm); }
+        html[data-theme="neon"] .button.primary {
+            border: 1px solid transparent;
+            background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+            color: #0a0618;
+            font-weight: 700;
+            box-shadow: 0 4px 18px rgba(34, 211, 238, .3);
+        }
+        html[data-theme="neon"] .md-pre { background: rgba(10, 6, 24, .8); border-color: var(--border); }
+        html[data-theme="neon"] .back-to-bottom { background: var(--panel-3); }
+
+        /* ============================================================
+           主题 5 · 禅 Zen —— 少即是多
+           布局：纯对话居中，侧栏全部收入右侧抽屉；圆相与竖排装饰
+           ============================================================ */
+        html[data-theme="zen"] {
+            color-scheme: light;
+            --bg: #fafaf7;
+            --panel: #fafaf7;
+            --panel-2: #f1f1ec;
+            --panel-3: #e6e6df;
+            --border: #e6e6df;
+            --border-strong: #c9c9be;
+            --text: #24241f;
+            --text-dim: #6f6f64;
+            --text-faint: #a9a99c;
+            --accent: #7a7a52;
+            --accent-strong: #5c5c3a;
+            --accent-soft: rgba(122, 122, 82, .1);
+            --green: #6a8f5f;
+            --yellow: #a08a3c;
+            --red: #b05c5c;
+            --bubble-user-bg: #f1f1ec;
+            --bubble-user-border: #f1f1ec;
+            --topbar-bg: #fafaf7;
+            --radius: 4px;
+            --radius-sm: 3px;
+        }
+        html[data-theme="zen"] .fx-zen-circle {
+            display: block;
+            position: fixed;
+            top: 84px;
+            right: 48px;
+            z-index: 0;
+            width: 180px;
+            height: 180px;
+            border: 1.5px solid rgba(36, 36, 31, .1);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+        html[data-theme="zen"] .fx-zen-circle::after {
+            content: "一期一会";
+            position: absolute;
+            right: -14px;
+            top: 50%;
+            transform: translateY(-50%);
+            writing-mode: vertical-rl;
+            color: rgba(36, 36, 31, .22);
+            font-size: 13px;
+            letter-spacing: .5em;
+        }
+        html[data-theme="zen"] .topbar { border-bottom: 0; }
+        html[data-theme="zen"] .brand-mark { border: 1px solid var(--text); border-radius: 50%; color: var(--text); background: transparent; }
+        html[data-theme="zen"] .brand-version { display: none; }
+        html[data-theme="zen"] .panels-toggle { display: inline-flex; border: 0; text-decoration: underline; text-underline-offset: 4px; }
+        html[data-theme="zen"] .theme-picker select { border: 0; border-bottom: 1px solid var(--border-strong); border-radius: 0; background: transparent; }
+        html[data-theme="zen"] .workspace { grid-template-columns: 1fr; position: relative; z-index: 1; }
+        html[data-theme="zen"] .panel-chat { background: transparent; }
+        html[data-theme="zen"] .active-session { border-bottom: 0; justify-content: center; text-align: center; }
+        html[data-theme="zen"] .active-session-copy { text-align: center; }
+        html[data-theme="zen"] .run-status { position: absolute; right: 24px; }
+        html[data-theme="zen"] .history { padding: 40px 20px; }
+        html[data-theme="zen"] .message { max-width: 620px; margin-bottom: 40px; }
+        html[data-theme="zen"] .message-role { letter-spacing: .2em; font-weight: 400; }
+        html[data-theme="zen"] .message.assistant .message-body { font-size: 15px; line-height: 2; }
+        html[data-theme="zen"] .message.user .message-body { border: 0; border-radius: 0; padding: 12px 18px; }
+        html[data-theme="zen"] .message.tool .message-body { border-left: 1px solid var(--border-strong); }
+        html[data-theme="zen"] .composer { background: transparent; border-top: 0; max-width: 680px; margin: 0 auto; width: 100%; }
+        html[data-theme="zen"] .composer textarea { border: 0; border-bottom: 1px solid var(--border-strong); border-radius: 0; background: transparent; }
+        html[data-theme="zen"] .composer textarea:focus { border-bottom-color: var(--text); box-shadow: none; }
+        html[data-theme="zen"] .button { border: 1px solid var(--text); border-radius: 0; background: transparent; }
+        html[data-theme="zen"] .button:hover { background: var(--text); color: var(--bg); }
+        html[data-theme="zen"] .button.primary { border-color: var(--text); background: var(--text); color: var(--bg); }
+        html[data-theme="zen"] .button.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+        html[data-theme="zen"] .md-pre { background: var(--panel-2); border: 0; }
+        html[data-theme="zen"] .back-to-bottom { border: 1px solid var(--border-strong); background: var(--panel-2); box-shadow: none; }
+        html[data-theme="zen"] .panel-sessions,
+        html[data-theme="zen"] .panel-diagnostics {
+            position: fixed;
+            right: 0;
+            z-index: 40;
+            width: min(400px, 94vw);
+            height: 50vh;
+            border-left: 1px solid var(--border-strong);
+            background: var(--panel-2);
+            transform: translateX(105%);
+            transition: transform .3s ease;
+        }
+        html[data-theme="zen"] .panel-sessions {
+            top: 58px;
+            height: calc(50vh - 58px);
+            border-bottom: 1px solid var(--border-strong);
+        }
+        html[data-theme="zen"] .panel-diagnostics { top: 50vh; }
+        html[data-theme="zen"][data-panels-open="true"] .panel-sessions,
+        html[data-theme="zen"][data-panels-open="true"] .panel-diagnostics { transform: none; }
+
+        /* ============================================================
+           主题 6 · 曜石 Obsidian —— 专业驾驶舱
+           布局：加宽三栏 + 底部状态栏，高密度数据展示
+           ============================================================ */
+        html[data-theme="obsidian"] {
+            color-scheme: dark;
+            --bg: #0b0e1a;
+            --panel: #101426;
+            --panel-2: #161b31;
+            --panel-3: #1d2340;
+            --border: #232a47;
+            --border-strong: #35406b;
+            --text: #e6e9f7;
+            --text-dim: #939cc4;
+            --text-faint: #5d6690;
+            --accent: #8b7cf6;
+            --accent-strong: #7c6cf0;
+            --accent-soft: rgba(124, 108, 240, .14);
+            --green: #34d399;
+            --yellow: #fbbf24;
+            --red: #fb7185;
+            --bubble-user-bg: #1a2140;
+            --bubble-user-border: #35406b;
+            --topbar-bg: #0d1122;
+            --radius: 8px;
+            --radius-sm: 6px;
+        }
+        html[data-theme="obsidian"] .app { grid-template-rows: auto minmax(0, 1fr) auto; }
+        html[data-theme="obsidian"] .brand-mark {
+            border: 0;
+            border-radius: 8px;
+            color: #fff;
+            background: linear-gradient(135deg, var(--accent-strong), #4f46e5);
+        }
+        html[data-theme="obsidian"] .workspace { grid-template-columns: 320px minmax(0, 1fr) 410px; }
+        html[data-theme="obsidian"] .section-header { background: var(--panel-2); }
+        html[data-theme="obsidian"] .section-title { background: linear-gradient(90deg, var(--accent), #38bdf8); -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 800; }
+        html[data-theme="obsidian"] .conversation-card { border: 1px solid var(--border); background: var(--panel-2); border-radius: 8px; }
+        html[data-theme="obsidian"] .conversation-card.active { border-color: var(--accent-strong); box-shadow: inset 3px 0 0 var(--accent-strong); }
+        html[data-theme="obsidian"] .conversation-meta { font-family: var(--font-mono); }
+        html[data-theme="obsidian"] .panel-chat .active-session { background: var(--panel); }
+        html[data-theme="obsidian"] .message { max-width: 860px; }
+        html[data-theme="obsidian"] .message.assistant .message-body { font-size: 13.5px; }
+        html[data-theme="obsidian"] .log-row { grid-template-columns: 78px minmax(0, 1fr); font-size: 10.5px; }
+        html[data-theme="obsidian"] .md-pre { background: #0d1122; border-color: var(--border); }
+        html[data-theme="obsidian"] .statusbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 6px 18px;
+            border-top: 1px solid var(--border);
+            background: var(--topbar-bg);
+            color: var(--text-dim);
+            font: 11px var(--font-mono);
+        }
+        html[data-theme="obsidian"] .statusbar strong { color: var(--accent); font-weight: 600; }
+
+        /* ============================================================
+           主题专属动画 / 配图 / 交互
+           ============================================================ */
+
+        /* 通用：消息入场（默认 = 经典）与空状态配图基座 */
+        .message { animation: msgInClassic .28s ease both; }
+        @keyframes msgInClassic { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+        .empty-state::before { content: ""; display: block; margin: 0 auto 16px; }
+
+        /* —— 经典 Classic：点阵背景 + 卡片微移 —— */
+        html[data-theme="classic"] .panel-chat {
+            background-image: radial-gradient(rgba(117, 167, 255, .05) 1px, transparent 1px);
+            background-size: 26px 26px;
+        }
+        html[data-theme="classic"] .conversation-card { transition: transform .15s, background .15s; }
+        html[data-theme="classic"] .conversation-card:hover { transform: translateX(3px); }
+
+        /* —— 纸墨 Paper：墨晕入场 + 翻页 + 山水印章 —— */
+        html[data-theme="paper"] .message { animation: msgInPaper .55s ease both; }
+        @keyframes msgInPaper { from { opacity: 0; filter: blur(3px); } to { opacity: 1; filter: blur(0); } }
+        html[data-theme="paper"] .history-enter { animation: pageTurn .45s ease; }
+        @keyframes pageTurn { from { opacity: .15; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+        html[data-theme="paper"] .conversation-card.active .conversation-title {
+            background: linear-gradient(var(--accent), var(--accent)) left bottom / 100% 2px no-repeat;
+            animation: brushSweep .5s ease;
+        }
+        @keyframes brushSweep { from { background-size: 0% 2px; } to { background-size: 100% 2px; } }
+        html[data-theme="paper"] .brand-mark {
+            border: 0;
+            border-radius: 4px;
+            color: #fffdf7;
+            background: var(--accent);
+            transform: rotate(-4deg);
+        }
+        html[data-theme="paper"] .fx-paper-ink {
+            display: block;
+            position: fixed;
+            left: 0;
+            bottom: 0;
+            z-index: 3;
+            width: min(620px, 62vw);
+            pointer-events: none;
+        }
+        html[data-theme="paper"] .empty-state::before {
+            width: 74px;
+            height: 74px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 38% 36%, rgba(45,40,32,.32), rgba(45,40,32,.1) 58%, transparent 72%);
+        }
+
+        /* —— 终端 Terminal：CRT 开机 + 闪烁 + 扫描线漂移 + ASCII —— */
+        html[data-theme="terminal"] .message { animation: none; }
+        html[data-theme="terminal"] .fx-crt {
+            display: block;
+            position: fixed;
+            inset: 0;
+            z-index: 200;
+            pointer-events: none;
+            opacity: 0;
+            background: #b8ffc8;
+        }
+        html[data-theme="terminal"] .fx-crt.power-on { animation: crtPowerOn .72s ease-out forwards; }
+        @keyframes crtPowerOn {
+            0% { opacity: 1; transform: scaleY(.004); }
+            35% { opacity: 1; transform: scaleY(.012); background: #b8ffc8; }
+            55% { transform: scaleY(1); background: #0c3a18; }
+            100% { opacity: 0; transform: scaleY(1); background: #040804; }
+        }
+        html[data-theme="terminal"] .brand-name { animation: crtFlicker 5s infinite; }
+        @keyframes crtFlicker {
+            0%, 91%, 94%, 96.5%, 100% { opacity: 1; }
+            93% { opacity: .35; }
+            95.5% { opacity: .55; }
+        }
+        html[data-theme="terminal"] .fx-scanlines { animation: scanDrift 9s linear infinite; }
+        @keyframes scanDrift { to { background-position: 0 90px; } }
+        html[data-theme="terminal"] .empty-state::before {
+            content: "╔══════════╗\A║ CC-AGENT ║  TERMINAL v15\A╚══════════╝  等待输入指令_";
+            white-space: pre;
+            font: 12px/1.5 var(--font-mono);
+            color: var(--text-dim);
+            text-shadow: 0 0 8px rgba(51, 255, 102, .45);
+        }
+
+        /* —— 霓虹 Neon：弹入 + 地平线流动 + 光晕脉冲 —— */
+        html[data-theme="neon"] .message { animation: msgInNeon .45s cubic-bezier(.2, .9, .25, 1.12) both; }
+        @keyframes msgInNeon { from { opacity: 0; transform: translateY(16px) scale(.97); } to { opacity: 1; transform: none; } }
+        html[data-theme="neon"] .conversation-list { perspective: 600px; }
+        html[data-theme="neon"] .conversation-card { transition: box-shadow .2s; }
+        html[data-theme="neon"] .conversation-card.active { animation: neonGlowPulse 2.4s ease-in-out infinite; }
+        @keyframes neonGlowPulse { 50% { box-shadow: 0 0 26px rgba(232, 121, 249, .5); } }
+        html[data-theme="neon"] .fx-neon-horizon {
+            display: block;
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 34vh;
+            z-index: -1;
+            background:
+                repeating-linear-gradient(90deg, rgba(34, 211, 238, .13) 0 1px, transparent 1px 64px),
+                repeating-linear-gradient(0deg, rgba(232, 121, 249, .12) 0 1px, transparent 1px 36px);
+            transform: perspective(320px) rotateX(56deg) scale(2.4);
+            transform-origin: bottom;
+            -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,.85), transparent 88%);
+            mask-image: linear-gradient(to top, rgba(0,0,0,.85), transparent 88%);
+            animation: horizonFlow 5s linear infinite;
+        }
+        @keyframes horizonFlow { to { background-position: 0 0, 0 36px; } }
+        html[data-theme="neon"] .fx-orbs span { will-change: translate; }
+        html[data-theme="neon"] .empty-state::before {
+            width: 86px;
+            height: 86px;
+            border-radius: 50%;
+            background: conic-gradient(from 130deg, var(--accent), var(--accent-strong), transparent 72%, var(--accent));
+            -webkit-mask: radial-gradient(circle, transparent 56%, #000 58%);
+            mask: radial-gradient(circle, transparent 56%, #000 58%);
+            animation: spinSlow 7s linear infinite;
+        }
+        @keyframes spinSlow { to { transform: rotate(360deg); } }
+
+        /* —— 禅 Zen：圆相呼吸与笔触 + 慢速显现 + 抽屉减速 —— */
+        html[data-theme="zen"] .message { animation: msgInZen 1s ease both; }
+        @keyframes msgInZen { from { opacity: 0; } to { opacity: 1; } }
+        html[data-theme="zen"] .fx-zen-circle { animation: zenBreathe 7s ease-in-out infinite; }
+        @keyframes zenBreathe { 50% { transform: scale(1.045); opacity: .8; } }
+        html[data-theme="zen"] .fx-zen-circle .enso-stroke { stroke-dasharray: 500 540; }
+        html[data-theme="zen"] .fx-zen-circle.draw .enso-stroke { animation: ensoDraw 1.8s ease forwards; }
+        @keyframes ensoDraw { from { stroke-dasharray: 0 540; } to { stroke-dasharray: 500 540; } }
+        html[data-theme="zen"] .panel-sessions,
+        html[data-theme="zen"] .panel-diagnostics { transition: transform .55s cubic-bezier(.22, .8, .3, 1); }
+        html[data-theme="zen"] .composer textarea { transition: min-height .5s ease, border-color .3s; }
+        html[data-theme="zen"] .composer textarea:focus { min-height: 150px; }
+
+        /* —— 曜石 Obsidian：左滑入 + 日志闪光 + 表头微光 + 星座 —— */
+        html[data-theme="obsidian"] .message { animation: msgInObsidian .3s ease both; }
+        @keyframes msgInObsidian { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: none; } }
+        html[data-theme="obsidian"] .section-title { background-size: 220% 100%; animation: titleShimmer 3.2s linear infinite; }
+        @keyframes titleShimmer { to { background-position: -220% 0; } }
+        html[data-theme="obsidian"] .log-row { animation: logRowFlash .7s ease; }
+        @keyframes logRowFlash { from { background: var(--accent-soft); } to { background: transparent; } }
+        html[data-theme="obsidian"] .fx-obsidian-stars {
+            display: block;
+            position: fixed;
+            top: 70px;
+            right: 24px;
+            z-index: 3;
+            width: min(400px, 40vw);
+            opacity: .35;
+            pointer-events: none;
+        }
+        html[data-theme="obsidian"] .fx-obsidian-stars .twinkle { animation: starTwinkle 3s ease-in-out infinite; }
+        @keyframes starTwinkle { 50% { opacity: .2; } }
+        html[data-theme="obsidian"] .empty-state::before {
+            width: 88px;
+            height: 46px;
+            border-bottom: 2px solid var(--border-strong);
+            background:
+                linear-gradient(to top, #38bdf8, #38bdf8) left 6px bottom 0 / 16px 45% no-repeat,
+                linear-gradient(to top, var(--accent), var(--accent)) left 36px bottom 0 / 16px 85% no-repeat,
+                linear-gradient(to top, var(--green), var(--green)) left 66px bottom 0 / 16px 60% no-repeat;
+        }
+        html[data-theme="obsidian"] .conversation-card { transition: border-color .15s, transform .15s; }
+        html[data-theme="obsidian"] .conversation-card:hover { transform: translateX(3px); border-color: var(--border-strong); }
+
+        /* ============================================================
+           响应式
+           ============================================================ */
+        @media (max-width: 1180px) {
+            .workspace { grid-template-columns: 240px minmax(0, 1fr); }
+            .panel-diagnostics { display: none; }
+            html[data-theme="neon"] .workspace { grid-template-columns: 88px minmax(0, 1fr); }
+            html[data-theme="paper"] .workspace,
+            html[data-theme="zen"] .workspace { grid-template-columns: 1fr; }
+            html[data-theme="paper"] .panel-diagnostics,
+            html[data-theme="neon"] .panel-diagnostics,
+            html[data-theme="zen"] .panel-diagnostics { display: flex; }
+        }
+        @media (max-width: 760px) {
+            body { overflow: auto; }
+            .app { height: auto; min-height: 100vh; overflow: visible; }
+            .topbar { flex-wrap: wrap; height: auto; padding: 10px 14px; gap: 10px; }
+            .project-picker { order: 3; flex-basis: 100%; max-width: none; }
+            .project-picker-icon { display: none; }
+            .workspace { display: block; overflow: auto; }
+            .panel { min-height: auto; border-right: 0; border-bottom: 1px solid var(--border); }
+            .conversation-list { max-height: 220px; }
+            .history { min-height: 340px; max-height: 60vh; padding: 20px 16px; }
+            .brand-version { display: none; }
+            html[data-theme="neon"] .fx-orbs { display: none; }
+            html[data-theme="zen"] .fx-zen-circle { display: none; }
+
+            /* 手机竖屏：抽屉改为底部升起的底栏 */
+            html[data-theme="paper"] .panel-diagnostics,
+            html[data-theme="neon"] .panel-diagnostics,
+            html[data-theme="neon"] .mcp-panel,
+            html[data-theme="zen"] .panel-sessions,
+            html[data-theme="zen"] .panel-diagnostics {
+                top: auto;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                width: 100vw;
+                max-width: none;
+                border-left: 0;
+                transform: translateY(105%);
+            }
+            html[data-theme="paper"] .panel-diagnostics { height: 70vh; }
+            html[data-theme="neon"] .panel-diagnostics { height: 45vh; }
+            html[data-theme="neon"] .mcp-panel { bottom: 45vh; height: 25vh; }
+            html[data-theme="zen"] .panel-sessions { bottom: 35vh; height: 35vh; }
+            html[data-theme="zen"] .panel-diagnostics { height: 35vh; }
         }
     </style>
 </head>
 <body>
-<main>
-    <header>
-        <h1>cc-agent-go WebAgent</h1>
-        <p class="subtitle">传入项目工作目录、会话编号和当前任务；页面显示这一次 Agent.Run 的实际事件。</p>
-    </header>
+<!-- 主题装饰层：环境型（位于 .app 之下） -->
+<div class="fx fx-scanlines" aria-hidden="true"></div>
+<div class="fx fx-orbs" aria-hidden="true"><span></span><span></span><span></span></div>
+<div class="fx fx-neon-horizon" aria-hidden="true"></div>
+<div class="fx fx-zen-circle" aria-hidden="true">
+    <svg viewBox="0 0 200 200" width="180" height="180">
+        <circle class="enso-stroke" cx="100" cy="100" r="86" fill="none"
+                stroke="rgba(36,36,31,.3)" stroke-width="7" stroke-linecap="round"
+                transform="rotate(-78 100 100)"/>
+    </svg>
+</div>
 
-    <div class="layout">
-        <section class="panel">
-            <h2 class="panel-title">开始一次 Agent 任务</h2>
-            <form id="agent-task-form">
-                <div class="field">
-                    <label for="working-directory">项目工作目录</label>
-                    <input id="working-directory" name="workingDirectory"
-                           placeholder="C:\Users\Z\Documents\project\code\example" required>
-                </div>
-                <div class="field">
-                    <label for="conversation-id">会话编号</label>
-                    <input id="conversation-id" name="conversationId"
-                           value="webagent-main" pattern="[A-Za-z0-9._-]{1,100}" required>
-                </div>
-                <div class="field">
-                    <label for="task-message">当前任务</label>
-                    <textarea id="task-message" name="message"
-                              placeholder="写出本次要 Agent 完成的具体任务" required></textarea>
-                </div>
-                <button id="start-agent" class="primary" type="submit">开始执行</button>
-            </form>
-            <div id="run-status" class="status">尚未开始</div>
-        </section>
-
-        <div class="stack">
-            <section class="panel">
-                <h2 class="panel-title">Agent 事件</h2>
-                <div id="event-list">
-                    <div class="event">
-                        <div class="event-name">等待任务</div>
-                        <div class="event-value">点击“开始执行”后，这里显示 round、工具和记忆事件。</div>
+<div class="app">
+    <header class="topbar">
+        <div class="brand">
+            <span class="brand-mark">CC</span>
+            <span class="brand-name">cc-agent-go</span>
+            <span class="brand-version">WebAgent · v15</span>
+        </div>
+        <div class="project-picker">
+            <span class="project-picker-icon">📁</span>
+            <input id="working-directory" autocomplete="off" spellcheck="false"
+                   placeholder="项目绝对路径，例如 C:\Users\Z\Documents\project\code\cc-agent-go">
+            <button id="load-project" class="button small" type="button">加载</button>
+        </div>
+        <div class="topbar-tools">
+            <a class="button ghost small" href="/harness">Harness</a>
+            <a class="button ghost small" href="/council">元老院</a>
+            <details class="prompt-settings" id="prompt-settings">
+                <summary class="button ghost small">提示词<span id="prompt-active-dot" class="prompt-active-dot"></span></summary>
+                <div class="prompt-popover">
+                    <div class="prompt-popover-title">默认提示词</div>
+                    <textarea id="default-prompt-input"
+                              placeholder="每次发送消息时，这段文字会自动加在你的消息前面，一起发给后端。"></textarea>
+                    <div class="prompt-popover-actions">
+                        <span class="prompt-popover-hint" id="prompt-state-hint">未启用</span>
+                        <button id="clear-default-prompt" class="button small ghost" type="button">清空</button>
+                        <button id="save-default-prompt" class="button small primary" type="button">保存</button>
                     </div>
                 </div>
-            </section>
-            <section class="panel">
-                <h2 class="panel-title">最终结果</h2>
-                <pre id="final-result">尚无结果</pre>
-            </section>
-            <section class="panel">
-                <h2 class="panel-title">MCP Server</h2>
-                <div class="actions">
-                    <button id="refresh-mcp" class="secondary" type="button">刷新列表</button>
-                    <button id="apply-mcp" class="secondary" type="button">启动选中项</button>
-                </div>
-                <div id="mcp-list">正在读取 MCP Server 配置……</div>
-            </section>
+            </details>
+            <label class="theme-picker">
+                <span class="theme-picker-label">主题</span>
+                <select id="theme-select">
+                    <option value="classic">经典 Classic</option>
+                    <option value="paper">纸墨 Paper</option>
+                    <option value="terminal">终端 Terminal</option>
+                    <option value="neon">霓虹 Neon</option>
+                    <option value="zen">禅 Zen</option>
+                    <option value="obsidian">曜石 Obsidian</option>
+                </select>
+            </label>
+            <button id="panels-toggle" class="button ghost small panels-toggle" type="button">面板</button>
+            <div class="server-state">
+                <span id="server-dot" class="server-dot"></span>
+                <span id="server-state-text">正在连接 Go 服务</span>
+            </div>
         </div>
-    </div>
-</main>
+    </header>
+
+    <main class="workspace">
+        <aside class="panel panel-sessions" id="panel-sessions">
+            <div class="section-header">
+                <h2 class="section-title">会话</h2>
+                <span id="conversation-count" class="section-count">0</span>
+                <button id="new-conversation" class="button small ghost" type="button">新建</button>
+            </div>
+            <div id="conversation-list" class="conversation-list">
+                <div class="muted-copy">输入项目绝对路径后点击“加载”。</div>
+            </div>
+            <details class="mcp-panel" open>
+                <summary>MCP Server</summary>
+                <div class="mcp-actions">
+                    <button id="refresh-mcp" class="button small ghost" type="button">刷新</button>
+                    <button id="apply-mcp" class="button small" type="button">应用</button>
+                </div>
+                <div id="mcp-list" class="mcp-list">
+                    <div class="muted-copy">正在读取 MCP Server…</div>
+                </div>
+            </details>
+        </aside>
+
+        <section class="panel panel-chat">
+            <div class="active-session">
+                <div class="active-session-copy">
+                    <div class="active-session-label">当前会话</div>
+                    <div id="active-conversation-id" class="active-session-value">新会话 · 首次执行时由 Go 创建编号</div>
+                </div>
+                <div id="run-status" class="run-status">
+                    <span class="run-status-dot"></span>
+                    <span id="run-status-text">等待任务</span>
+                </div>
+            </div>
+
+            <div id="history" class="history">
+                <div class="empty-state">
+                    <div>
+                        <strong>开始一个任务</strong>
+                        选择左侧历史会话，或者直接在下方输入新任务。
+                    </div>
+                </div>
+            </div>
+
+            <button id="back-to-bottom" class="back-to-bottom" type="button">↓ 回到最新</button>
+
+            <form id="agent-task-form" class="composer">
+                <textarea id="task-message"
+                          placeholder="告诉 Agent 要完成什么。Enter 换行，Ctrl+Enter 执行。"
+                          required></textarea>
+                <div class="composer-actions">
+                    <span class="composer-help">会话保存在 项目目录/.cc-agent/sessions/ · Ctrl+Enter 执行</span>
+                    <button id="start-agent" class="button primary" type="submit">开始执行</button>
+                </div>
+            </form>
+        </section>
+
+        <aside class="panel panel-diagnostics" id="panel-diagnostics">
+            <div class="section-header">
+                <h2 class="section-title">日志</h2>
+                <button id="refresh-logs" class="button small ghost" type="button">刷新</button>
+            </div>
+            <div class="diagnostics-tabs">
+                <button class="tab-button active" data-log-tab="run" type="button">本次运行</button>
+                <button class="tab-button" data-log-tab="server" type="button">服务日志</button>
+            </div>
+            <div id="run-log-list" class="log-list log-pane active">
+                <div class="muted-copy">Agent 开始执行后，这里显示每个实际事件。</div>
+            </div>
+            <div id="server-log-list" class="log-list log-pane">
+                <div class="muted-copy">点击“刷新”读取 logs/server.jsonl。</div>
+            </div>
+        </aside>
+    </main>
+
+    <footer class="statusbar" id="statusbar">
+        <span id="status-conversation">会话：新会话</span>
+        <span id="status-state">状态：等待任务</span>
+        <span id="status-clock"></span>
+    </footer>
+</div>
+
+<!-- 主题装饰层：水印型（位于 .app 之上，低透明度，不拦截点击） -->
+<div class="fx fx-paper-ink" aria-hidden="true">
+    <svg viewBox="0 0 620 240" preserveAspectRatio="xMidYMax meet">
+        <circle cx="505" cy="58" r="30" fill="rgba(179,68,44,.16)"/>
+        <path d="M0,196 Q90,110 170,168 T330,138 Q420,70 490,148 T620,192 L620,240 L0,240 Z" fill="rgba(45,40,32,.1)"/>
+        <path d="M0,214 Q130,150 220,188 T440,172 Q540,142 620,202 L620,240 L0,240 Z" fill="rgba(45,40,32,.07)"/>
+    </svg>
+</div>
+<div class="fx fx-obsidian-stars" aria-hidden="true">
+    <svg viewBox="0 0 400 240" fill="none">
+        <g stroke="rgba(139,124,246,.22)" stroke-width="1">
+            <path d="M30,70 L110,34 L190,88 L268,44 L350,96"/>
+            <path d="M110,34 L150,140 L268,190 L350,96"/>
+            <path d="M30,70 L80,180 L150,140"/>
+        </g>
+        <g fill="rgba(139,124,246,.55)">
+            <circle cx="30" cy="70" r="2.4"/>
+            <circle cx="110" cy="34" r="2"/>
+            <circle cx="190" cy="88" r="2.6" class="twinkle"/>
+            <circle cx="268" cy="44" r="2"/>
+            <circle cx="350" cy="96" r="2.4" class="twinkle"/>
+            <circle cx="150" cy="140" r="2"/>
+            <circle cx="268" cy="190" r="2.2"/>
+            <circle cx="80" cy="180" r="1.8" class="twinkle"/>
+        </g>
+    </svg>
+</div>
+<div class="fx fx-crt" aria-hidden="true"></div>
 
 <script>
+    // ============================================================
+    // 元素引用
+    // ============================================================
+    const themeSelect = document.getElementById("theme-select");
+    const panelsToggle = document.getElementById("panels-toggle");
+    const conversationList = document.getElementById("conversation-list");
+    const conversationCount = document.getElementById("conversation-count");
+    const activeConversationIDLabel = document.getElementById("active-conversation-id");
+    const history = document.getElementById("history");
+    const backToBottomButton = document.getElementById("back-to-bottom");
     const taskForm = document.getElementById("agent-task-form");
+    const taskMessage = document.getElementById("task-message");
     const startAgentButton = document.getElementById("start-agent");
     const runStatus = document.getElementById("run-status");
-    const eventList = document.getElementById("event-list");
-    const finalResult = document.getElementById("final-result");
+    const runStatusText = document.getElementById("run-status-text");
+    const runLogList = document.getElementById("run-log-list");
+    const serverLogList = document.getElementById("server-log-list");
+    const workingDirectoryInput = document.getElementById("working-directory");
     const mcpList = document.getElementById("mcp-list");
-    let backgroundEventSource = null;
-    let configuredMCPServers = [];
+    const serverDot = document.getElementById("server-dot");
+    const serverStateText = document.getElementById("server-state-text");
+    const statusConversation = document.getElementById("status-conversation");
+    const statusState = document.getElementById("status-state");
 
-    const savedWorkingDirectory = localStorage.getItem("ccAgentWorkingDirectory");
-    if (savedWorkingDirectory) {
-        document.getElementById("working-directory").value = savedWorkingDirectory;
+    // ============================================================
+    // 状态
+    // ============================================================
+    let activeConversationID = "";
+    let configuredMCPServers = [];
+    let backgroundEventSource = null;
+    let userIsNearBottom = true;
+
+    // 当前正在流入的 assistant 消息（每轮回复一个独立元素）
+    let streamingMessageElement = null;
+    let streamingMessageBody = null;
+    let streamingText = "";
+    let streamingHasToken = false;
+    let markdownRenderScheduled = false;
+    let activeToolMessageElements = {};
+
+    const savedWorkingDirectory = localStorage.getItem("ccAgentWorkingDirectory") || "";
+    if (savedWorkingDirectory) workingDirectoryInput.value = savedWorkingDirectory;
+
+    function currentWorkingDirectory() {
+        return workingDirectoryInput.value.trim();
     }
 
-    taskForm.addEventListener("submit", async (browserSubmitEvent) => {
-        browserSubmitEvent.preventDefault();
-        if (startAgentButton.disabled) return;
+    // ============================================================
+    // 主题切换
+    // ============================================================
+    const savedTheme = localStorage.getItem("ccAgentTheme") || "classic";
+    document.documentElement.dataset.theme = savedTheme;
+    themeSelect.value = savedTheme;
+    themeSelect.addEventListener("change", () => {
+        document.documentElement.dataset.theme = themeSelect.value;
+        localStorage.setItem("ccAgentTheme", themeSelect.value);
+        playThemeEntrance(themeSelect.value);
+    });
+    panelsToggle.addEventListener("click", () => {
+        const isOpen = document.documentElement.dataset.panelsOpen === "true";
+        document.documentElement.dataset.panelsOpen = isOpen ? "false" : "true";
+    });
 
-        const workingDirectory = document.getElementById("working-directory").value.trim();
-        const conversationId = document.getElementById("conversation-id").value.trim();
-        const message = document.getElementById("task-message").value.trim();
+    // 抽屉式面板：点击面板以外的区域、或按 Escape 关闭
+    document.addEventListener("click", browserClickEvent => {
+        if (document.documentElement.dataset.panelsOpen !== "true") return;
+        if (browserClickEvent.target.closest(
+            ".panel-sessions, .panel-diagnostics, .mcp-panel, #panels-toggle"
+        )) return;
+        document.documentElement.dataset.panelsOpen = "false";
+    });
+    document.addEventListener("keydown", browserKeyboardEvent => {
+        if (browserKeyboardEvent.key === "Escape") {
+            document.documentElement.dataset.panelsOpen = "false";
+            promptSettings.open = false;
+        }
+    });
+
+    // ============================================================
+    // 主题专属入场动画与交互
+    // ============================================================
+    const crtOverlay = document.querySelector(".fx-crt");
+    const zenCircle = document.querySelector(".fx-zen-circle");
+
+    function playThemeEntrance(themeName) {
+        if (themeName === "terminal" && crtOverlay) {
+            crtOverlay.classList.remove("power-on");
+            void crtOverlay.offsetWidth;
+            crtOverlay.classList.add("power-on");
+        }
+        if (themeName === "zen" && zenCircle) {
+            zenCircle.classList.remove("draw");
+            void zenCircle.offsetWidth;
+            zenCircle.classList.add("draw");
+        }
+    }
+    playThemeEntrance(savedTheme);
+
+    // 霓虹：光斑鼠标视差 + 会话卡片 3D 倾斜
+    const neonOrbs = document.querySelectorAll(".fx-orbs span");
+    document.addEventListener("mousemove", browserMouseEvent => {
+        if (document.documentElement.dataset.theme !== "neon") return;
+        const offsetX = (browserMouseEvent.clientX / window.innerWidth - .5) * 2;
+        const offsetY = (browserMouseEvent.clientY / window.innerHeight - .5) * 2;
+        neonOrbs.forEach((orbElement, orbIndex) => {
+            const depth = (orbIndex + 1) * 9;
+            orbElement.style.translate =
+                `${(offsetX * depth).toFixed(1)}px ${(offsetY * depth).toFixed(1)}px`;
+        });
+    });
+    conversationList.addEventListener("mousemove", browserMouseEvent => {
+        if (document.documentElement.dataset.theme !== "neon") return;
+        const hoveredCard = browserMouseEvent.target.closest(".conversation-card");
+        if (!hoveredCard) return;
+        const cardRect = hoveredCard.getBoundingClientRect();
+        const rotateX = ((browserMouseEvent.clientY - cardRect.top) / cardRect.height - .5) * -16;
+        const rotateY = ((browserMouseEvent.clientX - cardRect.left) / cardRect.width - .5) * 16;
+        hoveredCard.style.transform =
+            `rotateX(${rotateX.toFixed(1)}deg) rotateY(${rotateY.toFixed(1)}deg)`;
+    });
+    conversationList.addEventListener("mouseout", browserMouseEvent => {
+        const leftCard = browserMouseEvent.target.closest(".conversation-card");
+        if (leftCard) leftCard.style.transform = "";
+    });
+
+    // 状态栏时钟（终端 / 曜石显示状态栏）
+    const statusClock = document.getElementById("status-clock");
+    function tickStatusClock() {
+        if (statusClock) {
+            statusClock.textContent =
+                new Date().toLocaleTimeString("zh-CN", { hour12: false });
+        }
+    }
+    tickStatusClock();
+    setInterval(tickStatusClock, 1000);
+
+    // ============================================================
+    // 默认提示词：保存到 localStorage，发消息时拼在用户消息前面
+    // ============================================================
+    const promptSettings = document.getElementById("prompt-settings");
+    const defaultPromptInput = document.getElementById("default-prompt-input");
+    const promptActiveDot = document.getElementById("prompt-active-dot");
+    const promptStateHint = document.getElementById("prompt-state-hint");
+    let activeDefaultPrompt = localStorage.getItem("ccAgentDefaultPrompt") || "";
+    defaultPromptInput.value = activeDefaultPrompt;
+
+    function refreshDefaultPromptIndicator() {
+        const isActive = activeDefaultPrompt.length > 0;
+        promptActiveDot.classList.toggle("active", isActive);
+        promptStateHint.classList.toggle("active", isActive);
+        promptStateHint.textContent = isActive ? "已启用" : "未启用";
+    }
+    refreshDefaultPromptIndicator();
+
+    document.getElementById("save-default-prompt").addEventListener("click", () => {
+        activeDefaultPrompt = defaultPromptInput.value.trim();
+        localStorage.setItem("ccAgentDefaultPrompt", activeDefaultPrompt);
+        refreshDefaultPromptIndicator();
+        promptSettings.open = false;
+    });
+    document.getElementById("clear-default-prompt").addEventListener("click", () => {
+        defaultPromptInput.value = "";
+        activeDefaultPrompt = "";
+        localStorage.removeItem("ccAgentDefaultPrompt");
+        refreshDefaultPromptIndicator();
+    });
+    document.addEventListener("click", browserClickEvent => {
+        if (promptSettings.open && !browserClickEvent.target.closest("#prompt-settings")) {
+            promptSettings.open = false;
+        }
+    });
+
+    // ============================================================
+    // 通用工具
+    // ============================================================
+    function setServerState(isOnline, text) {
+        serverDot.className = `server-dot ${isOnline ? "online" : "offline"}`;
+        serverStateText.textContent = text;
+    }
+
+    async function readJSONResponse(response, operationName) {
+        const responseText = await response.text();
+        let responseJSON = null;
+        if (responseText) {
+            try { responseJSON = JSON.parse(responseText); } catch { responseJSON = null; }
+        }
+        if (!response.ok) {
+            const errorDetails = responseJSON
+                ? JSON.stringify(responseJSON, null, 2)
+                : responseText || "没有返回内容";
+            throw new Error(`${operationName}失败 · HTTP ${response.status}\n${errorDetails}`);
+        }
+        return responseJSON;
+    }
+
+    function setRunState(stateName, stateText) {
+        runStatus.className = `run-status ${stateName}`;
+        runStatusText.textContent = stateText;
+        statusState.textContent = `状态：${stateText}`;
+    }
+
+    function updateStatusConversation() {
+        statusConversation.textContent = activeConversationID
+            ? `会话：${shortConversationID(activeConversationID)}`
+            : "会话：新会话";
+    }
+
+    function formatTime(epochSeconds) {
+        if (!epochSeconds) return "未知时间";
+        return new Date(epochSeconds * 1000).toLocaleString("zh-CN", {
+            month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit"
+        });
+    }
+
+    function shortConversationID(conversationID) {
+        if (!conversationID) return "";
+        return conversationID.length > 12
+            ? `${conversationID.slice(0, 8)}…${conversationID.slice(-4)}`
+            : conversationID;
+    }
+
+    // ============================================================
+    // Markdown 渲染（内置轻量实现，先转义 HTML 防 XSS）
+    // ============================================================
+    function escapeHTML(rawText) {
+        return rawText
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+    }
+
+    function renderMarkdown(sourceText) {
+        // 第一步：取出代码块，用占位符保护
+        const codeBlockHTMLList = [];
+        let workingText = sourceText.replace(
+            /```(\w*)\n?([\s\S]*?)(```|$)/g,
+            (wholeMatch, languageName, codeContent) => {
+                codeBlockHTMLList.push(
+                    `<pre class="md-pre"><code>${escapeHTML(codeContent.replace(/\n$/, ""))}</code></pre>`
+                );
+                return `\u0000${codeBlockHTMLList.length - 1}\u0000`;
+            }
+        );
+
+        // 第二步：转义剩余全部文本
+        workingText = escapeHTML(workingText);
+
+        // 第三步：行内元素
+        workingText = workingText
+            .replace(/`([^`\n]+)`/g, '<code class="md-code">$1</code>')
+            .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+            .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+            .replace(/~~([^~]+)~~/g, "<del>$1</del>")
+            .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (wholeMatch, label, url) => {
+                if (/^(https?:\/\/|mailto:)/i.test(url)) {
+                    return `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+                }
+                return label;
+            });
+
+        // 第四步：块级元素（逐行处理）
+        const outputHTML = [];
+        let openListType = null;
+        let paragraphLines = [];
+        const closeList = () => {
+            if (openListType) {
+                outputHTML.push(openListType === "ul" ? "</ul>" : "</ol>");
+                openListType = null;
+            }
+        };
+        const flushParagraph = () => {
+            if (paragraphLines.length) {
+                outputHTML.push(`<p>${paragraphLines.join("<br>")}</p>`);
+                paragraphLines = [];
+            }
+        };
+
+        for (const rawLine of workingText.split("\n")) {
+            const trimmedLine = rawLine.trim();
+            const codePlaceholder = /^\u0000(\d+)\u0000$/.exec(trimmedLine);
+            let lineMatch;
+            if (codePlaceholder) {
+                flushParagraph();
+                closeList();
+                outputHTML.push(codeBlockHTMLList[Number(codePlaceholder[1])]);
+            } else if ((lineMatch = /^(#{1,4})\s+(.*)$/.exec(trimmedLine))) {
+                flushParagraph();
+                closeList();
+                const headingLevel = lineMatch[1].length + 1;
+                outputHTML.push(`<h${headingLevel} class="md-h">${lineMatch[2]}</h${headingLevel}>`);
+            } else if (/^(-{3,}|\*{3,})$/.test(trimmedLine)) {
+                flushParagraph();
+                closeList();
+                outputHTML.push('<hr class="md-hr">');
+            } else if ((lineMatch = /^&gt;\s?(.*)$/.exec(trimmedLine))) {
+                flushParagraph();
+                closeList();
+                outputHTML.push(`<blockquote class="md-quote">${lineMatch[1]}</blockquote>`);
+            } else if ((lineMatch = /^[-*]\s+(.*)$/.exec(trimmedLine))) {
+                flushParagraph();
+                if (openListType !== "ul") { closeList(); outputHTML.push("<ul>"); openListType = "ul"; }
+                outputHTML.push(`<li>${lineMatch[1]}</li>`);
+            } else if ((lineMatch = /^\d+[.)]\s+(.*)$/.exec(trimmedLine))) {
+                flushParagraph();
+                if (openListType !== "ol") { closeList(); outputHTML.push("<ol>"); openListType = "ol"; }
+                outputHTML.push(`<li>${lineMatch[1]}</li>`);
+            } else if (trimmedLine === "") {
+                flushParagraph();
+                closeList();
+            } else {
+                paragraphLines.push(rawLine);
+            }
+        }
+        flushParagraph();
+        closeList();
+        return outputHTML.join("");
+    }
+
+    function renderMarkdownInto(targetElement, markdownText) {
+        targetElement.innerHTML = renderMarkdown(markdownText);
+    }
+
+    // ============================================================
+    // 智能滚动：用户靠近底部时才自动跟随
+    // ============================================================
+    function isNearHistoryBottom() {
+        return history.scrollHeight - history.scrollTop - history.clientHeight < 80;
+    }
+    function updateBackToBottomButton() {
+        backToBottomButton.classList.toggle("visible", !userIsNearBottom);
+    }
+    function scrollHistoryIfUserAtBottom() {
+        if (userIsNearBottom) {
+            history.scrollTop = history.scrollHeight;
+        }
+        updateBackToBottomButton();
+    }
+    history.addEventListener("scroll", () => {
+        userIsNearBottom = isNearHistoryBottom();
+        updateBackToBottomButton();
+    });
+    backToBottomButton.addEventListener("click", () => {
+        userIsNearBottom = true;
+        history.scrollTo({ top: history.scrollHeight, behavior: "smooth" });
+        updateBackToBottomButton();
+    });
+
+    // ============================================================
+    // 消息元素
+    // ============================================================
+    function createMessage(role, text) {
+        const message = document.createElement("article");
+        message.className = `message ${role}`;
+        const roleLabel = document.createElement("div");
+        roleLabel.className = "message-role";
+        roleLabel.textContent = role === "user" ? "You"
+            : role === "assistant" ? "Agent"
+            : role === "error" ? "Error" : "Tool";
+        const body = document.createElement("div");
+        body.className = "message-body";
+        if (role === "assistant") {
+            renderMarkdownInto(body, text || "（空内容）");
+        } else {
+            body.textContent = text || "（空内容）";
+        }
+        message.append(roleLabel, body);
+        return message;
+    }
+
+    function textFromContentBlocks(contentBlocks) {
+        if (!Array.isArray(contentBlocks)) return "";
+        return contentBlocks.map(contentBlock => {
+            if (contentBlock.type === "text") return contentBlock.text || "";
+            if (contentBlock.type === "tool_use") {
+                return `调用工具 ${contentBlock.name}\n${JSON.stringify(contentBlock.input || {}, null, 2)}`;
+            }
+            if (contentBlock.type === "tool_result") return `工具结果\n${contentBlock.content || ""}`;
+            return JSON.stringify(contentBlock, null, 2);
+        }).filter(Boolean).join("\n\n");
+    }
+
+    function renderConversationHistory(session) {
+        history.replaceChildren();
+        const messages = Array.isArray(session.messages) ? session.messages : [];
+        if (!messages.length) {
+            history.innerHTML = `<div class="empty-state"><div><strong>这个会话还没有历史记录</strong>输入任务后开始执行。</div></div>`;
+            return;
+        }
+        for (const message of messages) {
+            const containsToolContent = (message.content || []).some(
+                block => block.type === "tool_use" || block.type === "tool_result"
+            );
+            history.append(createMessage(
+                containsToolContent ? "tool" : message.role,
+                textFromContentBlocks(message.content)
+            ));
+        }
+        userIsNearBottom = true;
+        history.scrollTop = history.scrollHeight;
+        updateBackToBottomButton();
+        history.classList.remove("history-enter");
+        void history.offsetWidth;
+        history.classList.add("history-enter");
+    }
+
+    // ============================================================
+    // 流式 assistant 消息生命周期
+    // 每轮回复创建独立元素，结束后定型 —— 不再复用 id，
+    // 从根上消除"新内容覆盖上一轮消息"的错位。
+    // ============================================================
+    function createStreamingAssistantMessage() {
+        finalizeStreamingMessage();
+        if (history.querySelector(".empty-state")) history.replaceChildren();
+        const message = document.createElement("article");
+        message.className = "message assistant streaming";
+        const roleLabel = document.createElement("div");
+        roleLabel.className = "message-role";
+        roleLabel.textContent = "Agent";
+        const body = document.createElement("div");
+        body.className = "message-body";
+        body.innerHTML = '<span class="thinking-dots"><span></span><span></span><span></span></span>';
+        message.append(roleLabel, body);
+        history.append(message);
+        streamingMessageElement = message;
+        streamingMessageBody = body;
+        streamingText = "";
+        streamingHasToken = false;
+        scrollHistoryIfUserAtBottom();
+    }
+
+    function appendStreamingToken(token) {
+        if (!token) return;
+        if (!streamingMessageElement) createStreamingAssistantMessage();
+        streamingText += token;
+        streamingHasToken = true;
+        if (markdownRenderScheduled) return;
+        markdownRenderScheduled = true;
+        requestAnimationFrame(() => {
+            markdownRenderScheduled = false;
+            if (streamingMessageBody) {
+                renderMarkdownInto(streamingMessageBody, streamingText);
+            }
+            scrollHistoryIfUserAtBottom();
+        });
+    }
+
+    function finalizeStreamingMessage(finalText) {
+        if (!streamingMessageElement) return;
+        const completedText = finalText || streamingText;
+        if (completedText) {
+            renderMarkdownInto(streamingMessageBody, completedText);
+        } else if (!streamingHasToken) {
+            streamingMessageBody.textContent = "（没有返回内容）";
+        }
+        streamingMessageElement.classList.remove("streaming");
+        streamingMessageElement = null;
+        streamingMessageBody = null;
+        streamingText = "";
+        streamingHasToken = false;
+        scrollHistoryIfUserAtBottom();
+    }
+
+    // ============================================================
+    // SSE 帧解析：后端 token 是裸 JSON 字符串（"文字"），
+    // 控制帧是带 type 的对象；以 { 开头的原始 token 会被后端
+    // 原样发出，解析失败或没有 type 时按 token 文本处理。
+    // ============================================================
+    function parseStreamFrame(rawPayload) {
+        try {
+            const parsed = JSON.parse(rawPayload);
+            if (typeof parsed === "string") return { type: "text_delta", text: parsed };
+            if (parsed && typeof parsed === "object" && parsed.type) return parsed;
+            return { type: "text_delta", text: rawPayload };
+        } catch {
+            return { type: "text_delta", text: rawPayload };
+        }
+    }
+
+    function receiveAgentEvent(agentEvent) {
+        const eventType = agentEvent.type || "unknown";
+        switch (eventType) {
+        case "conversation_id":
+            activeConversationID = agentEvent.conversationId;
+            activeConversationIDLabel.textContent = activeConversationID;
+            updateStatusConversation();
+            openBackgroundEvents(activeConversationID);
+            appendRunLog(eventType, agentEvent);
+            break;
+        case "text_delta":
+            appendStreamingToken(agentEvent.text || "");
+            break;
+        case "round_started":
+            setRunState("running", `第 ${agentEvent.round} 轮 · 约 ${agentEvent.preparedRequestTokens || 0} tokens`);
+            appendRunLog(eventType, agentEvent);
+            break;
+        case "tool_started":
+            setRunState("running", `执行 ${agentEvent.toolName}`);
+            finalizeStreamingMessage();
+            appendToolActivityMessage(agentEvent);
+            appendRunLog(eventType, agentEvent);
+            break;
+        case "tool_succeeded":
+            updateToolActivityMessage(agentEvent, `工具 ${agentEvent.toolName} 执行完成`);
+            appendRunLog(eventType, agentEvent);
+            break;
+        case "tool_failed":
+            updateToolActivityMessage(agentEvent,
+                `工具 ${agentEvent.toolName} 执行失败：${agentEvent.message || ""}`);
+            appendRunLog(eventType, agentEvent);
+            break;
+        case "memory_reference_ready":
+        case "current_run_compacted":
+        case "stored_memory_compressed":
+        case "stored_memory_compression_failed":
+        case "memory_save_failed":
+            appendRunLog(eventType, agentEvent);
+            break;
+        case "agent_completed":
+        case "done":
+            finalizeStreamingMessage(agentEvent.text || "");
+            activeToolMessageElements = {};
+            setRunState("completed", "执行完成");
+            loadConversations();
+            loadRecentServerLogs();
+            appendRunLog(eventType, { textLength: (agentEvent.text || "").length });
+            break;
+        case "error":
+            finalizeStreamingMessage();
+            activeToolMessageElements = {};
+            history.append(createMessage("error", agentEvent.message || agentEvent.code || "执行失败"));
+            setRunState("failed", agentEvent.code || "执行失败");
+            scrollHistoryIfUserAtBottom();
+            appendRunLog(eventType, agentEvent);
+            break;
+        case "background_reply_started":
+            createStreamingAssistantMessage();
+            setRunState("running", "SubAgent 已完成，主 Agent 正在汇总");
+            appendRunLog(eventType, agentEvent);
+            break;
+        case "background_reply_token":
+            appendStreamingToken(agentEvent.token || "");
+            break;
+        case "background_reply_completed":
+            finalizeStreamingMessage(agentEvent.text || "");
+            setRunState("completed", "后台回复完成");
+            loadConversations();
+            loadRecentServerLogs();
+            appendRunLog(eventType, { textLength: (agentEvent.text || "").length });
+            break;
+        case "background_reply_failed":
+            finalizeStreamingMessage();
+            history.append(createMessage("error", agentEvent.message || "后台回复失败"));
+            setRunState("failed", "后台回复失败");
+            scrollHistoryIfUserAtBottom();
+            appendRunLog(eventType, agentEvent);
+            break;
+        default:
+            appendRunLog(eventType, agentEvent);
+        }
+    }
+
+    function appendToolActivityMessage(toolStartedEvent) {
+        if (history.querySelector(".empty-state")) history.replaceChildren();
+        const toolMessage = createMessage("tool", `调用工具 ${toolStartedEvent.toolName} …`);
+        history.append(toolMessage);
+        if (toolStartedEvent.toolUseId) {
+            activeToolMessageElements[toolStartedEvent.toolUseId] = toolMessage;
+        }
+        scrollHistoryIfUserAtBottom();
+    }
+
+    function updateToolActivityMessage(toolFinishedEvent, resultText) {
+        const toolMessage = activeToolMessageElements[toolFinishedEvent.toolUseId];
+        if (toolMessage) {
+            toolMessage.querySelector(".message-body").textContent = resultText;
+            delete activeToolMessageElements[toolFinishedEvent.toolUseId];
+        }
+        scrollHistoryIfUserAtBottom();
+    }
+
+    function appendRunLog(eventName, details) {
+        if (runLogList.querySelector(".muted-copy")) runLogList.replaceChildren();
+        const row = document.createElement("div");
+        row.className = "log-row";
+        const time = document.createElement("div");
+        time.className = "log-time";
+        time.textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+        const main = document.createElement("div");
+        main.className = "log-main";
+        const name = document.createElement("div");
+        name.className = "log-name";
+        name.textContent = eventName;
+        const message = document.createElement("div");
+        message.className = "log-message";
+        message.textContent = typeof details === "string" ? details : JSON.stringify(details, null, 2);
+        main.append(name, message);
+        row.append(time, main);
+        runLogList.append(row);
+        runLogList.scrollTop = runLogList.scrollHeight;
+    }
+
+    // ============================================================
+    // 会话列表与加载
+    // ============================================================
+    async function loadConversations() {
+        const workingDirectory = currentWorkingDirectory();
+        if (!workingDirectory) {
+            conversationCount.textContent = "0";
+            conversationList.innerHTML = `<div class="muted-copy">输入项目绝对路径后点击“加载”。</div>`;
+            return;
+        }
         localStorage.setItem("ccAgentWorkingDirectory", workingDirectory);
-        eventList.replaceChildren();
-        finalResult.textContent = "正在执行……";
-        setRunStatus("running", "Agent.Run 正在执行");
+        try {
+            const response = await fetch(
+                `/api/conversations?workingDirectory=${encodeURIComponent(workingDirectory)}`
+            );
+            const summaries = await readJSONResponse(response, "读取会话列表");
+            setServerState(true, "Go 服务已连接");
+            renderConversationList(Array.isArray(summaries) ? summaries : []);
+        } catch (loadError) {
+            setServerState(false, "Go 服务连接失败");
+            conversationCount.textContent = "!";
+            conversationList.innerHTML = "";
+            const errorBox = document.createElement("div");
+            errorBox.className = "inline-error";
+            errorBox.textContent = loadError.message;
+            conversationList.append(errorBox);
+        }
+    }
+
+    function renderConversationList(conversationSummaries) {
+        conversationList.replaceChildren();
+        conversationCount.textContent = String(conversationSummaries.length);
+        if (!conversationSummaries.length) {
+            conversationList.innerHTML = `<div class="muted-copy">还没有会话。</div>`;
+            return;
+        }
+        for (const summary of conversationSummaries) {
+            const conversationCard = document.createElement("button");
+            conversationCard.type = "button";
+            conversationCard.className = "conversation-card";
+            conversationCard.dataset.conversationId = summary.conversationId;
+            conversationCard.title = summary.title || "未命名会话";
+            if (summary.conversationId === activeConversationID) {
+                conversationCard.classList.add("active");
+            }
+            const title = document.createElement("span");
+            title.className = "conversation-title";
+            title.textContent = summary.title || "未命名会话";
+            const metadata = document.createElement("span");
+            metadata.className = "conversation-meta";
+            const time = document.createElement("span");
+            time.textContent = formatTime(summary.updatedAt);
+            const tokens = document.createElement("span");
+            tokens.textContent = `${summary.currentWindowTokens || 0} tk`;
+            metadata.append(time, tokens);
+            conversationCard.append(title, metadata);
+            conversationCard.addEventListener("click", () => loadConversation(summary.conversationId));
+            conversationList.append(conversationCard);
+        }
+    }
+
+    async function loadConversation(conversationID) {
+        setRunState("", "正在加载会话");
+        try {
+            const response = await fetch(
+                `/api/conversations/${encodeURIComponent(conversationID)}` +
+                `?workingDirectory=${encodeURIComponent(currentWorkingDirectory())}`
+            );
+            const session = await readJSONResponse(response, "读取会话历史");
+            finalizeStreamingMessage();
+            activeConversationID = conversationID;
+            activeConversationIDLabel.textContent = conversationID;
+            updateStatusConversation();
+            renderConversationHistory(session);
+            for (const card of conversationList.querySelectorAll(".conversation-card")) {
+                card.classList.toggle("active", card.dataset.conversationId === conversationID);
+            }
+            setRunState("", "会话已加载");
+            openBackgroundEvents(conversationID);
+        } catch (loadError) {
+            setRunState("failed", "会话加载失败");
+            appendRunLog("conversation_load_failed", loadError.message);
+        }
+    }
+
+    function selectNewConversation() {
+        finalizeStreamingMessage();
+        activeConversationID = "";
+        activeConversationIDLabel.textContent = "新会话 · 首次执行时由 Go 创建编号";
+        updateStatusConversation();
+        openBackgroundEvents("");
+        for (const card of conversationList.querySelectorAll(".conversation-card")) {
+            card.classList.remove("active");
+        }
+        history.innerHTML = `<div class="empty-state"><div><strong>新会话</strong>输入第一个任务后，Go 后端会创建会话编号。</div></div>`;
+        setRunState("", "等待任务");
+        taskMessage.focus();
+    }
+
+    // ============================================================
+    // 后台事件长连接（SubAgent 完成后的主 Agent 回复）
+    // ============================================================
+    function openBackgroundEvents(conversationID) {
+        if (backgroundEventSource) backgroundEventSource.close();
+        backgroundEventSource = null;
+        if (!conversationID) return;
+        backgroundEventSource = new EventSource(
+            `/api/conversations/${encodeURIComponent(conversationID)}/events`
+        );
+        backgroundEventSource.onmessage = browserMessageEvent => {
+            try {
+                receiveAgentEvent(JSON.parse(browserMessageEvent.data));
+            } catch (decodeError) {
+                appendRunLog("background_event_decode_failed", decodeError.message);
+            }
+        };
+    }
+
+    // ============================================================
+    // 提交任务（POST SSE）
+    // ============================================================
+    async function submitTask() {
+        if (startAgentButton.disabled) return;
+        const workingDirectory = currentWorkingDirectory();
+        const message = taskMessage.value.trim();
+        if (!workingDirectory) {
+            setRunState("failed", "请先填写项目绝对路径");
+            workingDirectoryInput.focus();
+            return;
+        }
+        if (!message) {
+            setRunState("failed", "任务内容为空");
+            return;
+        }
+        localStorage.setItem("ccAgentWorkingDirectory", workingDirectory);
+
+        runLogList.replaceChildren();
+        finalizeStreamingMessage();
+        if (history.querySelector(".empty-state")) history.replaceChildren();
+        history.append(createMessage("user", message));
+        userIsNearBottom = true;
+        history.scrollTop = history.scrollHeight;
+        createStreamingAssistantMessage();
+        taskMessage.value = "";
+        setRunState("running", "正在连接 Agent");
         startAgentButton.disabled = true;
         startAgentButton.textContent = "执行中";
-        openBackgroundEvents(conversationId);
+        appendRunLog("task_submitted", {
+            conversationId: activeConversationID || "(由 Go 创建)",
+            defaultPromptApplied: activeDefaultPrompt.length > 0
+        });
 
         try {
+            const outgoingMessage = activeDefaultPrompt
+                ? `${activeDefaultPrompt}\n\n${message}`
+                : message;
             const streamResponse = await fetch("/api/chat/stream", {
                 method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({workingDirectory, conversationId, message})
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    workingDirectory,
+                    conversationId: activeConversationID,
+                    message: outgoingMessage
+                })
             });
-            if (!streamResponse.body) throw new Error("响应没有 SSE 数据流");
+            if (!streamResponse.ok) {
+                await readJSONResponse(streamResponse, "启动 Agent");
+            }
+            if (!streamResponse.body) throw new Error("Go 服务没有返回 SSE 数据流");
+            setServerState(true, "Go 服务已连接");
+            setRunState("running", "Agent 执行中");
 
             const streamReader = streamResponse.body.getReader();
             const textDecoder = new TextDecoder("utf-8");
             let undecodedText = "";
             while (true) {
-                const {value, done} = await streamReader.read();
-                undecodedText += textDecoder.decode(value || new Uint8Array(), {stream: !done});
-                const sseFrames = undecodedText.split("\n\n");
-                undecodedText = sseFrames.pop() || "";
-                for (const sseFrame of sseFrames) {
-                    const dataLine = sseFrame.split("\n").find(line => line.startsWith("data: "));
+                const { value, done } = await streamReader.read();
+                undecodedText += textDecoder.decode(value || new Uint8Array(), { stream: !done });
+                const frames = undecodedText.split("\n\n");
+                undecodedText = frames.pop() || "";
+                for (const frame of frames) {
+                    const dataLine = frame.split("\n").find(line => line.startsWith("data: "));
                     if (!dataLine) continue;
-                    receiveAgentEvent(JSON.parse(dataLine.slice(6)));
+                    receiveAgentEvent(parseStreamFrame(dataLine.slice(6)));
                 }
                 if (done) break;
             }
         } catch (runError) {
-            setRunStatus("failed", runError.message);
-            appendEvent("browser_error", runError.message);
+            finalizeStreamingMessage();
+            setRunState("failed", "Agent 执行失败");
+            appendRunLog("browser_request_failed", runError.message);
+            setServerState(false, "Go 服务请求失败");
         } finally {
             startAgentButton.disabled = false;
             startAgentButton.textContent = "开始执行";
         }
+    }
+
+    taskForm.addEventListener("submit", browserSubmitEvent => {
+        browserSubmitEvent.preventDefault();
+        submitTask();
+    });
+    taskMessage.addEventListener("keydown", browserKeyboardEvent => {
+        if ((browserKeyboardEvent.ctrlKey || browserKeyboardEvent.metaKey)
+            && browserKeyboardEvent.key === "Enter") {
+            browserKeyboardEvent.preventDefault();
+            submitTask();
+        }
     });
 
-    function receiveAgentEvent(agentEvent) {
-        const eventType = agentEvent.type || "unknown";
-        if (eventType === "text_delta") return;
-        if (eventType === "done" || eventType === "agent_completed") {
-            finalResult.textContent = agentEvent.text || "";
-            setRunStatus("completed", "Agent.Run 已完成");
-        } else if (eventType === "error") {
-            setRunStatus("failed", `${agentEvent.code}: ${agentEvent.message}`);
-        }
-        appendEvent(eventType, JSON.stringify(agentEvent, null, 2));
-    }
-
-    function appendEvent(eventName, eventValue) {
-        const eventRow = document.createElement("div");
-        eventRow.className = "event";
-        const nameElement = document.createElement("div");
-        nameElement.className = "event-name";
-        nameElement.textContent = eventName;
-        const valueElement = document.createElement("div");
-        valueElement.className = "event-value";
-        valueElement.textContent = eventValue;
-        eventRow.append(nameElement, valueElement);
-        eventList.append(eventRow);
-        eventList.scrollTop = eventList.scrollHeight;
-    }
-
-    function setRunStatus(statusName, statusText) {
-        runStatus.className = `status ${statusName}`;
-        runStatus.textContent = statusText;
-    }
-
-    function openBackgroundEvents(conversationId) {
-        if (backgroundEventSource) backgroundEventSource.close();
-        backgroundEventSource = new EventSource(
-            `/api/conversations/${encodeURIComponent(conversationId)}/events`
-        );
-        backgroundEventSource.onmessage = (browserMessageEvent) => {
-            receiveAgentEvent(JSON.parse(browserMessageEvent.data));
-        };
-    }
-
+    // ============================================================
+    // MCP Server
+    // ============================================================
     async function loadMCPServers() {
         try {
             const response = await fetch("/api/mcp/servers");
-            const returnedServers = await response.json();
-            configuredMCPServers = returnedServers.servers || returnedServers;
+            const returnedServers = await readJSONResponse(response, "读取 MCP Server");
+            configuredMCPServers = returnedServers?.servers || [];
             renderMCPServers();
+            setServerState(true, "Go 服务已连接");
         } catch (loadError) {
-            mcpList.textContent = `读取失败：${loadError.message}`;
+            configuredMCPServers = [];
+            mcpList.replaceChildren();
+            const errorBox = document.createElement("div");
+            errorBox.className = "inline-error";
+            errorBox.textContent = loadError.message;
+            mcpList.append(errorBox);
         }
     }
 
     function renderMCPServers() {
         mcpList.replaceChildren();
+        if (!configuredMCPServers.length) {
+            mcpList.innerHTML = `<div class="muted-copy">配置文件中没有 MCP Server。</div>`;
+            return;
+        }
         for (const configuredServer of configuredMCPServers) {
-            const serverRow = document.createElement("label");
-            serverRow.className = "mcp-row";
-            const serverIdentity = document.createElement("span");
-            serverIdentity.innerHTML =
-                `<span class="mcp-name"></span><br><span class="mcp-state"></span>`;
-            serverIdentity.querySelector(".mcp-name").textContent = configuredServer.name;
-            serverIdentity.querySelector(".mcp-state").textContent =
-                configuredServer.status || (configuredServer.running ? "running" : "stopped");
+            const row = document.createElement("label");
+            row.className = "mcp-row";
             const selection = document.createElement("input");
             selection.type = "checkbox";
             selection.value = configuredServer.name;
-            selection.checked = configuredServer.status === "running" || configuredServer.running;
-            selection.style.width = "auto";
-            serverRow.append(serverIdentity, selection);
-            mcpList.append(serverRow);
+            selection.checked = configuredServer.status === "running";
+            const identity = document.createElement("span");
+            const name = document.createElement("span");
+            name.className = "mcp-name";
+            name.textContent = configuredServer.displayName || configuredServer.name;
+            const detail = document.createElement("span");
+            detail.className = "mcp-detail";
+            detail.textContent = `${configuredServer.registeredToolCount || 0} 个工具`;
+            identity.append(name, detail);
+            const state = document.createElement("span");
+            state.className = `state-pill ${configuredServer.status || ""}`;
+            state.textContent = configuredServer.status || "stopped";
+            row.append(selection, identity, state);
+            mcpList.append(row);
         }
-        if (!configuredMCPServers.length) mcpList.textContent = "没有配置 MCP Server";
     }
 
-    document.getElementById("refresh-mcp").addEventListener("click", loadMCPServers);
-    document.getElementById("apply-mcp").addEventListener("click", async () => {
+    async function applySelectedMCPServers() {
         const selectedMCPServerNames = [...mcpList.querySelectorAll("input:checked")]
             .map(selection => selection.value);
-        const response = await fetch("/api/mcp/servers", {
-            method: "PUT",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({selectedServerNames: selectedMCPServerNames})
-        });
-        if (!response.ok) {
-            const returnedError = await response.json();
-            appendEvent("mcp_error", JSON.stringify(returnedError, null, 2));
+        appendRunLog("mcp_selection_submitted", { selectedMCPServerNames });
+        try {
+            const response = await fetch("/api/mcp/servers", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ selectedServerNames: selectedMCPServerNames })
+            });
+            await readJSONResponse(response, "应用 MCP Server");
+            appendRunLog("mcp_selection_completed", "MCP Server 状态已更新。");
+            await loadMCPServers();
+        } catch (applyError) {
+            appendRunLog("mcp_selection_failed", applyError.message);
         }
-        await loadMCPServers();
-    });
+    }
 
+    // ============================================================
+    // 事件绑定与初始化
+    // ============================================================
+    async function loadRecentServerLogs() {
+        try {
+            const response = await fetch("/api/logs?limit=200");
+            const returnedLogs = await readJSONResponse(response, "读取服务日志");
+            renderServerLogs(returnedLogs?.logs || []);
+        } catch (loadError) {
+            serverLogList.replaceChildren();
+            const errorBox = document.createElement("div");
+            errorBox.className = "inline-error";
+            errorBox.textContent = loadError.message;
+            serverLogList.append(errorBox);
+        }
+    }
+
+    function renderServerLogs(logEntries) {
+        serverLogList.replaceChildren();
+        if (!logEntries.length) {
+            serverLogList.innerHTML = `<div class="muted-copy">日志文件中还没有记录。</div>`;
+            return;
+        }
+        for (const entry of [...logEntries].reverse()) {
+            const row = document.createElement("div");
+            row.className = "log-row";
+            const time = document.createElement("div");
+            time.className = "log-time";
+            time.textContent = entry.time
+                ? new Date(entry.time).toLocaleTimeString("zh-CN", { hour12: false })
+                : "--:--:--";
+            const main = document.createElement("div");
+            main.className = "log-main";
+            const name = document.createElement("div");
+            name.className = "log-name";
+            name.textContent = [entry.level, entry.component, entry.operation]
+                .filter(Boolean).join(" · ") || "application";
+            const message = document.createElement("div");
+            message.className = "log-message";
+            message.textContent = [entry.msg, entry.error].filter(Boolean).join("\n");
+            main.append(name, message);
+            row.append(time, main);
+            serverLogList.append(row);
+        }
+    }
+
+    document.getElementById("new-conversation").addEventListener("click", selectNewConversation);
+    document.getElementById("load-project").addEventListener("click", loadConversations);
+    workingDirectoryInput.addEventListener("keydown", browserKeyboardEvent => {
+        if (browserKeyboardEvent.key === "Enter") loadConversations();
+    });
+    document.getElementById("refresh-mcp").addEventListener("click", loadMCPServers);
+    document.getElementById("apply-mcp").addEventListener("click", applySelectedMCPServers);
+    document.getElementById("refresh-logs").addEventListener("click", loadRecentServerLogs);
+
+    for (const tabButton of document.querySelectorAll(".tab-button")) {
+        tabButton.addEventListener("click", () => {
+            for (const candidate of document.querySelectorAll(".tab-button")) {
+                candidate.classList.toggle("active", candidate === tabButton);
+            }
+            runLogList.classList.toggle("active", tabButton.dataset.logTab === "run");
+            serverLogList.classList.toggle("active", tabButton.dataset.logTab === "server");
+        });
+    }
+
+    loadConversations();
     loadMCPServers();
+    loadRecentServerLogs();
+    updateStatusConversation();
 </script>
 </body>
 </html>

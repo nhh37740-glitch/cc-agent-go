@@ -12,11 +12,15 @@ The `agent` package SHALL expose an `Agent` type that owns the model caller, rea
 - **THEN** the host supplies that participant's working directory, conversation ID, and current task to `Agent.Run` without modifying the `agent` package
 
 ### Requirement: Receive the active project directory and conversation ID from the caller
-Every `Agent.Run` SHALL receive an `AgentExecutionEnvironment` containing a required absolute `WorkingDirectory` and a required `ConversationID`. The Agent SHALL NOT generate a conversation ID and SHALL NOT read a process-wide workspace directory. An HTTP handler, SubAgent host, game host, or other caller SHALL choose these two values before calling the Agent.
+Every `Agent.Run` SHALL receive an `AgentExecutionEnvironment` containing a required absolute `WorkingDirectory` and a required `ConversationID`. The Agent SHALL NOT generate a conversation ID and SHALL NOT read a process-wide workspace directory. An HTTP handler, SubAgent host, game host, or other caller SHALL choose these two values before calling the Agent. For a new WebAgent conversation, the Go HTTP handler SHALL generate the ID before it calls `Agent.Run`; the browser user SHALL NOT type an ID.
 
-#### Scenario: WebAgent starts a task
-- **WHEN** the browser submits `workingDirectory`, `conversationId`, and `message`
-- **THEN** `main.handleChatStream` passes those exact working-directory and conversation-ID values through the service to `Agent.Run`
+#### Scenario: WebAgent starts a new conversation
+- **WHEN** the browser submits `workingDirectory`, an empty `conversationId`, and `message`
+- **THEN** `main.handleChatStream` generates a safe conversation ID, returns that ID in the first SSE event, and passes it through the service to `Agent.Run`
+
+#### Scenario: WebAgent continues an existing conversation
+- **WHEN** the browser selects an existing conversation and submits its `conversationId`
+- **THEN** `main.handleChatStream` passes that exact working-directory and conversation-ID value through the service to `Agent.Run`
 
 #### Scenario: Game host starts one player turn
 - **WHEN** a host assigns working directory `C:/games/werewolf-1` and conversation ID `player-3`

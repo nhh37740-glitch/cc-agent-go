@@ -28,9 +28,9 @@ func customPipeline() []analyzerlib.PipelineStep {
 	// Go 里函数可以赋给变量，这里把匿名函数转为 PipelineStep 类型。
 	customStep := analyzerlib.PipelineStep(func(input string) (map[string]any, error) {
 		return map[string]any{
-			"step":    "自定义步骤",
-			"len":     len(input),
-			"hasGo":   true, // 实际判断略
+			"step":  "自定义步骤",
+			"len":   len(input),
+			"hasGo": true, // 实际判断略
 		}, nil
 	})
 	return []analyzerlib.PipelineStep{
