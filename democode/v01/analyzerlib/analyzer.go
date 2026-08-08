@@ -32,8 +32,8 @@ func (e EmptyInputError) Error() string {
 // 包级变量在 init 之前初始化，整个包都能访问。
 // DefaultConfig 是默认分析配置，大写开头 = 导出（包外可见）。
 var DefaultConfig = AnalyzerConfig{
-	MinWordLen:  2,    // 最短单词长度，短于此的忽略
-	MaxWords:     100,  // 最多返回多少个高频词
+	MinWordLen:    2,   // 最短单词长度，短于此的忽略
+	MaxWords:      100, // 最多返回多少个高频词
 	CaseSensitive: false,
 }
 
@@ -77,11 +77,11 @@ type Analyzer struct {
 
 // TextStats 分析结果汇总
 type TextStats struct {
-	TotalChars  int          // 总字符数
-	TotalWords  int          // 总单词数
-	TotalLines  int          // 总行数
-	TopWords    []WordCount  // 高频词列表（按频次降序）
-	AvgWordLen  float64      // 平均单词长度
+	TotalChars int         // 总字符数
+	TotalWords int         // 总单词数
+	TotalLines int         // 总行数
+	TopWords   []WordCount // 高频词列表（按频次降序）
+	AvgWordLen float64     // 平均单词长度
 }
 
 // ==================== 构造函数（分别演示 new 和 make）====================
@@ -277,8 +277,8 @@ func StepWordCount(text string) (map[string]any, error) {
 		freq[w]++
 	}
 	return map[string]any{
-		"step":       "词频统计",
-		"totalWords": len(words),
+		"step":        "词频统计",
+		"totalWords":  len(words),
 		"uniqueWords": len(freq),
 	}, nil
 }

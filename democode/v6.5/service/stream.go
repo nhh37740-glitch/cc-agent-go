@@ -136,8 +136,8 @@ done:
 }
 
 type toolAccumulator struct {
-	id     string
-	name   string
+	id      string
+	name    string
 	jsonBuf strings.Builder
 }
 

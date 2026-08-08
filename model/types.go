@@ -1,21 +1,177 @@
 package model
 
-// ContentBlock 消息中的内容块。DeepSeek Anthropic 格式要求 content 是数组，
-// 每个元素可以是 text（文本）、tool_use（工具调用请求）、tool_result（工具执行结果）
-type ContentBlock struct {
-	Type      string         `json:"type"`
-	Text      string         `json:"text,omitempty"`
-	ID        string         `json:"id,omitempty"`          // tool_use 使用
-	Name      string         `json:"name,omitempty"`        // tool_use 使用
-	Input     map[string]any `json:"input,omitempty"`       // tool_use 使用
-	ToolUseID string         `json:"tool_use_id,omitempty"` // tool_result 使用
-	Content   string         `json:"content,omitempty"`     // tool_result 使用（纯文本结果）
+import (
+	"encoding/json"
+	"fmt"
+)
+
+// MessageContentBlock 是 Message.Content 允许保存的内容类型。
+// 三个具体类型分别定义自己的必填字段，不共用一个包含所有可选字段的结构体。
+type MessageContentBlock interface {
+	messageContentBlock()
+}
+
+type TextContentBlock struct {
+	Text string `json:"text"`
+}
+
+func (TextContentBlock) messageContentBlock() {}
+
+func (textContentBlock TextContentBlock) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}{
+		Type: "text",
+		Text: textContentBlock.Text,
+	})
+}
+
+type ToolUseContentBlock struct {
+	ID    string         `json:"id"`
+	Name  string         `json:"name"`
+	Input map[string]any `json:"input"`
+}
+
+func (ToolUseContentBlock) messageContentBlock() {}
+
+func (toolUseContentBlock ToolUseContentBlock) MarshalJSON() ([]byte, error) {
+	toolInput := toolUseContentBlock.Input
+	if toolInput == nil {
+		toolInput = map[string]any{}
+	}
+
+	return json.Marshal(struct {
+		Type  string         `json:"type"`
+		ID    string         `json:"id"`
+		Name  string         `json:"name"`
+		Input map[string]any `json:"input"`
+	}{
+		Type:  "tool_use",
+		ID:    toolUseContentBlock.ID,
+		Name:  toolUseContentBlock.Name,
+		Input: toolInput,
+	})
+}
+
+type ToolResultContentBlock struct {
+	ToolUseID string `json:"tool_use_id"`
+	Content   string `json:"content"`
+}
+
+func (ToolResultContentBlock) messageContentBlock() {}
+
+func (toolResultContentBlock ToolResultContentBlock) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Type      string `json:"type"`
+		ToolUseID string `json:"tool_use_id"`
+		Content   string `json:"content"`
+	}{
+		Type:      "tool_result",
+		ToolUseID: toolResultContentBlock.ToolUseID,
+		Content:   toolResultContentBlock.Content,
+	})
 }
 
 // Message 对话历史中的一条消息
 type Message struct {
-	Role    string         `json:"role"`    // "user" 或 "assistant"
-	Content []ContentBlock `json:"content"` // 内容块数组
+	Role    string                `json:"role"`    // "user" 或 "assistant"
+	Content []MessageContentBlock `json:"content"` // 内容块数组
+}
+
+func (message *Message) UnmarshalJSON(messageJSON []byte) error {
+	var messageFields struct {
+		Role    string            `json:"role"`
+		Content []json.RawMessage `json:"content"`
+	}
+	if decodeMessageError := json.Unmarshal(messageJSON, &messageFields); decodeMessageError != nil {
+		return decodeMessageError
+	}
+
+	decodedContentBlocks := make(
+		[]MessageContentBlock,
+		0,
+		len(messageFields.Content),
+	)
+	for contentBlockIndex, contentBlockJSON := range messageFields.Content {
+		var contentBlockTypeField struct {
+			Type string `json:"type"`
+		}
+		if decodeTypeError := json.Unmarshal(
+			contentBlockJSON,
+			&contentBlockTypeField,
+		); decodeTypeError != nil {
+			return fmt.Errorf(
+				"解包第 %d 个消息内容类型失败: %w",
+				contentBlockIndex,
+				decodeTypeError,
+			)
+		}
+
+		switch contentBlockTypeField.Type {
+		case "text":
+			var textContentBlock TextContentBlock
+			if decodeTextError := json.Unmarshal(
+				contentBlockJSON,
+				&textContentBlock,
+			); decodeTextError != nil {
+				return fmt.Errorf(
+					"解包第 %d 个文本内容失败: %w",
+					contentBlockIndex,
+					decodeTextError,
+				)
+			}
+			decodedContentBlocks = append(
+				decodedContentBlocks,
+				textContentBlock,
+			)
+		case "tool_use":
+			var toolUseContentBlock ToolUseContentBlock
+			if decodeToolUseError := json.Unmarshal(
+				contentBlockJSON,
+				&toolUseContentBlock,
+			); decodeToolUseError != nil {
+				return fmt.Errorf(
+					"解包第 %d 个工具调用内容失败: %w",
+					contentBlockIndex,
+					decodeToolUseError,
+				)
+			}
+			if toolUseContentBlock.Input == nil {
+				toolUseContentBlock.Input = map[string]any{}
+			}
+			decodedContentBlocks = append(
+				decodedContentBlocks,
+				toolUseContentBlock,
+			)
+		case "tool_result":
+			var toolResultContentBlock ToolResultContentBlock
+			if decodeToolResultError := json.Unmarshal(
+				contentBlockJSON,
+				&toolResultContentBlock,
+			); decodeToolResultError != nil {
+				return fmt.Errorf(
+					"解包第 %d 个工具结果内容失败: %w",
+					contentBlockIndex,
+					decodeToolResultError,
+				)
+			}
+			decodedContentBlocks = append(
+				decodedContentBlocks,
+				toolResultContentBlock,
+			)
+		default:
+			return fmt.Errorf(
+				"第 %d 个消息内容使用了不支持的 type %q",
+				contentBlockIndex,
+				contentBlockTypeField.Type,
+			)
+		}
+	}
+
+	message.Role = messageFields.Role
+	message.Content = decodedContentBlocks
+	return nil
 }
 
 // ToolCall 从 API 响应中解析出的工具调用
@@ -27,14 +183,23 @@ type ToolCall struct {
 
 // ChatRequest 前端发来的 JSON 请求体
 type ChatRequest struct {
-	Message        string `json:"message"`
-	ConversationId string `json:"conversationId,omitempty"` // 可选：不传时服务端自动生成
+	WorkingDirectory string `json:"workingDirectory"`
+	ConversationId   string `json:"conversationId"`
+	Message          string `json:"message"`
 }
 
 // ChatResponse 返回给前端的 JSON 响应体
 type ChatResponse struct {
 	ConversationId string `json:"conversationId"`
 	Reply          string `json:"reply"`
+}
+
+// ErrorResponse 是非流式 HTTP 错误响应。ProviderStatus 只在 DeepSeek
+// 返回非成功状态码时出现。
+type ErrorResponse struct {
+	Code           string `json:"code"`
+	Message        string `json:"message"`
+	ProviderStatus int    `json:"providerStatus,omitempty"`
 }
 
 // ========== v7 新增 ==========
@@ -55,6 +220,7 @@ type SessionJson struct {
 	ConversationId           string    `json:"conversationId"`
 	Title                    string    `json:"title"`
 	RunningTotalTokens       int       `json:"runningTotalTokens"`
+	StoredMemoryTokens       int       `json:"storedMemoryTokens"`
 	ContextWindowLimitTokens int       `json:"contextWindowLimitTokens"`
 	LastInputTokens          int       `json:"lastInputTokens"`
 	LastOutputTokens         int       `json:"lastOutputTokens"`

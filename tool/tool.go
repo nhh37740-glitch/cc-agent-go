@@ -10,5 +10,8 @@ type Tool interface {
 	// InputSchema 返回工具参数的 JSON Schema，用于向 API 声明工具签名
 	InputSchema() map[string]any
 
-	Execute(input map[string]any) (string, error)
+	Execute(
+		toolArguments map[string]any,
+		executionEnvironment ToolExecutionEnvironment,
+	) (string, error)
 }

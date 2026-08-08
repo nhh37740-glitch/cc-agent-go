@@ -1,0 +1,49 @@
+{
+  "protocolVersion": "2025-11-25",
+  "initializeRequestJSON": {
+    "jsonrpc": "2.0",
+    "method": "initialize",
+    "params": {
+      "protocolVersion": "2025-11-25",
+      "capabilities": {},
+      "clientInfo": {
+        "name": "cc-agent-go",
+        "title": "cc-agent-go MCP Client",
+        "version": "v12"
+      }
+    }
+  },
+  "initializedNotificationJSON": {
+    "jsonrpc": "2.0",
+    "method": "notifications/initialized"
+  },
+  "getToolListRequestJSON": {
+    "jsonrpc": "2.0",
+    "method": "tools/list",
+    "params": {}
+  },
+  "callToolRequestJSON": {
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+      "name": "",
+      "arguments": {}
+    }
+  },
+  "cancelRequestNotificationJSON": {
+    "jsonrpc": "2.0",
+    "method": "notifications/cancelled",
+    "params": {
+      "requestId": 0,
+      "reason": "request timeout"
+    }
+  },
+  "methodNotFoundErrorResponseJSON": {
+    "jsonrpc": "2.0",
+    "id": null,
+    "error": {
+      "code": -32601,
+      "message": "Method not found"
+    }
+  }
+}

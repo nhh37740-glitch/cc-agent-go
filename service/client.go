@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -24,6 +25,10 @@ import (
 // 好处：返回 struct 指针避免多返回值过长；出错时返回 nil。
 func Chat(messages []model.Message, systemPrompt string, cfg config.Config,
 	tools []map[string]any, maxTokens int) (*model.ApiResponse, error) {
+	if strings.TrimSpace(cfg.ApiKey) == "" {
+		return nil, NewAppError(ErrorConfig, "service.Chat", 0,
+			fmt.Errorf("DEEPSEEK_API_KEY 未设置"))
+	}
 
 	body := map[string]any{
 		"model":      cfg.Model,
@@ -37,12 +42,12 @@ func Chat(messages []model.Message, systemPrompt string, cfg config.Config,
 
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
-		return nil, fmt.Errorf("序列化请求体失败: %w", err)
+		return nil, NewAppError(ErrorInternal, "service.Chat.marshal", 0, err)
 	}
 
 	req, err := http.NewRequest("POST", cfg.ApiEndpoint, bytes.NewReader(jsonBody))
 	if err != nil {
-		return nil, fmt.Errorf("创建请求失败: %w", err)
+		return nil, NewAppError(ErrorConfig, "service.Chat.newRequest", 0, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", cfg.ApiKey)
@@ -50,23 +55,30 @@ func Chat(messages []model.Message, systemPrompt string, cfg config.Config,
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("API 请求失败: %w", err)
+		return nil, newNetworkError("service.Chat.do", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("读取响应体失败: %w", err)
+		return nil, NewAppError(ErrorProviderResponseInvalid,
+			"service.Chat.readResponse", resp.StatusCode, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, newProviderError("service.Chat.provider", resp.StatusCode, respBody, cfg.ApiKey)
 	}
 
 	var result map[string]any
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("解析响应 JSON 失败: %w", err)
+		return nil, NewAppError(ErrorProviderResponseInvalid,
+			"service.Chat.decodeResponse", resp.StatusCode, err)
 	}
 
 	contentList, ok := result["content"].([]any)
 	if !ok || len(contentList) == 0 {
-		return nil, fmt.Errorf("响应中没有 content 字段")
+		return nil, NewAppError(ErrorProviderResponseInvalid,
+			"service.Chat.content", resp.StatusCode,
+			fmt.Errorf("响应中没有 content 字段"))
 	}
 
 	var textBuilder strings.Builder
@@ -96,8 +108,12 @@ func Chat(messages []model.Message, systemPrompt string, cfg config.Config,
 
 	// 读取 stop_reason，诊断发言被截断的原因
 	if stopReason, ok := result["stop_reason"].(string); ok {
-		fmt.Printf("[Chat] stop_reason=%s, output_tokens≈%d, text_len=%d\n",
-			stopReason, intFromMap(result, "usage", "output_tokens"), len(text))
+		slog.Info("DeepSeek 非流式响应完成",
+			"component", "provider",
+			"operation", "service.Chat",
+			"stop_reason", stopReason,
+			"output_tokens", intFromMap(result, "usage", "output_tokens"),
+			"text_length", len(text))
 	}
 
 	// 提取 token 用量

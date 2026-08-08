@@ -1,0 +1,946 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harness · cc-agent-go</title>
+<style>
+    * { box-sizing: border-box; }
+    body {
+        margin: 0; background: #111418; color: #d7dce2;
+        font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+    }
+    .topbar {
+        display: flex; align-items: center; gap: 16px; padding: 10px 18px;
+        background: #171b21; border-bottom: 1px solid #262c35; flex-shrink: 0;
+    }
+    .brand { display: flex; align-items: center; gap: 8px; }
+    .brand-mark {
+        background: #c9a227; color: #111418; font-weight: 700;
+        width: 26px; height: 26px; border-radius: 6px;
+        display: inline-flex; align-items: center; justify-content: center;
+    }
+    .brand-name { font-weight: 600; }
+    .brand-version { color: #8b95a1; font-size: 12px; }
+    .project-picker { display: flex; gap: 8px; flex: 1; max-width: 620px; }
+    .project-picker input {
+        flex: 1; background: #0d1014; border: 1px solid #2c333d; color: #d7dce2;
+        border-radius: 6px; padding: 7px 10px; font-size: 13px;
+    }
+    .button {
+        background: #232a33; color: #d7dce2; border: 1px solid #323b46;
+        border-radius: 6px; padding: 7px 14px; font-size: 13px; cursor: pointer;
+        text-decoration: none; display: inline-flex; align-items: center; gap: 4px;
+    }
+    .button:hover { background: #2c3540; }
+    .button.primary { background: #c9a227; border-color: #c9a227; color: #111418; font-weight: 600; }
+    .button.primary:hover { background: #d9b438; }
+    .button.small { padding: 5px 10px; font-size: 12px; }
+    .button.ghost { background: transparent; }
+    .button:disabled { opacity: 0.5; cursor: default; }
+    .topbar-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+    .state-pill {
+        font-size: 11px; padding: 3px 9px; border-radius: 999px;
+        background: #2a313b; color: #9aa5b1;
+    }
+    .state-pill.ok { background: #1d3a2a; color: #6fd39a; }
+    .state-pill.bad { background: #3d2222; color: #e08a8a; }
+
+    .layout {
+        flex: 1; display: grid; grid-template-columns: 280px 1fr 400px;
+        min-height: 0;
+    }
+    .panel-title {
+        font-size: 12px; font-weight: 600; color: #9aa5b1; letter-spacing: 0.05em;
+        padding: 12px 14px 8px; display: flex; align-items: center; justify-content: space-between;
+        text-transform: uppercase;
+    }
+    .agents-panel, .detail-panel {
+        background: #151920; border-right: 1px solid #262c35;
+        overflow-y: auto; min-height: 0;
+    }
+    .detail-panel { border-right: none; border-left: 1px solid #262c35; display: flex; flex-direction: column; }
+    .muted { color: #8b95a1; font-size: 12px; padding: 0 14px 8px; }
+
+    .agent-row {
+        margin: 0 10px 6px; padding: 9px 11px; border-radius: 8px;
+        background: #1a1f27; border: 1px solid #262c35; cursor: pointer;
+    }
+    .agent-row:hover { border-color: #38414d; }
+    .agent-row.selected { border-color: #c9a227; }
+    .agent-row .agent-name { font-weight: 600; font-size: 13px; }
+    .agent-row .agent-meta {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-top: 5px; font-size: 11px; color: #8b95a1;
+    }
+    .status-pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #2a313b; color: #9aa5b1; }
+    .status-pill.running { background: #1d3a2a; color: #6fd39a; }
+    .status-pill.completed { background: #1f3145; color: #7fb3e8; }
+    .status-pill.failed { background: #3d2222; color: #e08a8a; }
+
+    .chat-panel { display: flex; flex-direction: column; min-height: 0; }
+    .chat-history { flex: 1; overflow-y: auto; padding: 18px 22px; content-visibility: auto; contain-intrinsic-size: auto 500px; }
+    .empty-state { color: #5f6b78; text-align: center; margin-top: 80px; font-size: 13px; line-height: 2; }
+    .message { margin-bottom: 16px; max-width: 860px; }
+    .message .message-role { font-size: 11px; color: #8b95a1; margin-bottom: 4px; }
+    .message .message-body {
+        background: #1a1f27; border: 1px solid #262c35; border-radius: 10px;
+        padding: 10px 14px; font-size: 14px; line-height: 1.65;
+    }
+    .message.user .message-body { background: #233042; border-color: #30405a; }
+    .message.background .message-body { border-color: #6b5a1e; }
+    .message.background .message-role { color: #c9a227; }
+    .message.error .message-body { background: #3d2222; border-color: #5c2e2e; color: #f0b8b8; white-space: pre-wrap; }
+    .bubble-log { margin-top: 6px; font-family: Consolas, monospace; font-size: 11px; color: #6f7b88; }
+    .bubble-log div { padding: 1px 0; }
+
+    .chat-form {
+        display: flex; gap: 10px; padding: 12px 18px;
+        border-top: 1px solid #262c35; background: #151920; flex-shrink: 0;
+    }
+    .chat-form textarea {
+        flex: 1; resize: none; height: 44px; background: #0d1014;
+        border: 1px solid #2c333d; color: #d7dce2; border-radius: 6px;
+        padding: 9px 11px; font-size: 13px; font-family: inherit;
+    }
+
+    .progress-stream {
+        flex: 1; overflow-y: auto; padding: 0 14px 10px; min-height: 120px;
+        font-size: 13px; line-height: 1.6;
+    }
+    .progress-log-line { font-family: Consolas, monospace; font-size: 11px; color: #6f7b88; padding: 1px 0; }
+    .progress-text { white-space: pre-wrap; }
+    .memory-view {
+        flex: 1; overflow-y: auto; padding: 0 14px 14px; font-size: 13px;
+        border-top: 1px solid #262c35;
+    }
+    .memory-message { margin: 8px 0; padding: 8px 10px; background: #1a1f27; border-radius: 8px; border: 1px solid #262c35; }
+    .memory-message .memory-role { font-size: 11px; color: #8b95a1; margin-bottom: 3px; }
+    .inline-error {
+        margin: 8px 14px; padding: 8px 11px; background: #3d2222; color: #f0b8b8;
+        border: 1px solid #5c2e2e; border-radius: 8px; font-size: 12px; white-space: pre-wrap;
+    }
+
+    .md-pre { background: #0d1014; border: 1px solid #262c35; border-radius: 8px; padding: 10px; overflow-x: auto; font-size: 12px; }
+    .md-code { background: #0d1014; border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+    .md-h { margin: 10px 0 6px; }
+    .md-hr { border: none; border-top: 1px solid #2c333d; margin: 12px 0; }
+    .md-quote { border-left: 3px solid #38414d; margin: 8px 0; padding: 2px 12px; color: #9aa5b1; }
+</style>
+</head>
+<body>
+<header class="topbar">
+    <div class="brand">
+        <span class="brand-mark">H</span>
+        <span class="brand-name">Harness</span>
+        <span class="brand-version">编排 · v17</span>
+    </div>
+    <div class="project-picker">
+        <input id="working-directory" autocomplete="off" spellcheck="false"
+               placeholder="项目绝对路径，例如 C:\Users\Z\Documents\project\code\cc-agent-go">
+        <button id="load-project" class="button small primary" type="button">连接</button>
+    </div>
+    <div class="topbar-tools">
+        <a class="button ghost small" href="/">WebAgent</a>
+        <a class="button ghost small" href="/council">元老院</a>
+        <span id="server-state" class="state-pill">未连接</span>
+    </div>
+</header>
+
+<main class="layout">
+    <aside class="agents-panel">
+        <div class="panel-title">Agent 名单
+            <button id="refresh-agents" class="button small ghost" type="button">刷新</button>
+        </div>
+        <div id="pool-summary" class="muted">连接项目后显示池容量。</div>
+        <div id="agent-list"></div>
+        <div id="conversation-list-section">
+            <div class="panel-title">历史会话
+                <button id="refresh-conversations" class="button small ghost" type="button">刷新</button>
+            </div>
+            <div id="conversation-list"></div>
+        </div>
+    </aside>
+
+    <section class="chat-panel">
+        <div id="chat-history" class="chat-history">
+            <div class="empty-state">
+                填写项目绝对路径并点击「连接」。<br>
+                Harness 收到目标后会自己决定启动哪些 Agent；<br>
+                Agent 完成后，汇报会自动出现在这里。
+            </div>
+        </div>
+        <form id="chat-form" class="chat-form">
+            <textarea id="chat-input" placeholder="告诉 Harness 你的目标，例如：实现一个元老院应用（Ctrl+Enter 发送）"></textarea>
+            <button id="send-button" class="button primary" type="submit">发送</button>
+        </form>
+    </section>
+
+    <aside class="detail-panel">
+        <div class="panel-title" id="detail-title">Agent 进度</div>
+        <div id="progress-stream" class="progress-stream">
+            <div class="muted">点击左侧 Agent 查看逐 token 进度。</div>
+        </div>
+        <div class="panel-title">记忆
+            <button id="load-memory" class="button small ghost" type="button" disabled>读取</button>
+        </div>
+        <div id="memory-view" class="memory-view"></div>
+    </aside>
+</main>
+
+<script>
+"use strict";
+
+const workingDirectoryInput = document.getElementById("working-directory");
+const loadProjectButton = document.getElementById("load-project");
+const serverState = document.getElementById("server-state");
+const poolSummary = document.getElementById("pool-summary");
+const agentList = document.getElementById("agent-list");
+const chatHistory = document.getElementById("chat-history");
+const chatForm = document.getElementById("chat-form");
+const chatInput = document.getElementById("chat-input");
+const sendButton = document.getElementById("send-button");
+const detailTitle = document.getElementById("detail-title");
+const progressStream = document.getElementById("progress-stream");
+const loadMemoryButton = document.getElementById("load-memory");
+const memoryView = document.getElementById("memory-view");
+const conversationList = document.getElementById("conversation-list");
+const refreshConversationsButton = document.getElementById("refresh-conversations");
+
+const BUBBLE_RENDER_INTERVAL_MS = 50;
+
+let activeWorkingDirectory = localStorage.getItem("harnessWorkingDirectory") || "";
+workingDirectoryInput.value = activeWorkingDirectory;
+let agentsPollTimer = null;
+let agentsLoadPending = false;
+let agentsLoadQueued = false;
+let lastAgentRosterSignature = "";
+let harnessEventSource = null;
+let progressEventSource = null;
+let selectedAgentName = null;
+let selectedAgentConversationId = null;
+let chatUserNearBottom = true;
+let progressUserNearBottom = true;
+let chatStreamBubble = null;
+let backgroundBubble = null;
+let progressRawText = "";
+let progressPendingText = "";
+let progressTextElement = null;
+let progressAnimationFrameId = null;
+let memoryAbortController = null;
+let memoryLoadGeneration = 0;
+
+// ============================================================
+// 错误显示：真实 HTTP 状态 + 后端 JSON
+// ============================================================
+async function readJSONResponse(response, actionName) {
+    if (response.ok) return response.json();
+    let errorDetail = "";
+    try {
+        const errorJSON = await response.json();
+        errorDetail = errorJSON.message || JSON.stringify(errorJSON);
+    } catch (ignored) {
+        errorDetail = await response.text().catch(() => "");
+    }
+    throw new Error(
+        `${actionName}失败：HTTP ${response.status}` +
+        (errorDetail ? ` — ${errorDetail}` : "")
+    );
+}
+
+function appendChatError(errorText) {
+    finalizeChatStreamBubble();
+    finalizeBackgroundBubble();
+    const errorMessage = document.createElement("div");
+    errorMessage.className = "message error";
+    errorMessage.innerHTML = `<div class="message-role">错误</div>`;
+    const body = document.createElement("div");
+    body.className = "message-body";
+    body.textContent = errorText;
+    errorMessage.append(body);
+    removeChatEmptyState();
+    chatHistory.append(errorMessage);
+    chatUserNearBottom = true;
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+}
+
+function setServerState(connected, label) {
+    serverState.className = "state-pill " + (connected ? "ok" : "bad");
+    serverState.textContent = label;
+}
+
+// ============================================================
+// Markdown 渲染（与 index.html 相同实现）与智能滚动
+// ============================================================
+function escapeHTML(sourceText) {
+    return sourceText
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function renderMarkdown(sourceText) {
+    const codeBlockHTMLList = [];
+    let workingText = sourceText.replace(
+        /```(\w*)\n?([\s\S]*?)(```|$)/g,
+        (wholeMatch, languageName, codeContent) => {
+            codeBlockHTMLList.push(
+                `<pre class="md-pre"><code>${escapeHTML(codeContent.replace(/\n$/, ""))}</code></pre>`
+            );
+            return ` ${codeBlockHTMLList.length - 1} `;
+        }
+    );
+    workingText = escapeHTML(workingText);
+    workingText = workingText
+        .replace(/`([^`\n]+)`/g, '<code class="md-code">$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+        .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+        .replace(/~~([^~]+)~~/g, "<del>$1</del>")
+        .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (wholeMatch, label, linkURL) => {
+            if (/^(https?:\/\/|mailto:)/i.test(linkURL)) {
+                return `<a href="${linkURL}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+            }
+            return label;
+        });
+    const outputHTML = [];
+    let openListType = null;
+    let paragraphLines = [];
+    const closeList = () => {
+        if (openListType) {
+            outputHTML.push(openListType === "ul" ? "</ul>" : "</ol>");
+            openListType = null;
+        }
+    };
+    const flushParagraph = () => {
+        if (paragraphLines.length) {
+            outputHTML.push(`<p>${paragraphLines.join("<br>")}</p>`);
+            paragraphLines = [];
+        }
+    };
+    for (const rawLine of workingText.split("\n")) {
+        const trimmedLine = rawLine.trim();
+        const codePlaceholder = /^ (\d+) $/.exec(trimmedLine);
+        let lineMatch;
+        if (codePlaceholder) {
+            flushParagraph(); closeList();
+            outputHTML.push(codeBlockHTMLList[Number(codePlaceholder[1])]);
+        } else if ((lineMatch = /^(#{1,4})\s+(.*)$/.exec(trimmedLine))) {
+            flushParagraph(); closeList();
+            const headingLevel = lineMatch[1].length + 1;
+            outputHTML.push(`<h${headingLevel} class="md-h">${lineMatch[2]}</h${headingLevel}>`);
+        } else if (/^(-{3,}|\*{3,})$/.test(trimmedLine)) {
+            flushParagraph(); closeList();
+            outputHTML.push('<hr class="md-hr">');
+        } else if ((lineMatch = /^&gt;\s?(.*)$/.exec(trimmedLine))) {
+            flushParagraph(); closeList();
+            outputHTML.push(`<blockquote class="md-quote">${lineMatch[1]}</blockquote>`);
+        } else if ((lineMatch = /^[-*]\s+(.*)$/.exec(trimmedLine))) {
+            flushParagraph();
+            if (openListType !== "ul") { closeList(); outputHTML.push("<ul>"); openListType = "ul"; }
+            outputHTML.push(`<li>${lineMatch[1]}</li>`);
+        } else if ((lineMatch = /^\d+[.)]\s+(.*)$/.exec(trimmedLine))) {
+            flushParagraph();
+            if (openListType !== "ol") { closeList(); outputHTML.push("<ol>"); openListType = "ol"; }
+            outputHTML.push(`<li>${lineMatch[1]}</li>`);
+        } else if (trimmedLine === "") {
+            flushParagraph(); closeList();
+        } else {
+            paragraphLines.push(rawLine);
+        }
+    }
+    flushParagraph(); closeList();
+    return outputHTML.join("");
+}
+
+function renderMarkdownInto(targetElement, markdownText) {
+    targetElement.innerHTML = renderMarkdown(markdownText);
+}
+
+chatHistory.addEventListener("scroll", () => {
+    chatUserNearBottom =
+        chatHistory.scrollHeight - chatHistory.scrollTop - chatHistory.clientHeight < 80;
+});
+progressStream.addEventListener("scroll", () => {
+    progressUserNearBottom =
+        progressStream.scrollHeight - progressStream.scrollTop - progressStream.clientHeight < 80;
+});
+
+// ============================================================
+// 对话区气泡（用户消息 / Harness 流式回复 / 后台汇报）
+// ============================================================
+function removeChatEmptyState() {
+    const emptyState = chatHistory.querySelector(".empty-state");
+    if (emptyState) emptyState.remove();
+}
+
+function appendChatMessage(roleLabel, cssClass, text) {
+    removeChatEmptyState();
+    const messageElement = document.createElement("div");
+    messageElement.className = `message ${cssClass}`;
+    messageElement.innerHTML = `<div class="message-role">${escapeHTML(roleLabel)}</div>`;
+    const body = document.createElement("div");
+    body.className = "message-body";
+    renderMarkdownInto(body, text);
+    messageElement.append(body);
+    chatHistory.append(messageElement);
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+    return messageElement;
+}
+
+function createStreamBubble(roleLabel, cssClass) {
+    removeChatEmptyState();
+    const messageElement = document.createElement("div");
+    messageElement.className = `message ${cssClass}`;
+    messageElement.innerHTML = `<div class="message-role">${escapeHTML(roleLabel)}</div>`;
+    const body = document.createElement("div");
+    body.className = "message-body";
+    const logElement = document.createElement("div");
+    logElement.className = "bubble-log";
+    messageElement.append(body, logElement);
+    chatHistory.append(messageElement);
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+    return {
+        bodyElement: body,
+        logElement,
+        rawText: "",
+        renderTimer: null,
+        lastRenderTime: 0,
+        lastRenderedLength: 0
+    };
+}
+
+function renderBubbleNow(bubble) {
+    if (!bubble || bubble.lastRenderedLength === bubble.rawText.length) return;
+    if (bubble.renderTimer !== null) {
+        clearTimeout(bubble.renderTimer);
+        bubble.renderTimer = null;
+    }
+    renderMarkdownInto(bubble.bodyElement, bubble.rawText);
+    bubble.lastRenderedLength = bubble.rawText.length;
+    bubble.lastRenderTime = performance.now();
+    if (chatUserNearBottom) chatHistory.scrollTop = chatHistory.scrollHeight;
+}
+
+function scheduleBubbleRender(bubble) {
+    if (bubble.renderTimer !== null) return;
+    const elapsed = performance.now() - bubble.lastRenderTime;
+    const delay = Math.max(0, BUBBLE_RENDER_INTERVAL_MS - elapsed);
+    bubble.renderTimer = setTimeout(() => {
+        bubble.renderTimer = null;
+        renderBubbleNow(bubble);
+    }, delay);
+}
+
+function appendBubbleLog(bubble, logText) {
+    const logLine = document.createElement("div");
+    logLine.textContent = logText;
+    bubble.logElement.append(logLine);
+    if (chatUserNearBottom) chatHistory.scrollTop = chatHistory.scrollHeight;
+}
+
+function finalizeChatStreamBubble() {
+    const bubble = chatStreamBubble;
+    chatStreamBubble = null;
+    renderBubbleNow(bubble);
+}
+
+function finalizeBackgroundBubble() {
+    const bubble = backgroundBubble;
+    backgroundBubble = null;
+    renderBubbleNow(bubble);
+}
+
+// ============================================================
+// Agent 事件帧处理（对话流、后台汇报、进度视图共用一套类型）
+// ============================================================
+function receiveChatFrame(parsedFrame) {
+    if (!parsedFrame || !parsedFrame.type) return;
+    switch (parsedFrame.type) {
+        case "conversation_id":
+            return;
+        case "round_started":
+            if (chatStreamBubble) {
+                appendBubbleLog(chatStreamBubble, `第 ${parsedFrame.round} 轮`);
+            }
+            return;
+        case "text_delta":
+            if (!chatStreamBubble) chatStreamBubble = createStreamBubble("Harness", "harness");
+            chatStreamBubble.rawText += parsedFrame.text || "";
+            scheduleBubbleRender(chatStreamBubble);
+            return;
+        case "tool_started":
+            if (chatStreamBubble) {
+                appendBubbleLog(chatStreamBubble, `调用工具 ${parsedFrame.toolName}`);
+            }
+            return;
+        case "tool_succeeded":
+        case "tool_failed":
+            if (chatStreamBubble) {
+                appendBubbleLog(
+                    chatStreamBubble,
+                    `工具 ${parsedFrame.toolName} ${parsedFrame.type === "tool_succeeded" ? "完成" : "失败"}`
+                );
+            }
+            return;
+        case "agent_completed":
+        case "done":
+            finalizeChatStreamBubble();
+            loadAgents();
+            return;
+        case "error":
+            appendChatError(`${parsedFrame.code || "error"}: ${parsedFrame.message || "未知错误"}`);
+            return;
+        default:
+            return;
+    }
+}
+
+function receiveHarnessChannelEvent(parsedFrame) {
+    if (!parsedFrame || !parsedFrame.type) return;
+    switch (parsedFrame.type) {
+        case "text_delta":
+            if (!backgroundBubble) {
+                backgroundBubble = createStreamBubble("Harness · 后台汇报", "background");
+            }
+            backgroundBubble.rawText += parsedFrame.text || "";
+            scheduleBubbleRender(backgroundBubble);
+            return;
+        case "round_started":
+        case "tool_started":
+        case "tool_succeeded":
+        case "tool_failed":
+            if (backgroundBubble) {
+                const logText = parsedFrame.type === "round_started"
+                    ? `第 ${parsedFrame.round} 轮`
+                    : `工具 ${parsedFrame.toolName}`;
+                appendBubbleLog(backgroundBubble, logText);
+            }
+            return;
+        case "agent_completed":
+        case "done":
+            finalizeBackgroundBubble();
+            loadAgents();
+            return;
+        case "error":
+            appendChatError(`后台 ${parsedFrame.code || "error"}: ${parsedFrame.message || "未知错误"}`);
+            finalizeBackgroundBubble();
+            return;
+        default:
+            return;
+    }
+}
+
+function receiveProgressFrame(parsedFrame) {
+    if (!parsedFrame || !parsedFrame.type) return;
+    switch (parsedFrame.type) {
+        case "text_delta": {
+            const deltaText = parsedFrame.text || "";
+            progressRawText += deltaText;
+            progressPendingText += deltaText;
+            scheduleProgressRender();
+            return;
+        }
+        case "agent_completed":
+        case "done":
+            appendProgressLog("—— 完成 ——");
+            loadAgents();
+            return;
+        default:
+            appendProgressLog(progressLogLine(parsedFrame));
+            return;
+    }
+}
+
+function progressLogLine(parsedFrame) {
+    switch (parsedFrame.type) {
+        case "round_started": return `第 ${parsedFrame.round} 轮（请求 ${parsedFrame.preparedRequestTokens} tokens）`;
+        case "tool_started": return `→ 调用工具 ${parsedFrame.toolName}`;
+        case "tool_succeeded": return `✓ 工具 ${parsedFrame.toolName} 完成`;
+        case "tool_failed": return `✗ 工具 ${parsedFrame.toolName} 失败：${parsedFrame.message || ""}`;
+        case "memory_reference_ready": return `记忆文件 ${parsedFrame.sessionFile}`;
+        case "current_run_compacted": return `当前轮压缩 ${parsedFrame.messagesBefore} → ${parsedFrame.messagesAfter} 条`;
+        case "stored_memory_compressed": return `记忆压缩 ${parsedFrame.tokensBefore} → ${parsedFrame.tokensAfter} tokens`;
+        case "error": return `错误 ${parsedFrame.code || ""}: ${parsedFrame.message || ""}`;
+        default: return parsedFrame.type;
+    }
+}
+
+function flushProgressRender() {
+    if (progressAnimationFrameId !== null) {
+        cancelAnimationFrame(progressAnimationFrameId);
+        progressAnimationFrameId = null;
+    }
+    if (!progressPendingText) return;
+    if (!progressTextElement || !progressTextElement.isConnected) {
+        progressTextElement = document.createElement("div");
+        progressTextElement.className = "progress-text";
+        progressStream.append(progressTextElement);
+    }
+    progressTextElement.append(document.createTextNode(progressPendingText));
+    progressPendingText = "";
+    if (progressUserNearBottom) progressStream.scrollTop = progressStream.scrollHeight;
+}
+
+function scheduleProgressRender() {
+    if (progressAnimationFrameId !== null) return;
+    progressAnimationFrameId = requestAnimationFrame(() => {
+        progressAnimationFrameId = null;
+        flushProgressRender();
+    });
+}
+
+function resetProgressRender() {
+    if (progressAnimationFrameId !== null) cancelAnimationFrame(progressAnimationFrameId);
+    progressAnimationFrameId = null;
+    progressRawText = "";
+    progressPendingText = "";
+    progressTextElement = null;
+}
+
+function appendProgressLog(logText) {
+    flushProgressRender();
+    const logLine = document.createElement("div");
+    logLine.className = "progress-log-line";
+    logLine.textContent = logText;
+    progressStream.append(logLine);
+    if (progressUserNearBottom) progressStream.scrollTop = progressStream.scrollHeight;
+}
+
+// ============================================================
+// 项目连接与 Agent 名单
+// ============================================================
+function connectProject() {
+    const workingDirectory = workingDirectoryInput.value.trim();
+    if (!workingDirectory) {
+        appendChatError("请先填写项目绝对路径");
+        return;
+    }
+    const projectChanged = activeWorkingDirectory !== workingDirectory;
+    activeWorkingDirectory = workingDirectory;
+    localStorage.setItem("harnessWorkingDirectory", workingDirectory);
+    if (projectChanged) lastAgentRosterSignature = "";
+    closeAgentProgress();
+    openHarnessChannel();
+    loadAgents();
+    if (agentsPollTimer) clearInterval(agentsPollTimer);
+    agentsPollTimer = setInterval(loadAgents, 10000);
+}
+
+async function loadAgents() {
+    if (!activeWorkingDirectory) return;
+    if (agentsLoadPending) {
+        agentsLoadQueued = true;
+        return;
+    }
+    agentsLoadPending = true;
+    const requestedWorkingDirectory = activeWorkingDirectory;
+    try {
+        const response = await fetch(
+            `/api/harness/agents?workingDirectory=${encodeURIComponent(requestedWorkingDirectory)}`
+        );
+        const roster = await readJSONResponse(response, "读取 Agent 名单");
+        if (requestedWorkingDirectory !== activeWorkingDirectory) return;
+        setServerState(true, "Go 服务已连接");
+        const rosterSignature = JSON.stringify(roster);
+        if (rosterSignature !== lastAgentRosterSignature) {
+            lastAgentRosterSignature = rosterSignature;
+            renderAgentList(roster);
+        }
+    } catch (loadError) {
+        if (requestedWorkingDirectory !== activeWorkingDirectory) return;
+        setServerState(false, "名单读取失败");
+        // fetch 抛 TypeError 表示根本连不上服务（服务没启动或端口不对），
+        // 和服务返回 HTTP 错误是两类故障，分开说。
+        poolSummary.textContent = loadError instanceof TypeError
+            ? `连不上 Go 服务：请确认 go run main.go 正在运行（${loadError.message}）`
+            : loadError.message;
+    } finally {
+        agentsLoadPending = false;
+        if (agentsLoadQueued) {
+            agentsLoadQueued = false;
+            queueMicrotask(loadAgents);
+        }
+    }
+}
+
+function renderAgentList(roster) {
+    const agents = roster.agents || [];
+    poolSummary.textContent =
+        `池容量 ${roster.maximumAgents} · 已创建 ${agents.length} · 运行中 ${roster.runningAgents}`;
+    agentList.replaceChildren();
+    if (!agents.length) {
+        agentList.innerHTML = `<div class="muted">还没有 Agent。在对话区告诉 Harness 你的目标。</div>`;
+        return;
+    }
+    const rowsFragment = document.createDocumentFragment();
+    for (const agentRecord of agents) {
+        const row = document.createElement("div");
+        row.className = "agent-row" +
+            (agentRecord.name === selectedAgentName ? " selected" : "");
+        row.dataset.agentName = agentRecord.name;
+        const name = document.createElement("div");
+        name.className = "agent-name";
+        name.textContent = agentRecord.name;
+        const meta = document.createElement("div");
+        meta.className = "agent-meta";
+        const status = document.createElement("span");
+        status.className = `status-pill ${agentRecord.status}`;
+        status.textContent = agentRecord.status;
+        const taskCount = document.createElement("span");
+        taskCount.textContent = `${agentRecord.taskCount} 个任务`;
+        meta.append(status, taskCount);
+        row.append(name, meta);
+        row.addEventListener("click", () => selectAgent(agentRecord));
+        rowsFragment.append(row);
+    }
+    agentList.append(rowsFragment);
+}
+
+// ============================================================
+// Agent 进度（逐 token）与记忆
+// ============================================================
+function selectAgent(agentRecord) {
+    if (selectedAgentName === agentRecord.name
+        && selectedAgentConversationId === agentRecord.conversationId) return;
+
+    selectedAgentName = agentRecord.name;
+    selectedAgentConversationId = agentRecord.conversationId;
+    detailTitle.textContent = `Agent 进度 · ${agentRecord.name}`;
+    progressStream.replaceChildren();
+    resetProgressRender();
+    loadMemoryButton.disabled = false;
+    memoryView.replaceChildren();
+    for (const row of agentList.querySelectorAll(".agent-row")) {
+        row.classList.toggle("selected", row.dataset.agentName === selectedAgentName);
+    }
+    openAgentProgress();
+    scheduleMemoryLoad();
+}
+
+function openAgentProgress() {
+    if (progressEventSource) progressEventSource.close();
+    progressEventSource = null;
+    if (!selectedAgentConversationId) return;
+    const eventSource = new EventSource(
+        `/api/conversations/${encodeURIComponent(selectedAgentConversationId)}/events`
+    );
+    progressEventSource = eventSource;
+    eventSource.onmessage = browserMessageEvent => {
+        if (progressEventSource !== eventSource) return;
+        try {
+            receiveProgressFrame(JSON.parse(browserMessageEvent.data));
+        } catch (decodeError) {
+            appendProgressLog(`事件解析失败：${decodeError.message}`);
+        }
+    };
+}
+
+function closeAgentProgress() {
+    if (progressEventSource) progressEventSource.close();
+    progressEventSource = null;
+    if (memoryAbortController) memoryAbortController.abort();
+    memoryAbortController = null;
+    memoryLoadGeneration += 1;
+    selectedAgentName = null;
+    selectedAgentConversationId = null;
+    resetProgressRender();
+    loadMemoryButton.disabled = true;
+}
+
+function scheduleMemoryLoad() {
+    const run = () => loadMemory();
+    if ("requestIdleCallback" in window) {
+        window.requestIdleCallback(run, { timeout: 300 });
+    } else {
+        setTimeout(run, 0);
+    }
+}
+
+async function loadMemory() {
+    if (!selectedAgentName || !activeWorkingDirectory) return;
+    if (memoryAbortController) memoryAbortController.abort();
+    const abortController = new AbortController();
+    memoryAbortController = abortController;
+    const generation = ++memoryLoadGeneration;
+    const agentName = selectedAgentName;
+    const workingDirectory = activeWorkingDirectory;
+    memoryView.replaceChildren();
+    try {
+        const response = await fetch(
+            `/api/harness/agents/${encodeURIComponent(agentName)}/memory` +
+            `?workingDirectory=${encodeURIComponent(workingDirectory)}`,
+            { signal: abortController.signal }
+        );
+        const memory = await readJSONResponse(response, "读取 Agent 记忆");
+        if (generation !== memoryLoadGeneration || agentName !== selectedAgentName) return;
+        renderMemory(memory);
+    } catch (loadError) {
+        if (loadError.name === "AbortError" || generation !== memoryLoadGeneration) return;
+        const errorBox = document.createElement("div");
+        errorBox.className = "inline-error";
+        errorBox.textContent = loadError.message;
+        memoryView.append(errorBox);
+    } finally {
+        if (memoryAbortController === abortController) memoryAbortController = null;
+    }
+}
+
+function renderMemory(memory) {
+    memoryView.replaceChildren();
+    const summary = document.createElement("div");
+    summary.className = "muted";
+    summary.textContent = `${memory.title || "(无标题)"} · ${(memory.messages || []).length} 条消息`;
+    memoryView.append(summary);
+    for (const message of memory.messages || []) {
+        const messageElement = document.createElement("div");
+        messageElement.className = "memory-message";
+        const role = document.createElement("div");
+        role.className = "memory-role";
+        role.textContent = message.role === "user" ? "任务" : "Agent";
+        const body = document.createElement("div");
+        const textParts = (message.content || [])
+            .filter(contentBlock => contentBlock.type === "text")
+            .map(contentBlock => contentBlock.text || "");
+        renderMarkdownInto(body, textParts.join("\n") || "(非文本内容)");
+        messageElement.append(role, body);
+        memoryView.append(messageElement);
+    }
+}
+
+// ============================================================
+// Harness 后台汇报频道
+// ============================================================
+function openHarnessChannel() {
+    finalizeBackgroundBubble();
+    if (harnessEventSource) harnessEventSource.close();
+    harnessEventSource = null;
+    const eventSource = new EventSource(
+        `/api/conversations/${encodeURIComponent("harness")}/events`
+    );
+    harnessEventSource = eventSource;
+    eventSource.onopen = () => {
+        if (harnessEventSource === eventSource) setServerState(true, "Go 服务已连接");
+    };
+    eventSource.onmessage = browserMessageEvent => {
+        if (harnessEventSource !== eventSource) return;
+        try {
+            receiveHarnessChannelEvent(JSON.parse(browserMessageEvent.data));
+        } catch (decodeError) {
+            appendChatError(`后台事件解析失败：${decodeError.message}`);
+        }
+    };
+    eventSource.onerror = () => {
+        if (harnessEventSource !== eventSource) return;
+        // EventSource 会自动重连；先封口当前气泡，避免重连后的新任务串到旧内容。
+        finalizeBackgroundBubble();
+        setServerState(false, "后台通道重连中");
+    };
+}
+
+// ============================================================
+// 发送消息（POST SSE）
+// ============================================================
+function receiveSSEFrameText(frameText, frameReceiver) {
+    const dataLines = frameText
+        .split(/\r?\n/)
+        .filter(line => line.startsWith("data:"))
+        .map(line => line.slice(5).replace(/^ /, ""));
+    if (!dataLines.length) return;
+    frameReceiver(JSON.parse(dataLines.join("\n")));
+}
+
+async function submitChat() {
+    const message = chatInput.value.trim();
+    if (!activeWorkingDirectory) {
+        appendChatError("请先填写项目绝对路径并点击「连接」");
+        return;
+    }
+    if (!message || sendButton.disabled) return;
+
+    appendChatMessage("你", "user", message);
+    chatInput.value = "";
+    chatUserNearBottom = true;
+    finalizeChatStreamBubble();
+    sendButton.disabled = true;
+    sendButton.textContent = "执行中";
+
+    try {
+        const streamResponse = await fetch("/api/harness/chat/stream", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                workingDirectory: activeWorkingDirectory,
+                message
+            })
+        });
+        if (!streamResponse.ok) {
+            await readJSONResponse(streamResponse, "发送消息");
+        }
+        if (!streamResponse.body) throw new Error("Go 服务没有返回 SSE 数据流");
+        setServerState(true, "Go 服务已连接");
+
+        const streamReader = streamResponse.body.getReader();
+        const textDecoder = new TextDecoder("utf-8");
+        let undecodedText = "";
+        while (true) {
+            const { value, done } = await streamReader.read();
+            undecodedText += textDecoder.decode(value || new Uint8Array(), { stream: !done });
+            const frames = undecodedText.split(/\r?\n\r?\n/);
+            undecodedText = frames.pop() || "";
+            for (const frame of frames) {
+                try {
+                    receiveSSEFrameText(frame, receiveChatFrame);
+                } catch (parseError) {
+                    appendBubbleLogSafe(`帧解析失败：${parseError.message}`);
+                }
+            }
+            if (done) {
+                if (undecodedText.trim()) {
+                    try {
+                        receiveSSEFrameText(undecodedText, receiveChatFrame);
+                    } catch (parseError) {
+                        appendBubbleLogSafe(`尾帧解析失败：${parseError.message}`);
+                    }
+                }
+                break;
+            }
+        }
+    } catch (runError) {
+        appendChatError(runError.message);
+        setServerState(false, "请求失败");
+    } finally {
+        finalizeChatStreamBubble();
+        sendButton.disabled = false;
+        sendButton.textContent = "发送";
+        loadAgents();
+    }
+}
+
+function appendBubbleLogSafe(logText) {
+    if (chatStreamBubble) appendBubbleLog(chatStreamBubble, logText);
+}
+
+loadProjectButton.addEventListener("click", connectProject);
+chatForm.addEventListener("submit", browserSubmitEvent => {
+    browserSubmitEvent.preventDefault();
+    submitChat();
+});
+chatInput.addEventListener("keydown", browserKeyboardEvent => {
+    if ((browserKeyboardEvent.ctrlKey || browserKeyboardEvent.metaKey)
+        && browserKeyboardEvent.key === "Enter") {
+        browserKeyboardEvent.preventDefault();
+        submitChat();
+    }
+});
+document.getElementById("refresh-agents").addEventListener("click", loadAgents);
+loadMemoryButton.addEventListener("click", loadMemory);
+
+// 历史会话接口尚未在本页接入，禁用空按钮，避免产生“点了没反应”的假故障。
+refreshConversationsButton.disabled = true;
+refreshConversationsButton.title = "后端历史会话接口尚未接入";
+conversationList.innerHTML = '<div class="muted">历史会话功能尚未接入。</div>';
+
+if (activeWorkingDirectory) connectProject();
+</script>
+</body>
+</html>

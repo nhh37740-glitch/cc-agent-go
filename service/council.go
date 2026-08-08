@@ -56,8 +56,8 @@ func RunCouncil(topic string, maxRounds int, interruption string,
 
 	// 初始化 history：议题作为首条用户消息
 	history := []model.Message{
-		{Role: "user", Content: []model.ContentBlock{
-			{Type: "text", Text: "【元老院议题】" + topic},
+		{Role: "user", Content: []model.MessageContentBlock{
+			model.TextContentBlock{Text: "【元老院议题】" + topic},
 		}},
 	}
 
@@ -65,8 +65,8 @@ func RunCouncil(topic string, maxRounds int, interruption string,
 	if interruption != "" {
 		history = append(history, model.Message{
 			Role: "user",
-			Content: []model.ContentBlock{
-				{Type: "text", Text: "【公民插话】" + interruption},
+			Content: []model.MessageContentBlock{
+				model.TextContentBlock{Text: "【公民插话】" + interruption},
 			},
 		})
 	}
@@ -94,8 +94,8 @@ func RunCouncil(topic string, maxRounds int, interruption string,
 			// 发言追加到 history（供后续 agent 看到）
 			history = append(history, model.Message{
 				Role: "assistant",
-				Content: []model.ContentBlock{
-					{Type: "text", Text: "【" + name + "】" + speechText},
+				Content: []model.MessageContentBlock{
+					model.TextContentBlock{Text: "【" + name + "】" + speechText},
 				},
 			})
 
