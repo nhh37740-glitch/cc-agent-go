@@ -173,3 +173,17 @@ func TestMemoryToolRejectsInvalidRecentMessages(t *testing.T) {
 		)
 	}
 }
+
+// TestMemoryToolWithoutSessionFile 回归测试：Harness 会话文件尚未创建时
+// 调用 memory 工具不应崩溃，应返回空记忆结果。
+func TestMemoryToolWithoutSessionFile(t *testing.T) {
+	unitRuntime := newUnitTestRuntime(t, 3)
+
+	memoryResult := executeMemoryTool(t, unitRuntime, map[string]any{})
+	if memoryResult.MessageCount != 0 {
+		t.Fatalf("空会话 messageCount = %d，期望 0", memoryResult.MessageCount)
+	}
+	if memoryResult.ReturnedCount != 0 {
+		t.Fatalf("空会话 returnedCount = %d，期望 0", memoryResult.ReturnedCount)
+	}
+}

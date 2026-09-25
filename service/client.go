@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,8 +24,17 @@ import (
 //
 // 返回值从 v6 的 (string, []ToolCall, error) 改为 (*ApiResponse, error)，
 // 好处：返回 struct 指针避免多返回值过长；出错时返回 nil。
-func Chat(messages []model.Message, systemPrompt string, cfg config.Config,
-	tools []map[string]any, maxTokens int) (*model.ApiResponse, error) {
+func Chat(
+	requestContext context.Context,
+	messages []model.Message,
+	systemPrompt string,
+	cfg config.Config,
+	tools []map[string]any,
+	maxTokens int,
+) (*model.ApiResponse, error) {
+	if requestContext == nil {
+		requestContext = context.Background()
+	}
 	if strings.TrimSpace(cfg.ApiKey) == "" {
 		return nil, NewAppError(ErrorConfig, "service.Chat", 0,
 			fmt.Errorf("DEEPSEEK_API_KEY 未设置"))
@@ -45,7 +55,12 @@ func Chat(messages []model.Message, systemPrompt string, cfg config.Config,
 		return nil, NewAppError(ErrorInternal, "service.Chat.marshal", 0, err)
 	}
 
-	req, err := http.NewRequest("POST", cfg.ApiEndpoint, bytes.NewReader(jsonBody))
+	req, err := http.NewRequestWithContext(
+		requestContext,
+		"POST",
+		cfg.ApiEndpoint,
+		bytes.NewReader(jsonBody),
+	)
 	if err != nil {
 		return nil, NewAppError(ErrorConfig, "service.Chat.newRequest", 0, err)
 	}

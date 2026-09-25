@@ -145,30 +145,7 @@ func TestHandleHarnessAgentsReturnsRoster(t *testing.T) {
 	arrangeHarnessPromptsOK(t)
 	workingDirectory := t.TempDir()
 
-	// 空名单。
-	emptyRecorder := httptest.NewRecorder()
-	emptyRequest := httptest.NewRequest(
-		http.MethodGet,
-		"/api/harness/agents?workingDirectory="+url.QueryEscape(workingDirectory),
-		nil,
-	)
-	handleHarnessAgents(emptyRecorder, emptyRequest)
-	if emptyRecorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", emptyRecorder.Code, http.StatusOK)
-	}
-	var emptyResponse struct {
-		Agents        []harness.ManagedAgentRecord `json:"agents"`
-		MaximumAgents int                          `json:"maximumAgents"`
-		RunningAgents int                          `json:"runningAgents"`
-	}
-	if decodeError := json.Unmarshal(emptyRecorder.Body.Bytes(), &emptyResponse); decodeError != nil {
-		t.Fatalf("decode response: %v", decodeError)
-	}
-	if len(emptyResponse.Agents) != 0 || emptyResponse.MaximumAgents != 11 {
-		t.Fatalf("空名单响应 = %+v", emptyResponse)
-	}
-
-	// 通过同一个目录的 Runtime upsert 两个 Agent 后名单可见。
+	// 创建 Runtime 后应自动出现 4 个常驻 Agent（idle）。
 	harnessRuntime, createRuntimeError := harness.GetOrCreateRuntime(
 		workingDirectory,
 		buildHarnessRuntimeDependencies(config.Load()),
@@ -176,9 +153,31 @@ func TestHandleHarnessAgentsReturnsRoster(t *testing.T) {
 	if createRuntimeError != nil {
 		t.Fatalf("GetOrCreateRuntime: %v", createRuntimeError)
 	}
-	if _, _, upsertError := harnessRuntime.AgentRegistry().UpsertAgent("coder"); upsertError != nil {
-		t.Fatalf("UpsertAgent: %v", upsertError)
+
+	initialRecorder := httptest.NewRecorder()
+	initialRequest := httptest.NewRequest(
+		http.MethodGet,
+		"/api/harness/agents?workingDirectory="+url.QueryEscape(workingDirectory),
+		nil,
+	)
+	handleHarnessAgents(initialRecorder, initialRequest)
+	if initialRecorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", initialRecorder.Code, http.StatusOK)
 	}
+	var initialResponse struct {
+		Agents        []harness.ManagedAgentRecord `json:"agents"`
+		MaximumAgents int                          `json:"maximumAgents"`
+		RunningAgents int                          `json:"runningAgents"`
+	}
+	if decodeError := json.Unmarshal(initialRecorder.Body.Bytes(), &initialResponse); decodeError != nil {
+		t.Fatalf("decode response: %v", decodeError)
+	}
+	if len(initialResponse.Agents) != len(harness.PermanentResidents) {
+		t.Fatalf("初始名单应含 %d 个常驻 Agent，实际 %d 个: %+v",
+			len(harness.PermanentResidents), len(initialResponse.Agents), initialResponse)
+	}
+
+	// 追加一个临时 Agent 后名单为常驻数 + 1。
 	if _, _, upsertError := harnessRuntime.AgentRegistry().UpsertAgent("writer"); upsertError != nil {
 		t.Fatalf("UpsertAgent: %v", upsertError)
 	}
@@ -196,10 +195,21 @@ func TestHandleHarnessAgentsReturnsRoster(t *testing.T) {
 	if decodeError := json.Unmarshal(rosterRecorder.Body.Bytes(), &rosterResponse); decodeError != nil {
 		t.Fatalf("decode response: %v", decodeError)
 	}
-	if len(rosterResponse.Agents) != 2 ||
-		rosterResponse.Agents[0].Name != "coder" ||
-		rosterResponse.Agents[1].Name != "writer" {
-		t.Fatalf("名单响应 = %+v", rosterResponse.Agents)
+	if len(rosterResponse.Agents) != len(harness.PermanentResidents)+1 {
+		t.Fatalf("名单应含 %d 个 Agent（常驻 + 1 临时），实际 %d 个",
+			len(harness.PermanentResidents)+1, len(rosterResponse.Agents))
+	}
+	temporaryNames := map[string]bool{}
+	for _, agentRecord := range rosterResponse.Agents {
+		temporaryNames[agentRecord.Name] = true
+	}
+	for _, residentDefinition := range harness.PermanentResidents {
+		if !temporaryNames[residentDefinition.Name] {
+			t.Fatalf("名单应包含常驻 %q", residentDefinition.Name)
+		}
+	}
+	if !temporaryNames["writer"] {
+		t.Fatalf("名单应包含临时 Agent writer")
 	}
 }
 
@@ -214,17 +224,17 @@ func TestHandleHarnessAgentMemoryReturnsSession(t *testing.T) {
 	if createRuntimeError != nil {
 		t.Fatalf("GetOrCreateRuntime: %v", createRuntimeError)
 	}
-	if _, _, upsertError := harnessRuntime.AgentRegistry().UpsertAgent("coder"); upsertError != nil {
+	if _, _, upsertError := harnessRuntime.AgentRegistry().UpsertAgent("writer"); upsertError != nil {
 		t.Fatalf("UpsertAgent: %v", upsertError)
 	}
 	seededSession := &model.SessionJson{
-		ConversationId: "harness-agent-coder",
-		Title:          "coder 的记忆",
+		ConversationId: "harness-agent-writer",
+		Title:          "writer 的记忆",
 		Messages: []model.Message{
 			{
 				Role: "user",
 				Content: []model.MessageContentBlock{
-					model.TextContentBlock{Text: "你是编码 Agent"},
+					model.TextContentBlock{Text: "你是写作 Agent"},
 				},
 			},
 		},
@@ -245,7 +255,7 @@ func TestHandleHarnessAgentMemoryReturnsSession(t *testing.T) {
 	defer testServer.Close()
 
 	memoryHTTPResponse, getMemoryError := http.Get(
-		testServer.URL + "/api/harness/agents/coder/memory?workingDirectory=" +
+		testServer.URL + "/api/harness/agents/writer/memory?workingDirectory=" +
 			url.QueryEscape(workingDirectory),
 	)
 	if getMemoryError != nil {
@@ -260,7 +270,7 @@ func TestHandleHarnessAgentMemoryReturnsSession(t *testing.T) {
 	if decodeError := json.NewDecoder(memoryHTTPResponse.Body).Decode(&memoryResponse); decodeError != nil {
 		t.Fatalf("decode response: %v", decodeError)
 	}
-	if memoryResponse.Title != "coder 的记忆" ||
+	if memoryResponse.Title != "writer 的记忆" ||
 		len(memoryResponse.Messages) != 1 {
 		t.Fatalf("记忆响应 = %+v", memoryResponse)
 	}
@@ -281,7 +291,7 @@ func TestHandleHarnessAgentMemoryReturnsSession(t *testing.T) {
 
 func TestManagedAgentToolRegistriesComposition(t *testing.T) {
 	for _, baseTool := range []tool.Tool{
-		tool.NewBashTool(),
+		tool.NewNativeCommandTool(),
 		tool.NewSkillTool(),
 		tool.NewCreateSkillTool(),
 	} {
@@ -310,7 +320,7 @@ func TestManagedAgentToolRegistriesComposition(t *testing.T) {
 		registeredNames[toolDefinition["name"].(string)] = true
 	}
 	for _, expectedName := range []string{
-		"bash", "activate_skill", "create_skill", "mcp_playwright__browser_navigate",
+		"command", "activate_skill", "create_skill", "mcp_playwright__browser_navigate",
 	} {
 		if !registeredNames[expectedName] {
 			t.Fatalf("被管理 Agent 工具表应包含 %q，实际: %v",
@@ -380,5 +390,75 @@ func TestHandleHarnessChatStreamIntegration(t *testing.T) {
 		if !strings.Contains(streamBody, expectedFrame) {
 			t.Fatalf("SSE 流应包含 %s，实际:\n%s", expectedFrame, streamBody)
 		}
+	}
+}
+
+// TestHandleHarnessAgentHeartbeat 固定远程保活接口：
+// 合法心跳刷新时间并返回 heartbeat=ok；未知 Agent 返回 400。
+func TestHandleHarnessAgentHeartbeat(t *testing.T) {
+	arrangeHarnessPromptsOK(t)
+	workingDirectory := t.TempDir()
+
+	harnessRuntime, createRuntimeError := harness.GetOrCreateRuntime(
+		workingDirectory,
+		buildHarnessRuntimeDependencies(config.Load()),
+	)
+	if createRuntimeError != nil {
+		t.Fatalf("GetOrCreateRuntime: %v", createRuntimeError)
+	}
+	if _, _, upsertError := harnessRuntime.AgentRegistry().UpsertAgent("writer"); upsertError != nil {
+		t.Fatalf("UpsertAgent: %v", upsertError)
+	}
+	beforeRecord, _ := harnessRuntime.AgentRegistry().GetAgent("writer")
+
+	heartbeatMux := http.NewServeMux()
+	heartbeatMux.HandleFunc(
+		"POST /api/harness/agents/{name}/heartbeat",
+		handleHarnessAgentHeartbeat,
+	)
+	testServer := httptest.NewServer(heartbeatMux)
+	defer testServer.Close()
+
+	heartbeatHTTPResponse, heartbeatError := http.Post(
+		testServer.URL+"/api/harness/agents/writer/heartbeat?workingDirectory="+
+			url.QueryEscape(workingDirectory),
+		"application/json",
+		nil,
+	)
+	if heartbeatError != nil {
+		t.Fatalf("POST heartbeat: %v", heartbeatError)
+	}
+	defer heartbeatHTTPResponse.Body.Close()
+	if heartbeatHTTPResponse.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d",
+			heartbeatHTTPResponse.StatusCode, http.StatusOK)
+	}
+	var heartbeatResponse map[string]any
+	if decodeError := json.NewDecoder(heartbeatHTTPResponse.Body).Decode(&heartbeatResponse); decodeError != nil {
+		t.Fatalf("decode response: %v", decodeError)
+	}
+	if heartbeatResponse["heartbeat"] != "ok" {
+		t.Fatalf("心跳响应 = %+v", heartbeatResponse)
+	}
+
+	afterRecord, _ := harnessRuntime.AgentRegistry().GetAgent("writer")
+	if afterRecord.LastHeartbeatAt < beforeRecord.LastHeartbeatAt {
+		t.Fatalf("心跳后最后心跳时间应更新：before=%v after=%v",
+			beforeRecord.LastHeartbeatAt, afterRecord.LastHeartbeatAt)
+	}
+
+	unknownHTTPResponse, unknownError := http.Post(
+		testServer.URL+"/api/harness/agents/ghost/heartbeat?workingDirectory="+
+			url.QueryEscape(workingDirectory),
+		"application/json",
+		nil,
+	)
+	if unknownError != nil {
+		t.Fatalf("POST unknown heartbeat: %v", unknownError)
+	}
+	defer unknownHTTPResponse.Body.Close()
+	if unknownHTTPResponse.StatusCode != http.StatusBadRequest {
+		t.Fatalf("未知 Agent status = %d, want %d",
+			unknownHTTPResponse.StatusCode, http.StatusBadRequest)
 	}
 }

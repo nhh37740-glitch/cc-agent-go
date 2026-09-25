@@ -1,8 +1,13 @@
 package agent
 
-import "cc-agent-go/model"
+import (
+	"context"
+
+	"cc-agent-go/model"
+)
 
 type AgentModelCallRequest struct {
+	Context             context.Context
 	SystemPrompt        string
 	Messages            []model.Message
 	ToolDefinitions     []map[string]any

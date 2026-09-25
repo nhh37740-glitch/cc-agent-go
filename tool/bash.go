@@ -1,914 +1,1076 @@
 package tool
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
-	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
-// BashTool 提供在本次 Agent 工作目录内执行白名单命令的能力。
-// 通过实现 Name()、Description()、Execute() 三个方法，
-// 隐式地实现了 Tool 接口。
-type BashTool struct{}
+const (
+	defaultCommandTimeoutSeconds = 60
+	maxCommandTimeoutSeconds     = 300
+	defaultCommandOutputBytes    = 256 << 10 // 256 KiB
+	minCommandOutputBytes        = 4 << 10   // 4 KiB
+	maxCommandOutputBytes        = 1 << 20   // 1 MiB
+	maxWindowsCommandLineUnits   = 30_000    // 给 Windows 32767 UTF-16 单元限制留余量
+)
 
-// NewBashTool 创建一个不保存固定工作目录的 BashTool。
-func NewBashTool() *BashTool {
-	return &BashTool{}
+// NativeCommandTool 在 Windows 上直接启动白名单内的原生 .exe。
+//
+// 它不会启动 Git Bash、WSL、PowerShell、cmd.exe 或任何其他命令解释器。
+// program 与 args 分开传递给 exec.CommandContext，因此不存在 shell 管道、重定向、
+// 变量展开、通配符展开或命令替换。
+type NativeCommandTool struct{}
+
+// BashTool 是旧类型名的兼容别名。
+//
+// Deprecated: 新代码请使用 NativeCommandTool 和 NewNativeCommandTool。
+type BashTool = NativeCommandTool
+
+// NewNativeCommandTool 创建 Windows 原生命令工具。
+func NewNativeCommandTool() *NativeCommandTool {
+	return &NativeCommandTool{}
 }
 
-// Name 返回工具名。
-func (b *BashTool) Name() string {
-	return "bash"
+// NewBashTool 保留旧注册代码的兼容性，但返回的工具不会运行 Bash。
+//
+// Deprecated: 新代码请使用 NewNativeCommandTool。
+func NewBashTool() *NativeCommandTool {
+	return NewNativeCommandTool()
 }
 
-// bashCommandDoc 描述一个或一组用途相近的白名单命令。
-// 文档数据与格式化逻辑分离，后续增删命令时只需要维护下面的分类表。
-type bashCommandDoc struct {
-	Names       string
-	Description string
-	Examples    []string
+// Name 返回工具名。名称改为 command，避免模型继续生成 Bash 语法。
+func (t *NativeCommandTool) Name() string {
+	return "command"
 }
 
-// bashCommandCategory 按 Agent 的工作阶段组织命令，而不是按字母顺序堆叠命令名。
-type bashCommandCategory struct {
-	Title    string
-	Guidance string
-	Commands []bashCommandDoc
+// nativeProgramDoc 描述一个允许直接启动的 Windows 原生程序。
+type nativeProgramDoc struct {
+	Name          string
+	Executable    []string
+	Category      string
+	Description   string
+	Guidance      string
+	Examples      [][]string
+	PreferTool    string
+	UnavailableOK bool
 }
 
-// bashCommandCategories 是发送给模型的结构化命令目录。
-// 分类顺序刻意遵循“定位 → 搜索/读取 → 处理 → 修改 → 验证/诊断 → 联网”，
-// 让模型优先选择低风险、低输出量的命令。
-var bashCommandCategories = []bashCommandCategory{
+// nativeProgramDocs 是执行白名单，也是发送给模型的结构化命令目录。
+//
+// 文件增删改查不放在这里，统一由 file 工具完成；Git 和 Go 的高层操作应优先
+// 由对应结构化工具完成，这里仅保留直接调用原生 CLI 的兼容和兜底能力。
+var nativeProgramDocs = []nativeProgramDoc{
 	{
-		Title:    "工作区与文件定位（优先只读）",
-		Guidance: "先确认当前目录、目录结构和目标文件位置，再读取或修改内容。",
-		Commands: []bashCommandDoc{
-			{
-				Names:       "pwd",
-				Description: "显示当前 Agent 工作目录。",
-				Examples:    []string{`pwd`},
-			},
-			{
-				Names:       "ls",
-				Description: "列出目录内容；优先指定目标目录，避免递归输出过多。",
-				Examples:    []string{`ls -la`, `ls src/`},
-			},
-			{
-				Names:       "find",
-				Description: "按文件名或路径查找文件；禁止 -exec、-execdir、-ok、-okdir。",
-				Examples:    []string{`find . -name "*.go"`, `find src -type f -name "*_test.go"`},
-			},
+		Name:        "rg",
+		Executable:  []string{"rg.exe"},
+		Category:    "代码搜索",
+		Description: "使用 ripgrep 在工作区内搜索文本或列出匹配文件。",
+		Guidance:    "优先限制目录、文件类型和匹配数量；不要依赖管道截断输出。未找到匹配时 rg 返回退出码 1，这是正常结果，不要重复重试。",
+		Examples: [][]string{
+			{"-n", "--max-count", "50", "TODO", "."},
+			{"-l", "--glob", "*.go", "NewNativeCommandTool", "."},
+			{"--files", "--glob", "*.go"},
 		},
 	},
 	{
-		Title:    "文本搜索与内容读取（优先使用）",
-		Guidance: "优先搜索定位，再只读取必要片段；不要一开始就输出整个大文件。",
-		Commands: []bashCommandDoc{
-			{
-				Names:       "rg",
-				Description: "首选全文搜索工具。命令名必须写 rg，不能写 ripgrep。",
-				Examples:    []string{`rg -n "NewBashTool" .`, `rg -l "TODO" . | head -50`},
-			},
-			{
-				Names:       "grep",
-				Description: "基础文本搜索，适合过滤文件或管道输出。",
-				Examples:    []string{`grep -n "error" app.log | head -50`},
-			},
-			{
-				Names:       "cat",
-				Description: "读取较小文件；使用 -n 显示行号。大文件优先改用 head、tail 或 sed。",
-				Examples:    []string{`cat -n README.md | head -120`},
-			},
-			{
-				Names:       "head / tail",
-				Description: "读取文件或管道输出的开头/结尾，用于限制返回内容规模。",
-				Examples:    []string{`head -100 README.md`, `tail -80 app.log`},
-			},
-			{
-				Names:       "sed",
-				Description: "读取指定行区间或执行文本替换；使用 -i 时会修改文件。",
-				Examples:    []string{`sed -n '40,90p' src/main.go`, `sed 's/foo/bar/g' input.txt`},
-			},
-			{
-				Names:       "wc",
-				Description: "统计行数、单词数或字节数。",
-				Examples:    []string{`wc -l src/main.go`, `rg -l "TODO" . | wc -l`},
-			},
+		Name:        "git",
+		Executable:  []string{"git.exe"},
+		Category:    "版本控制",
+		Description: "调用本机 Git for Windows 的 git.exe，不启动 Git Bash。",
+		Guidance:    "优先使用结构化 Git 工具；直接调用时限制输出，并避免交互式子命令。",
+		PreferTool:  "git",
+		Examples: [][]string{
+			{"status", "--short"},
+			{"diff", "--", "internal/app/app.go"},
+			{"log", "--oneline", "-20"},
 		},
 	},
 	{
-		Title:    "文本转换与管道处理",
-		Guidance: "通过单个 | 连接多个小步骤；每个管道段都必须以白名单命令开头。",
-		Commands: []bashCommandDoc{
-			{
-				Names:       "sort",
-				Description: "对文本行排序。",
-				Examples:    []string{`sort names.txt`},
-			},
-			{
-				Names:       "uniq",
-				Description: "对相邻重复行去重或计数，通常接在 sort 后面。",
-				Examples:    []string{`sort names.txt | uniq -c`},
-			},
-			{
-				Names:       "awk",
-				Description: "按字段或规则处理结构化文本。包含 $ 的 awk 程序必须用单引号包裹。",
-				Examples:    []string{`awk '{print $1}' input.txt | sort | uniq`},
-			},
-			{
-				Names:       "xargs",
-				Description: "把管道输入作为参数传给另一个命令；目标命令也必须在白名单内。",
-				Examples:    []string{`find . -name "*.log" | xargs rm`},
-			},
+		Name:        "go",
+		Executable:  []string{"go.exe"},
+		Category:    "Go 开发",
+		Description: "调用本机 Go 工具链进行构建、测试、检查和依赖查询。",
+		Guidance:    "优先使用结构化 Go 工具；直接调用时让参数保持单一职责。",
+		PreferTool:  "go",
+		Examples: [][]string{
+			{"test", "./..."},
+			{"build", "./..."},
+			{"vet", "./..."},
+			{"list", "./..."},
 		},
 	},
 	{
-		Title:    "兼容性文件操作（CRUD 优先使用 file 工具）",
-		Guidance: "新增、读取、修改、删除文件时优先调用 file 工具；这里只保留复制、移动和少量批处理兼容能力。删除、覆盖或批量操作前先缩小路径范围。",
-		Commands: []bashCommandDoc{
-			{
-				Names:       "mkdir",
-				Description: "创建目录。",
-				Examples:    []string{`mkdir -p tmp/output`},
-			},
-			{
-				Names:       "touch",
-				Description: "创建空文件或更新时间。",
-				Examples:    []string{`touch tmp/empty.txt`},
-			},
-			{
-				Names:       "cp",
-				Description: "复制文件或目录。",
-				Examples:    []string{`cp config.example.json config.json`},
-			},
-			{
-				Names:       "mv",
-				Description: "移动文件或重命名。",
-				Examples:    []string{`mv old_name.txt new_name.txt`},
-			},
-			{
-				Names:       "rm",
-				Description: "删除文件或目录；使用前确认目标路径，不要无必要地扩大匹配范围。",
-				Examples:    []string{`rm -f tmp/empty.txt`},
-			},
-			{
-				Names:       "echo",
-				Description: "输出短文本。普通文件重定向被禁止，不能用 echo ... > file 写文件。",
-				Examples:    []string{`echo "build complete"`},
-			},
+		Name:        "gofmt",
+		Executable:  []string{"gofmt.exe"},
+		Category:    "Go 开发",
+		Description: "格式化指定 Go 源文件。",
+		Guidance:    "修改文件后只格式化相关文件；批量格式化优先由结构化 Go 工具完成。",
+		PreferTool:  "go",
+		Examples: [][]string{
+			{"-w", "internal/app/app.go"},
+			{"-d", "internal/app/app.go"},
 		},
 	},
 	{
-		Title:    "版本控制、构建与脚本",
-		Guidance: "用于检查变更、构建、测试或执行确定的脚本；修改后优先进行验证。",
-		Commands: []bashCommandDoc{
-			{
-				Names:       "git",
-				Description: "版本控制、状态检查、日志和差异查看。",
-				Examples:    []string{`git status --short`, `git diff -- src/main.go`, `git log --oneline -20`},
-			},
-			{
-				Names:       "go",
-				Description: "Go 构建、测试、格式化和其他 Go 工具链操作。",
-				Examples:    []string{`go test ./...`, `go fmt ./...`, `go build ./...`},
-			},
-			{
-				Names:       "python",
-				Description: "运行 Python 3 脚本或一次性处理逻辑；代码中的 shell 元字符仍须遵守引号规则。",
-				Examples:    []string{`python script.py`, `python -c "from pathlib import Path; print(Path('README.md').exists())"`},
-			},
-			{
-				Names:       "uv",
-				Description: "运行 Python 项目、脚本或管理 Python 包。",
-				Examples:    []string{`uv run script.py`, `uv pip install requests`},
-			},
+		Name:          "python",
+		Executable:    []string{"python.exe"},
+		Category:      "脚本与辅助开发",
+		Description:   "运行已知 Python 脚本或短小的一次性辅助逻辑。",
+		Guidance:      "优先运行工作区内已有脚本；代码参数必须作为一个完整 args 元素传入。",
+		UnavailableOK: true,
+		Examples: [][]string{
+			{"--version"},
+			{"scripts/check.py"},
+			{"-c", "from pathlib import Path; print(Path('README.md').exists())"},
 		},
 	},
 	{
-		Title:    "Windows 系统与进程诊断",
-		Guidance: "这些命令运行在 Windows 宿主机上，但仍通过 Git Bash 调用。",
-		Commands: []bashCommandDoc{
-			{
-				Names:       "which",
-				Description: "在 Git Bash 的 PATH 中查找命令。",
-				Examples:    []string{`which python`},
-			},
-			{
-				Names:       "where",
-				Description: "调用 Windows where.exe 查找可执行文件。",
-				Examples:    []string{`where git.exe`},
-			},
-			{
-				Names:       "tasklist",
-				Description: "查看 Windows 进程列表。",
-				Examples:    []string{`tasklist | rg "python|go"`},
-			},
-			{
-				Names:       "netstat",
-				Description: "查看 Windows 网络连接、监听端口和进程 PID。",
-				Examples:    []string{`netstat -ano | rg ":8080"`},
-			},
-			{
-				Names:       "diff",
-				Description: "比较两个文件。",
-				Examples:    []string{`diff expected.txt actual.txt`},
-			},
+		Name:          "py",
+		Executable:    []string{"py.exe"},
+		Category:      "脚本与辅助开发",
+		Description:   "使用 Windows Python Launcher 选择并运行 Python。",
+		Guidance:      "仅在 python.exe 不可用或需要选择版本时使用。",
+		UnavailableOK: true,
+		Examples: [][]string{
+			{"-3", "--version"},
+			{"-3", "scripts/check.py"},
 		},
 	},
 	{
-		Title:    "网络访问与下载（仅在任务需要联网时）",
-		Guidance: "网络命令可能访问外部服务或创建下载文件，应明确目标地址和输出路径。",
-		Commands: []bashCommandDoc{
-			{
-				Names:       "curl",
-				Description: "发起 HTTP 请求或获取远程内容。",
-				Examples:    []string{`curl -s https://example.com`},
-			},
+		Name:          "uv",
+		Executable:    []string{"uv.exe"},
+		Category:      "脚本与辅助开发",
+		Description:   "运行 Python 项目、脚本和依赖相关命令。",
+		Guidance:      "安装或升级依赖会修改环境，应只在任务明确需要时执行。",
+		UnavailableOK: true,
+		Examples: [][]string{
+			{"run", "scripts/check.py"},
+			{"run", "python", "-m", "pytest"},
+		},
+	},
+	{
+		Name:          "curl",
+		Executable:    []string{"curl.exe"},
+		Category:      "网络诊断",
+		Description:   "调用 Windows 自带或本机安装的 curl.exe 发起 HTTP 请求。",
+		Guidance:      "明确 URL、方法和输出规模；下载文件优先交给专门的网络或文件工具。",
+		UnavailableOK: true,
+		Examples: [][]string{
+			{"--silent", "--show-error", "https://example.com"},
+			{"--head", "https://example.com"},
+		},
+	},
+	{
+		Name:        "where",
+		Executable:  []string{"where.exe"},
+		Category:    "Windows 诊断",
+		Description: "在 Windows PATH 中查找可执行文件。",
+		Guidance:    "只用于确认本机程序位置，不要传递 shell 语法。",
+		Examples: [][]string{
+			{"git.exe"},
+			{"go.exe"},
+		},
+	},
+	{
+		Name:        "tasklist",
+		Executable:  []string{"tasklist.exe"},
+		Category:    "Windows 诊断",
+		Description: "列出 Windows 进程。",
+		Guidance:    "使用 /FI 过滤结果，避免输出完整进程列表。",
+		Examples: [][]string{
+			{"/FI", "IMAGENAME eq go.exe"},
+			{"/FI", "PID eq 1234"},
+		},
+	},
+	{
+		Name:        "netstat",
+		Executable:  []string{"netstat.exe"},
+		Category:    "Windows 诊断",
+		Description: "查看 Windows 网络连接、监听端口和 PID。",
+		Guidance:    "没有 shell 管道；使用 -ano 获取数据后由调用方分析返回文本。",
+		Examples: [][]string{
+			{"-ano"},
+		},
+	},
+	{
+		Name:        "ipconfig",
+		Executable:  []string{"ipconfig.exe"},
+		Category:    "Windows 诊断",
+		Description: "查看 Windows 网络适配器和 IP 配置。",
+		Guidance:    "通常先使用 /all；不要用 cmd.exe 的管道或重定向。",
+		Examples: [][]string{
+			{"/all"},
 		},
 	},
 }
 
-const bashToolEnvironmentDescription = `【执行环境】
-- 宿主系统：Windows。
-- Shell：仅使用 Git for Windows 自带的 bash.exe；绝不调用 WSL、wsl.exe、System32\bash.exe、PowerShell 或 cmd.exe。
-- 当前目录：本次 Agent 的项目工作目录；相对路径均从这里解析。
-- 路径写法：优先使用相对路径和正斜杠，例如 src/main.go、C:/work/project、/c/work/project。不要使用 WSL 的 /mnt/c/... 路径。
-- 不要使用 wsl、bash、sh、PowerShell 命令（如 Get-ChildItem、Select-String）或 cmd.exe 专用语法（如 dir、copy、%VAR%）。
-- 命令名按白名单精确匹配，大小写不敏感；允许路径前缀以及 .exe/.bat 后缀，但不支持别名、项目名或模糊纠正。
+var nativeProgramByName = buildNativeProgramIndex()
 
-【推荐工作流】
-1. 定位：pwd、ls、find。
-2. 搜索：优先 rg，先找位置再读内容。
-3. 阅读：head、tail、sed、cat，只读取必要片段。
-4. 处理：grep、sort、uniq、wc、awk、sed，需要时使用管道。
-5. 修改：仅在任务要求时使用文件操作、脚本或带写入效果的参数。
-6. 文件 CRUD：新增、读取、精确替换和删除优先使用 file 工具，避免为简单文件操作启动 shell。
-7. 验证：使用 diff、git status、git diff、go test 等检查结果。
-`
+func buildNativeProgramIndex() map[string]nativeProgramDoc {
+	result := make(map[string]nativeProgramDoc, len(nativeProgramDocs))
+	for _, doc := range nativeProgramDocs {
+		result[doc.Name] = doc
+	}
+	return result
+}
 
-const bashToolSafetyDescription = `【管道、引号与安全规则】
-- 一次调用只提交一条命令行；不要附带 Markdown 代码块、命令提示符、解释文字、备用命令或未转义换行。
-- 允许用单个 | 连接白名单命令；每个管道段都会单独校验。禁止 ||。
-- 大输出必须主动限制，例如 rg ... | head -50、git log --oneline -20。
-- 只允许以下输出重定向：>/dev/null、1>/dev/null、2>/dev/null，以及 2>&1。
-- 禁止 ;、&&、&、<、普通文件重定向 >、追加重定向 >>、here-doc 和多行命令。
-- 含空格或 shell 元字符的参数应加引号。单引号内容按字面量处理。
-- 双引号内的 $ 和反引号仍会触发展开，因此会被拒绝；需要搜索这些字符时使用单引号或反斜杠转义。
-- 禁止 find 的 -exec、-execdir、-ok、-okdir。
-- xargs 的目标命令必须仍在白名单中。
-- 命令被拒绝时，根据错误信息修改命令，不要原样重复失败调用。
-
-安全输出示例：
-  rg -n "关键词" . 2>/dev/null | head -100
-  go test ./... 2>&1 | tail -80
-  rg -n 'price$' .
-`
-
-// buildBashToolDescription 把结构化分类表格式化为稳定、便于模型扫描的文本。
-func buildBashToolDescription() string {
+func buildNativeCommandDescription() string {
 	var out strings.Builder
-	out.WriteString("在当前 Agent 项目工作目录中执行一条经过白名单校验的 Git for Windows 命令。该工具只启动 Git for Windows 自带的 bash.exe，绝不启动 WSL。\n\n")
-	out.WriteString(bashToolEnvironmentDescription)
-	out.WriteString("\n【按任务分类的命令目录】\n")
+	out.WriteString("在当前 Windows Agent 工作目录中直接执行一个白名单内的原生 .exe。")
+	out.WriteString("不启动 Git Bash、WSL、PowerShell、cmd.exe 或其他命令解释器。\n\n")
 
-	for categoryIndex, category := range bashCommandCategories {
-		fmt.Fprintf(&out, "\n%d. %s\n", categoryIndex+1, category.Title)
-		fmt.Fprintf(&out, "用途：%s\n", category.Guidance)
+	out.WriteString("【参数模型】\n")
+	out.WriteString("- program：只填写白名单程序名，例如 rg、git、go；不要填写路径或 .bat/.cmd/.ps1。\n")
+	out.WriteString("- args：字符串数组，每个元素就是传给程序的一个独立参数。不要把整条命令写成一个字符串。\n")
+	out.WriteString("- 含空格的参数仍然只占一个数组元素，不要额外添加引号。\n")
+	out.WriteString("- timeout_seconds：可选，1 到 300 秒；默认 60 秒。\n")
+	out.WriteString("- max_output_bytes：可选，4 KiB 到 1 MiB；默认 256 KiB，超出后截断。\n\n")
 
-		for _, command := range category.Commands {
-			fmt.Fprintf(&out, "- %s：%s\n", command.Names, command.Description)
-			for _, example := range command.Examples {
-				fmt.Fprintf(&out, "  例：%s\n", example)
+	out.WriteString("【与 Shell 的关键差异】\n")
+	out.WriteString("- 不支持 |、>、>>、<、&&、||、;、通配符展开、$变量、反引号或命令替换。\n")
+	out.WriteString("- 这些字符出现在 args 中时只是普通字符，不会被解释为操作符。\n")
+	out.WriteString("- 需要组合多个步骤时分多次调用工具；需要搜索过滤时优先使用 rg 自身参数。\n")
+	out.WriteString("- stdout 和 stderr 由工具直接捕获，不需要 2>&1 或重定向。\n")
+	out.WriteString("- 子进程原始输出会在工具边界统一转换为有效 UTF-8；UTF-16 会解码，无效字节会转义为 \\xNN，绝不会把非法字节送入 API。\n")
+	out.WriteString("- 子进程返回非零退出码时，工具仍会正常返回结构化结果，包含 status、exit_code 和 stdout/stderr；这表示命令本身失败，不是工具调用失败。\n")
+	out.WriteString("- rg 未找到匹配项时退出码为 1，结果会明确标记为 no_match，不应使用相同参数重复重试。\n")
+	out.WriteString("- 文件 create/read/update/delete/list/stat 一律优先使用 file 工具。\n")
+	out.WriteString("- Git 和 Go 高层操作优先使用结构化 git/go 工具；command 只作为原生 CLI 兜底。\n\n")
+
+	categories := make([]string, 0)
+	seenCategory := make(map[string]bool)
+	for _, doc := range nativeProgramDocs {
+		if !seenCategory[doc.Category] {
+			seenCategory[doc.Category] = true
+			categories = append(categories, doc.Category)
+		}
+	}
+
+	out.WriteString("【按任务分类的程序目录】\n")
+	for categoryIndex, category := range categories {
+		fmt.Fprintf(&out, "\n%d. %s\n", categoryIndex+1, category)
+		for _, doc := range nativeProgramDocs {
+			if doc.Category != category {
+				continue
+			}
+			fmt.Fprintf(&out, "- %s：%s\n", doc.Name, doc.Description)
+			fmt.Fprintf(&out, "  使用建议：%s\n", doc.Guidance)
+			if doc.PreferTool != "" {
+				fmt.Fprintf(&out, "  优先工具：%s\n", doc.PreferTool)
+			}
+			for _, exampleArgs := range doc.Examples {
+				fmt.Fprintf(&out, "  例：%s\n", formatNativeExample(doc.Name, exampleArgs))
 			}
 		}
 	}
 
-	out.WriteString("\n")
-	out.WriteString(bashToolSafetyDescription)
+	out.WriteString("\n【禁止事项】\n")
+	out.WriteString("- 禁止启动 bash、sh、wsl、pwsh、powershell、cmd、cscript、wscript 等解释器。\n")
+	out.WriteString("- 禁止把 executable 路径、脚本路径或多条命令塞进 program。\n")
+	out.WriteString("- 不要使用 ls/cat/find/grep/sed/awk/rm/cp/mv 等 Git Bash 命令；文件操作使用 file，搜索使用 rg。\n")
+	out.WriteString("- 不要假设可选程序已经安装；找不到时应根据错误信息选择其他工具。\n")
+
 	return out.String()
 }
 
-// collectBashCommandExamples 从各分类轮流提取示例，避免 Schema 示例被前几个
-// 只读命令占满，保证定位、搜索、修改、构建、Windows 诊断和联网任务都有覆盖。
-func collectBashCommandExamples(limit int) []string {
-	seen := make(map[string]bool)
-	examples := make([]string, 0, limit)
-
-	maxCommands := 0
-	for _, category := range bashCommandCategories {
-		if len(category.Commands) > maxCommands {
-			maxCommands = len(category.Commands)
+func formatNativeExample(program string, args []string) string {
+	var out strings.Builder
+	fmt.Fprintf(&out, `{"program":%q,"args":[`, program)
+	for i, arg := range args {
+		if i > 0 {
+			out.WriteByte(',')
 		}
+		fmt.Fprintf(&out, "%q", arg)
 	}
-
-	for commandIndex := 0; commandIndex < maxCommands; commandIndex++ {
-		for _, category := range bashCommandCategories {
-			if commandIndex >= len(category.Commands) {
-				continue
-			}
-
-			command := category.Commands[commandIndex]
-			if len(command.Examples) == 0 {
-				continue
-			}
-
-			example := command.Examples[0]
-			if seen[example] {
-				continue
-			}
-			seen[example] = true
-			examples = append(examples, example)
-			if limit > 0 && len(examples) >= limit {
-				return examples
-			}
-		}
-	}
-
-	return examples
+	out.WriteString("]}")
+	return out.String()
 }
 
-var (
-	bashToolDescription = buildBashToolDescription()
-	bashCommandExamples = collectBashCommandExamples(16)
-)
+var nativeCommandDescription = buildNativeCommandDescription()
 
-// Description 返回工具描述，会发给 LLM。
-func (b *BashTool) Description() string {
-	return bashToolDescription
+// Description 返回结构化工具说明。
+func (t *NativeCommandTool) Description() string {
+	return nativeCommandDescription
 }
 
-// InputSchema 返回 bash 工具的参数 schema，发给 API。
-func (b *BashTool) InputSchema() map[string]any {
+func allowedProgramNames() []string {
+	names := make([]string, 0, len(nativeProgramDocs))
+	for _, doc := range nativeProgramDocs {
+		names = append(names, doc.Name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// InputSchema 返回原生命令工具的 JSON Schema。
+func (t *NativeCommandTool) InputSchema() map[string]any {
 	return map[string]any{
 		"type":                 "object",
-		"title":                "Windows Git Bash 白名单命令",
-		"description":          "在当前 Agent 项目目录执行一条 Git for Windows Bash 命令。只使用 Git for Windows 自带 bash.exe，绝不启动 WSL。先按任务分类选择命令，再遵守白名单、Windows 路径、引号、管道和重定向规则。",
+		"title":                "Windows 原生 EXE 命令",
+		"description":          "直接执行一个白名单内的 Windows 原生 .exe，不启动 Git Bash、WSL、PowerShell 或 cmd.exe。program 与 args 必须分开填写。文件操作优先使用 file；Git/Go 高层操作优先使用对应结构化工具。",
 		"additionalProperties": false,
 		"properties": map[string]any{
-			"command": map[string]any{
-				"type":      "string",
-				"title":     "单条 Git Bash 命令行",
-				"minLength": 1,
-				"description": `只填写要执行的命令本身，不要包含 Markdown、解释、提示符或换行。
-环境是 Windows + Git for Windows Bash，绝不使用 WSL；路径优先使用相对路径或正斜杠，不要使用 /mnt/c/...。
-选择顺序：定位（pwd/ls/find）→ 搜索（rg）→ 阅读 → 构建/测试 → 验证。新增、读取、修改、删除文件优先使用 file 工具。
-多阶段任务使用单个 |；每段必须以白名单命令开头，并限制大输出。
-仅允许 >/dev/null、1>/dev/null、2>/dev/null 和 2>&1；禁止 ;、&&、&、||、<、普通 >、>> 和多行命令。
-包含 $ 或反引号的字面内容使用单引号或反斜杠转义。`,
-				"examples": bashCommandExamples,
+			"program": map[string]any{
+				"type":        "string",
+				"title":       "原生程序",
+				"description": "白名单程序名，不含路径。只允许 enum 中的值；工具会在 Windows PATH 中解析对应 .exe。",
+				"enum":        allowedProgramNames(),
+			},
+			"args": map[string]any{
+				"type":        "array",
+				"title":       "参数数组",
+				"description": "每个数组元素对应一个独立命令行参数。不要加入 shell 引号，不要把整条命令放进一个元素，也不要使用管道或重定向。",
+				"default":     []string{},
+				"maxItems":    256,
+				"items": map[string]any{
+					"type":      "string",
+					"maxLength": 16_384,
+				},
+			},
+			"timeout_seconds": map[string]any{
+				"type":        "integer",
+				"title":       "超时秒数",
+				"description": "可选。程序运行超时，默认 60 秒。",
+				"minimum":     1,
+				"maximum":     maxCommandTimeoutSeconds,
+				"default":     defaultCommandTimeoutSeconds,
+			},
+			"max_output_bytes": map[string]any{
+				"type":        "integer",
+				"title":       "最大输出字节数",
+				"description": "可选。stdout 与 stderr 合并后的最大保留字节数；超出部分会丢弃并追加截断提示。",
+				"minimum":     minCommandOutputBytes,
+				"maximum":     maxCommandOutputBytes,
+				"default":     defaultCommandOutputBytes,
 			},
 		},
-		"required": []string{"command"},
+		"required": []string{"program", "args"},
 		"examples": []map[string]any{
-			{"command": `rg -n "TODO" . | head -50`},
-			{"command": `sed -n '40,90p' src/main.go`},
-			{"command": `git status --short`},
-			{"command": `go test ./... 2>&1 | tail -80`},
-			{"command": `netstat -ano | rg ":8080"`},
+			{"program": "rg", "args": []string{"-n", "--max-count", "50", "TODO", "."}},
+			{"program": "git", "args": []string{"status", "--short"}},
+			{"program": "go", "args": []string{"test", "./..."}, "timeout_seconds": 120},
+			{"program": "where", "args": []string{"git.exe"}},
+			{"program": "tasklist", "args": []string{"/FI", "IMAGENAME eq go.exe"}},
 		},
 	}
 }
 
-// allowedCommands 白名单 —— 只有在此列表中的命令才能执行。
-var allowedCommands = map[string]bool{
-	"git":      true,
-	"rg":       true,
-	"cat":      true,
-	"ls":       true,
-	"find":     true,
-	"mkdir":    true,
-	"rm":       true,
-	"cp":       true,
-	"mv":       true,
-	"touch":    true,
-	"echo":     true,
-	"head":     true,
-	"tail":     true,
-	"wc":       true,
-	"sort":     true,
-	"uniq":     true,
-	"grep":     true,
-	"uv":       true,
-	"python":   true,
-	"go":       true,
-	"pwd":      true, // 打印当前工作目录，纯只读
-	"which":    true, // 定位命令路径（unix 风格），纯只读
-	"where":    true, // 定位命令路径（windows 原生），纯只读
-	"sed":      true, // 流式文本编辑/替换，和 grep/rg 配套使用
-	"awk":      true, // 文本处理
-	"diff":     true, // 比较文件差异，纯只读
-	"tasklist": true, // 查看进程列表（windows 原生），纯只读
-	"netstat":  true, // 查看网络连接/端口占用（windows 原生），纯只读
-	"xargs":    true, // 管道批量执行；实际调用的子命令在 Execute 里单独做白名单校验
-	"curl":     true, // HTTP 请求，涉及联网，谨慎使用
+// blockedNativePrograms 即使误加入白名单，也不能作为二级解释器启动。
+var blockedNativePrograms = map[string]bool{
+	"bash":       true,
+	"sh":         true,
+	"zsh":        true,
+	"wsl":        true,
+	"wslconfig":  true,
+	"pwsh":       true,
+	"powershell": true,
+	"cmd":        true,
+	"cscript":    true,
+	"wscript":    true,
+	"mshta":      true,
+	"rundll32":   true,
+	"regsvr32":   true,
 }
 
-// blockedShellCommands 明确列出禁止启动的二级 shell、WSL 启动器和其他命令解释器。
-// 即使未来白名单被误改，这些命令也会优先拒绝，避免再次拉起 WSL 或绕过校验。
-var blockedShellCommands = map[string]bool{
-	"wsl":           true,
-	"wslconfig":     true,
-	"bash":          true,
-	"sh":            true,
-	"zsh":           true,
-	"cmd":           true,
-	"powershell":    true,
-	"pwsh":          true,
-	"ubuntu":        true,
-	"ubuntu2004":    true,
-	"ubuntu2204":    true,
-	"ubuntu2404":    true,
-	"debian":        true,
-	"kali":          true,
-	"opensuse":      true,
-	"opensuse-leap": true,
+func normalizeProgramName(name string) string {
+	name = strings.TrimSpace(strings.ToLower(name))
+	name = strings.TrimSuffix(name, ".exe")
+	return name
 }
 
-var (
-	gitBashLookupOnce sync.Once
-	gitBashExecutable string
-	gitBashLookupErr  error
-)
-
-// findGitBashExecutable 只查找 Git for Windows 安装目录中的 bash.exe。
-// 故意不调用 exec.LookPath("bash")，因为 Windows PATH 中的 bash.exe 可能是
-// System32 下的旧 WSL 启动器，从而造成高延迟和额外内存占用。
-func findGitBashExecutable() (string, error) {
-	gitBashLookupOnce.Do(func() {
-		gitBashExecutable, gitBashLookupErr = discoverGitBashExecutable()
-	})
-	return gitBashExecutable, gitBashLookupErr
-}
-
-func discoverGitBashExecutable() (string, error) {
-	var candidates []string
-
-	// 允许部署环境显式指定 Git for Windows 的 bash.exe。
-	if configured := strings.TrimSpace(os.Getenv("GIT_BASH_EXE")); configured != "" {
-		candidates = append(candidates, configured)
-	}
-
-	// 优先从当前使用的 git.exe 反推出安装根目录，兼容系统安装和 PortableGit。
-	gitPath, err := exec.LookPath("git.exe")
-	if err != nil {
-		gitPath, _ = exec.LookPath("git")
-	}
-	if gitPath != "" {
-		gitPath, _ = filepath.Abs(gitPath)
-		dir := filepath.Dir(gitPath)
-		for depth := 0; depth < 6; depth++ {
-			candidates = append(candidates,
-				filepath.Join(dir, "bin", "bash.exe"),
-				filepath.Join(dir, "usr", "bin", "bash.exe"),
-			)
-			parent := filepath.Dir(dir)
-			if parent == dir {
-				break
-			}
-			dir = parent
-		}
-	}
-
-	// Git for Windows 常见安装目录。这里只添加明确的 Git 安装路径，绝不添加
-	// C:\\Windows\\System32\\bash.exe 或任何 WSL 路径。
-	for _, base := range []string{
-		os.Getenv("ProgramFiles"),
-		os.Getenv("ProgramW6432"),
-		os.Getenv("ProgramFiles(x86)"),
-	} {
-		if base == "" {
-			continue
-		}
-		candidates = append(candidates,
-			filepath.Join(base, "Git", "bin", "bash.exe"),
-			filepath.Join(base, "Git", "usr", "bin", "bash.exe"),
-		)
-	}
-	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
-		candidates = append(candidates,
-			filepath.Join(localAppData, "Programs", "Git", "bin", "bash.exe"),
-			filepath.Join(localAppData, "Programs", "Git", "usr", "bin", "bash.exe"),
-		)
-	}
-
-	seen := make(map[string]bool)
-	for _, candidate := range candidates {
-		candidate = strings.TrimSpace(candidate)
-		if candidate == "" {
-			continue
-		}
-		absolute, err := filepath.Abs(candidate)
+func resolveNativeExecutable(doc nativeProgramDoc) (string, error) {
+	for _, executableName := range doc.Executable {
+		path, err := exec.LookPath(executableName)
 		if err != nil {
 			continue
 		}
-		cleanKey := strings.ToLower(filepath.Clean(absolute))
-		if seen[cleanKey] {
+
+		absolutePath, err := filepath.Abs(path)
+		if err != nil {
 			continue
 		}
-		seen[cleanKey] = true
-
-		// 双保险：明确排除 Windows 自带的 WSL bash 启动器位置。
-		normalized := strings.ReplaceAll(cleanKey, "/", `\`)
-		if strings.Contains(normalized, `\windows\system32\`) ||
-			strings.Contains(normalized, `\windows\sysnative\`) {
+		info, err := os.Stat(absolutePath)
+		if err != nil || info.IsDir() {
 			continue
 		}
 
-		info, err := os.Stat(absolute)
-		if err == nil && !info.IsDir() && strings.EqualFold(filepath.Base(absolute), "bash.exe") {
-			return absolute, nil
+		// 只执行真正的 Windows EXE；不接受 .bat、.cmd、.ps1、.com 等会引入
+		// 额外解释层或不同执行语义的文件类型。
+		if !strings.EqualFold(filepath.Ext(absolutePath), ".exe") {
+			continue
 		}
+		return absolutePath, nil
 	}
 
-	return "", fmt.Errorf("未找到 Git for Windows 自带的 bash.exe；请安装 Git for Windows，或将 GIT_BASH_EXE 设置为其 bin/bash.exe 路径。为避免启动 WSL，本工具不会回退到 PATH 中的 bash.exe")
+	if doc.UnavailableOK {
+		return "", fmt.Errorf("本机未找到可选程序 %s.exe；请安装后重试，或改用现有结构化工具", doc.Name)
+	}
+	return "", fmt.Errorf("本机未找到必需程序 %s.exe；请确认它已安装并位于 Windows PATH 中", doc.Name)
 }
 
-// isCharSafeInsideQuotes 判断字符 c 在当前引号状态下是否已经是普通字面量，
-// 不会被 bash 特殊解释。
-//   - 单引号内: 任何字符都是字面量（包括 $ 和反引号），bash 完全不做展开。
-//   - 双引号内: ; & < > | 会失去特殊含义变成字面量，但 $ 和反引号仍然会触发
-//     变量展开 / 命令替换，所以这两个字符即使在双引号里也必须继续拦截。
-//
-// 函数名和签名保持不变；反斜杠转义由外层扫描负责处理。
-func isCharSafeInsideQuotes(c rune, inSingle, inDouble bool) bool {
-	if inSingle {
-		return true
+// validateNativeUTF8Input 在调用任何系统 API 前校验所有来自工具输入的字符串。
+// JSON 理论上应当是 Unicode，但这里仍然在执行边界做一次防御性检查，避免
+// 非标准上游把包含非法 UTF-8 字节的 Go string 传进来。
+func validateNativeUTF8Input(field, value string) error {
+	if !utf8.ValidString(value) {
+		return fmt.Errorf("%s 包含无效 UTF-8，已拒绝执行", field)
 	}
-	if inDouble {
-		return c != '$' && c != '`'
-	}
-	return false
+	return nil
 }
 
-// skipInlineShellSpaces 跳过重定向操作符后允许出现的横向空白。
-// 不跳过换行，避免借换行拼接第二条命令。
-func skipInlineShellSpaces(cmd string, pos int) int {
-	for pos < len(cmd) {
-		switch cmd[pos] {
-		case ' ', '\t':
-			pos++
-		default:
-			return pos
+func readOptionalInt(input map[string]any, key string, defaultValue, minimum, maximum int) (int, error) {
+	value, exists := input[key]
+	if !exists || value == nil {
+		return defaultValue, nil
+	}
+
+	var parsed int
+	switch typed := value.(type) {
+	case int:
+		parsed = typed
+	case int32:
+		parsed = int(typed)
+	case int64:
+		parsed = int(typed)
+	case float64:
+		if typed != float64(int(typed)) {
+			return 0, fmt.Errorf("%s 必须是整数", key)
 		}
+		parsed = int(typed)
+	default:
+		return 0, fmt.Errorf("%s 必须是整数", key)
 	}
-	return pos
+
+	if parsed < minimum || parsed > maximum {
+		return 0, fmt.Errorf("%s 必须在 %d 到 %d 之间", key, minimum, maximum)
+	}
+	return parsed, nil
 }
 
-// isShellTokenBoundary 判断 pos 是否位于一个 shell token 的安全边界。
-// 即使边界字符本身是禁止操作符，也只用于确认前面的安全模式完整匹配；
-// 外层扫描仍会继续检查并拒绝该操作符。
-func isShellTokenBoundary(cmd string, pos int) bool {
-	if pos >= len(cmd) {
-		return true
+func readStringArguments(input map[string]any) ([]string, error) {
+	value, exists := input["args"]
+	if !exists || value == nil {
+		return nil, fmt.Errorf("command 工具需要 args 参数；没有参数时请传空数组 []")
 	}
 
-	r, _ := utf8.DecodeRuneInString(cmd[pos:])
-	return unicode.IsSpace(r) || strings.ContainsRune("|;&<>", r)
-}
-
-// hasFD2ImmediatelyBefore 判断重定向操作符前是否紧邻独立的文件描述符 2。
-// 例如 "2>&1" 返回 true，而 "12>&1"、"foo2>&1" 和 ">&1" 返回 false。
-func hasFD2ImmediatelyBefore(cmd string, redirectPos int) bool {
-	fdPos := redirectPos - 1
-	if fdPos < 0 || cmd[fdPos] != '2' {
-		return false
-	}
-	if fdPos == 0 {
-		return true
-	}
-
-	previous, _ := utf8.DecodeLastRuneInString(cmd[:fdPos])
-	return unicode.IsSpace(previous) || strings.ContainsRune("|;&<>", previous)
-}
-
-// consumeAllowedRedirection 检查 redirectPos 处是否为允许的安全输出重定向。
-//
-// 放行：
-//   - >/dev/null、1>/dev/null、2>/dev/null，以及 > /dev/null
-//     （实际上任意独立文件描述符写入 /dev/null 都是安全的）
-//   - 2>&1
-//
-// 拒绝所有普通文件写入、输入重定向、追加写入、here-doc、进程替换等形式。
-func consumeAllowedRedirection(cmd string, redirectPos int) (next int, ok bool) {
-	if redirectPos < 0 || redirectPos >= len(cmd) || cmd[redirectPos] != '>' {
-		return redirectPos, false
-	}
-
-	// 只允许标准错误重定向到标准输出：2>&1。
-	if hasFD2ImmediatelyBefore(cmd, redirectPos) && strings.HasPrefix(cmd[redirectPos:], ">&1") {
-		end := redirectPos + len(">&1")
-		if isShellTokenBoundary(cmd, end) {
-			return end, true
+	var args []string
+	switch typed := value.(type) {
+	case []string:
+		args = append([]string(nil), typed...)
+	case []any:
+		args = make([]string, 0, len(typed))
+		for index, item := range typed {
+			text, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("args[%d] 必须是字符串", index)
+			}
+			args = append(args, text)
 		}
+	default:
+		return nil, fmt.Errorf("args 必须是字符串数组")
 	}
 
-	// 不允许 >>/dev/null；当前策略只放行普通覆盖式输出丢弃。
-	if redirectPos+1 < len(cmd) && cmd[redirectPos+1] == '>' {
-		return redirectPos, false
+	if len(args) > 256 {
+		return nil, fmt.Errorf("args 最多允许 256 个参数")
 	}
 
-	targetPos := skipInlineShellSpaces(cmd, redirectPos+1)
-	const nullDevice = "/dev/null"
-	if !strings.HasPrefix(cmd[targetPos:], nullDevice) {
-		return redirectPos, false
+	commandLineUnits := 0
+	for index, arg := range args {
+		if strings.IndexByte(arg, 0) >= 0 {
+			return nil, fmt.Errorf("args[%d] 包含 NUL 字符", index)
+		}
+		if !utf8.ValidString(arg) {
+			return nil, fmt.Errorf("args[%d] 不是有效 UTF-8 字符串", index)
+		}
+		if len(arg) > 16_384 {
+			return nil, fmt.Errorf("args[%d] 过长，最多允许 16384 字节", index)
+		}
+		commandLineUnits += len([]rune(arg)) + 3 // 参数本身，加引号和分隔符的保守估算
+	}
+	if commandLineUnits > maxWindowsCommandLineUnits {
+		return nil, fmt.Errorf("参数总长度过大，可能超过 Windows 命令行限制")
 	}
 
-	end := targetPos + len(nullDevice)
-	if !isShellTokenBoundary(cmd, end) {
-		return redirectPos, false
-	}
-	return end, true
+	return args, nil
 }
 
-// removeTrailingIONumber 从用于白名单校验的管道段中移除紧邻重定向符的独立
-// 文件描述符编号。原始命令不会被修改，只是避免把 "2>/dev/null" 中的 "2"
-// 错当成 xargs 的目标命令或前置命令名。
-func removeTrailingIONumber(segment []rune) []rune {
-	end := len(segment)
-	start := end
-	for start > 0 && segment[start-1] >= '0' && segment[start-1] <= '9' {
-		start--
+func prepareNativeArgs(program string, args []string) []string {
+	prepared := append([]string(nil), args...)
+
+	// 禁用 Git 分页器，避免等待交互或启动额外程序。
+	if program == "git" {
+		for _, arg := range prepared {
+			if arg == "--no-pager" || arg == "--paginate" || arg == "-p" {
+				return prepared
+			}
+		}
+		prepared = append([]string{"--no-pager"}, prepared...)
 	}
-	if start == end {
-		return segment
-	}
-	if start == 0 || unicode.IsSpace(segment[start-1]) {
-		return segment[:start]
-	}
-	return segment
+
+	return prepared
 }
 
-// splitPipelineSegments 对命令字符串做“引号感知”的安全扫描，并按顶层 | 切分成
-// 若干管道段。返回的管道段仅用于白名单校验，其中已允许的安全重定向会被替换
-// 为空白；真正执行时仍使用未经修改的原始命令。
-//
-// 规则：
-//   - 单/双引号内的 shell 操作符视为参数字面量；但双引号内未转义的 $ 和反引号
-//     仍会触发变量展开或命令替换，因此继续拒绝。
-//   - 支持反斜杠转义，转义后的操作符按字面量处理。
-//   - 顶层 ;、&、< 直接拒绝。
-//   - 顶层 > 仅放行输出到 /dev/null 和 2>&1；其他形式拒绝。
-//   - 顶层 | 用作管道分隔符，每一段都必须单独通过命令白名单校验。
-//   - 顶层换行和回车直接拒绝，避免在同一个 command 字符串中追加第二条命令。
-func splitPipelineSegments(cmdStr string) ([]string, error) {
-	var (
-		segment  []rune
-		result   []string
-		inSingle bool
-		inDouble bool
-		escaped  bool
+func sanitizedNativeEnvironment(program string) []string {
+	env := append([]string(nil), os.Environ()...)
+	env = append(env,
+		"NO_COLOR=1",
+		"TERM=dumb",
+		"PYTHONUTF8=1",
+		"PYTHONIOENCODING=utf-8",
+		"RUST_BACKTRACE=0",
 	)
 
-	for i := 0; i < len(cmdStr); {
-		c, size := utf8.DecodeRuneInString(cmdStr[i:])
-
-		// 单引号内反斜杠没有转义作用，只有下一个单引号会结束单引号。
-		if inSingle {
-			segment = append(segment, c)
-			if c == '\'' {
-				inSingle = false
-			}
-			i += size
-			continue
-		}
-
-		// 上一个反斜杠将当前字符变成普通字面量。反斜杠 + 换行是 shell 的
-		// 行续接，校验字符串里也直接移除，避免误判成第二条命令。
-		if escaped {
-			if c == '\n' {
-				if len(segment) > 0 && segment[len(segment)-1] == '\\' {
-					segment = segment[:len(segment)-1]
-				}
-			} else {
-				segment = append(segment, c)
-			}
-			escaped = false
-			i += size
-			continue
-		}
-
-		if c == '\\' {
-			segment = append(segment, c)
-			escaped = true
-			i += size
-			continue
-		}
-
-		switch c {
-		case '\'':
-			if !inDouble {
-				inSingle = true
-			}
-			segment = append(segment, c)
-			i += size
-			continue
-		case '"':
-			inDouble = !inDouble
-			segment = append(segment, c)
-			i += size
-			continue
-		}
-
-		if !inDouble {
-			if c == '\n' || c == '\r' {
-				return nil, fmt.Errorf("命令包含未转义的换行符，不允许在一次调用中执行多条命令: %s", cmdStr)
-			}
-
-			if c == '>' {
-				if next, allowed := consumeAllowedRedirection(cmdStr, i); allowed {
-					segment = removeTrailingIONumber(segment)
-					segment = append(segment, ' ')
-					i = next
-					continue
-				}
-			}
-		}
-
-		if c == '|' && !inDouble && i+size < len(cmdStr) && cmdStr[i+size] == '|' {
-			return nil, fmt.Errorf("命令包含禁止操作符 ||（不允许条件链式执行）: %s", cmdStr)
-		}
-
-		switch {
-		case c == '|' && !inDouble:
-			result = append(result, string(segment))
-			segment = segment[:0]
-			i += size
-			continue
-		case (c == ';' || c == '&' || c == '<' || c == '>') && !inDouble:
-			return nil, fmt.Errorf("命令包含禁止字符 %q（引号外仅允许管道，以及输出到 /dev/null 或 2>&1）: %s", string(c), cmdStr)
-		case (c == '$' || c == '`') && !isCharSafeInsideQuotes(c, inSingle, inDouble):
-			return nil, fmt.Errorf("命令包含禁止字符 %q（可能触发变量展开或命令替换，如需作为字面量使用请改用单引号包裹或反斜杠转义）: %s", string(c), cmdStr)
-		}
-
-		segment = append(segment, c)
-		i += size
+	if program == "git" {
+		env = append(env,
+			"GIT_TERMINAL_PROMPT=0",
+			"GIT_PAGER=",
+			"PAGER=",
+		)
 	}
-
-	if escaped {
-		return nil, fmt.Errorf("命令末尾包含未完成的反斜杠转义: %s", cmdStr)
-	}
-	if inSingle || inDouble {
-		return nil, fmt.Errorf("命令中的引号未闭合: %s", cmdStr)
-	}
-
-	result = append(result, string(segment))
-	return result, nil
+	return env
 }
 
-// normalizeCommandName 把命令名归一化成白名单里能匹配的形式：
-// 去掉路径前缀（/usr/bin/git、C:\tools\git.exe），去掉 Windows 常见的
-// .exe / .bat 后缀，并统一转小写。
-func normalizeCommandName(cmdName string) string {
-	if i := strings.LastIndex(cmdName, "/"); i >= 0 {
-		cmdName = cmdName[i+1:]
-	}
-	if i := strings.LastIndex(cmdName, "\\"); i >= 0 {
-		cmdName = cmdName[i+1:]
-	}
-	cmdNameKey := strings.ToLower(cmdName)
-	cmdNameKey = strings.TrimSuffix(cmdNameKey, ".exe")
-	cmdNameKey = strings.TrimSuffix(cmdNameKey, ".bat")
-	return cmdNameKey
-}
-
-// xargsValueFlags 是 xargs 里"会额外占用一个独立 token 作为参数值"的短选项，
-// 比如 -I{} 这种粘在一起写不受影响，但单独写 "-I" "{}" 两个 token 时，
-// 第二个 token 是 -I 的参数值，不能被误判成 xargs 要执行的目标命令。
-var xargsValueFlags = map[byte]bool{
-	'I': true, 'L': true, 'n': true, 'P': true,
-	's': true, 'a': true, 'd': true, 'E': true,
-}
-
-// findXargsTargetCommand 在 xargs 的参数列表里找出它实际会执行的子命令名。
-// 例如 xargs -I{} -P4 rm {} 里，跳过 -I{}、-P4 两个选项后，第一个非选项
-// token "rm" 就是目标命令。如果 xargs 没有显式指定命令，它默认执行 echo，
-// echo 已经在白名单里，视为安全。
+// formatNativeCommandOutcome 将子进程的退出状态和输出整理成稳定、可读的结果。
 //
-// 局限：只识别常见短选项，不识别 --long-option=value 之外更复杂的 GNU
-// long option 形式；遇到无法确定的情况会保守地跳过该 token，不会因此放过
-// 危险命令（因为最终仍然要求找到的目标命令必须在白名单内）。
-func findXargsTargetCommand(xargsParts []string) (string, bool) {
-	i := 1 // parts[0] 是 "xargs" 本身
-	for i < len(xargsParts) {
-		tok := xargsParts[i]
-		switch {
-		case strings.HasPrefix(tok, "--"):
-			i++
-		case strings.HasPrefix(tok, "-") && len(tok) > 1:
-			flagChar := tok[1]
-			if xargsValueFlags[flagChar] && len(tok) == 2 {
-				i += 2 // 形如 "-I" "{}"：选项和值是两个独立 token
-			} else {
-				i++ // 形如 "-I{}" "-P4" 或纯布尔开关：值已经粘在一个 token 里
-			}
-		default:
-			return tok, true
+// 子进程非零退出码表示“命令已经运行，但命令所做的事情没有成功”，例如：
+//   - go test 编译失败或测试失败；
+//   - git diff --exit-code 检测到差异；
+//   - where 没有找到程序。
+//
+// 这类情况不属于工具基础设施错误，因此应作为普通工具结果返回给 Agent，
+// 避免上层只显示 error.Error() 而丢弃 stdout/stderr。
+func formatNativeCommandOutcome(
+	program string,
+	args []string,
+	executablePath string,
+	workingDirectory string,
+	status string,
+	exitCode int,
+	output string,
+) string {
+	var result strings.Builder
+	result.WriteString("[command_result]\n")
+	fmt.Fprintf(&result, "status: %s\n", status)
+	fmt.Fprintf(&result, "program: %s.exe\n", program)
+	fmt.Fprintf(&result, "exit_code: %d\n", exitCode)
+	fmt.Fprintf(&result, "executable: %s\n", executablePath)
+	fmt.Fprintf(&result, "working_directory: %s\n", workingDirectory)
+	fmt.Fprintf(&result, "args: %q\n", args)
+	result.WriteString("output:\n")
+
+	output = escapeInvalidNativeUTF8([]byte(output))
+	if strings.TrimSpace(output) == "" {
+		result.WriteString("(no output)\n")
+	} else {
+		result.WriteString(output)
+		if !strings.HasSuffix(output, "\n") {
+			result.WriteByte('\n')
 		}
 	}
-	return "", false
+	return escapeInvalidNativeUTF8([]byte(result.String()))
 }
 
-func (b *BashTool) Execute(
+// formatNativeInfrastructureError 构造真正的工具执行错误。
+// 必须把已经捕获的输出写进 error message，因为部分工具调度器在 error != nil 时
+// 只展示 error.Error()，会丢弃 Execute 返回的第一个 string。
+func formatNativeInfrastructureError(
+	program string,
+	args []string,
+	executablePath string,
+	workingDirectory string,
+	message string,
+	output string,
+	err error,
+) error {
+	var detail strings.Builder
+	fmt.Fprintf(&detail, "%s.exe %s", program, message)
+	fmt.Fprintf(&detail, "\nexecutable: %s", executablePath)
+	fmt.Fprintf(&detail, "\nworking_directory: %s", workingDirectory)
+	fmt.Fprintf(&detail, "\nargs: %q", args)
+	if err != nil {
+		fmt.Fprintf(&detail, "\nerror: %v", err)
+	}
+	output = escapeInvalidNativeUTF8([]byte(output))
+	if strings.TrimSpace(output) != "" {
+		detail.WriteString("\noutput:\n")
+		detail.WriteString(output)
+	}
+	messageText := escapeInvalidNativeUTF8([]byte(detail.String()))
+	if err != nil {
+		// 保留原始 err 链，让 Agent 能用 errors.Is 识别 context.Canceled。
+		return fmt.Errorf("%s: %w", messageText, err)
+	}
+	return errors.New(messageText)
+}
+
+// classifyNativeCommandResult 按程序自身的退出码约定解释执行结果。
+//
+// 只有“程序无法启动/等待”等基础设施问题才返回 error。只要进程成功启动并产生
+// 退出码，即使退出码非零，也作为结构化结果返回 nil error，让 Agent 能看到完整
+// stdout/stderr 并自行判断，而不是把命令失败误判为工具故障后机械重试。
+func classifyNativeCommandResult(
+	program string,
+	args []string,
+	executablePath string,
+	workingDirectory string,
+	runErr error,
+	output string,
+	commandContext context.Context,
+) (string, error) {
+	if runErr == nil {
+		return formatNativeCommandOutcome(
+			program,
+			args,
+			executablePath,
+			workingDirectory,
+			"ok",
+			0,
+			output,
+		), nil
+	}
+
+	// 用户停止 / 会话取消优先于超时与退出码解释。
+	if commandContext != nil && errors.Is(commandContext.Err(), context.Canceled) {
+		return "", formatNativeInfrastructureError(
+			program,
+			args,
+			executablePath,
+			workingDirectory,
+			"已被用户停止或会话取消",
+			output,
+			commandContext.Err(),
+		)
+	}
+	if commandContext != nil && errors.Is(commandContext.Err(), context.DeadlineExceeded) {
+		return "", formatNativeInfrastructureError(
+			program,
+			args,
+			executablePath,
+			workingDirectory,
+			"执行超时",
+			output,
+			commandContext.Err(),
+		)
+	}
+
+	var exitErr *exec.ExitError
+	if !errors.As(runErr, &exitErr) {
+		return "", formatNativeInfrastructureError(
+			program,
+			args,
+			executablePath,
+			workingDirectory,
+			"启动或等待失败",
+			output,
+			runErr,
+		)
+	}
+
+	exitCode := exitErr.ExitCode()
+
+	// ripgrep：退出码 1 只表示没有匹配项，不是搜索错误。
+	if program == "rg" && exitCode == 1 {
+		return formatNativeCommandOutcome(
+			program,
+			args,
+			executablePath,
+			workingDirectory,
+			"no_match",
+			exitCode,
+			output,
+		), nil
+	}
+
+	// 进程已经成功启动，非零退出码属于命令结果而非工具故障。
+	// 对 go test/build 来说，编译器或测试失败详情就在 output 中。
+	return formatNativeCommandOutcome(
+		program,
+		args,
+		executablePath,
+		workingDirectory,
+		"command_failed",
+		exitCode,
+		output,
+	), nil
+}
+
+// cappedOutputWriter 保留指定字节数以内的输出，超出后继续接收但丢弃数据，
+// 避免子进程因为输出管道阻塞。Stdout 和 Stderr 可能并发写入，因此需要加锁。
+type cappedOutputWriter struct {
+	mu        sync.Mutex
+	buffer    bytes.Buffer
+	limit     int
+	truncated bool
+}
+
+func newCappedOutputWriter(limit int) *cappedOutputWriter {
+	return &cappedOutputWriter{limit: limit}
+}
+
+func (w *cappedOutputWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	originalLength := len(p)
+	remaining := w.limit - w.buffer.Len()
+	if remaining <= 0 {
+		w.truncated = true
+		return originalLength, nil
+	}
+
+	if len(p) > remaining {
+		_, _ = w.buffer.Write(p[:remaining])
+		w.truncated = true
+		return originalLength, nil
+	}
+
+	_, _ = w.buffer.Write(p)
+	return originalLength, nil
+}
+
+func (w *cappedOutputWriter) UTF8String() string {
+	w.mu.Lock()
+	raw := append([]byte(nil), w.buffer.Bytes()...)
+	rawTruncated := w.truncated
+	limit := w.limit
+	w.mu.Unlock()
+
+	text, encodingNote := normalizeNativeOutputUTF8(raw)
+	text, normalizedTruncated := truncateNativeUTF8(text, limit)
+
+	var result strings.Builder
+	result.WriteString(text)
+	if encodingNote != "" {
+		if result.Len() > 0 && !strings.HasSuffix(result.String(), "\n") {
+			result.WriteByte('\n')
+		}
+		result.WriteString("[输出编码处理：")
+		result.WriteString(encodingNote)
+		result.WriteString("]\n")
+	}
+	if rawTruncated || normalizedTruncated {
+		if result.Len() > 0 && !strings.HasSuffix(result.String(), "\n") {
+			result.WriteByte('\n')
+		}
+		fmt.Fprintf(&result, "[输出已截断：最多保留 %d 字节的 UTF-8 文本]\n", limit)
+	}
+
+	// 最后的不变量检查。即使以后修改了解码逻辑，也不允许非法 UTF-8 离开工具。
+	finalText := result.String()
+	if utf8.ValidString(finalText) {
+		return finalText
+	}
+	return escapeInvalidNativeUTF8([]byte(finalText))
+}
+
+// normalizeNativeOutputUTF8 把任意子进程字节流转换成 API 可安全接收的 UTF-8。
+//
+// 处理顺序：
+//  1. 识别 UTF-8 BOM；
+//  2. 识别 UTF-16LE/BE BOM，以及明显的无 BOM UTF-16 文本；
+//  3. 有效 UTF-8 直接保留；
+//  4. 其余字节流保留其中的有效 UTF-8 片段，并把非法字节逐个转义为 \\xNN。
+//
+// 第 4 步故意不猜测 GBK、Shift-JIS 等本地代码页。猜错编码会静默改变日志内容；
+// 转义原始字节虽然不如正确解码美观，但信息无损、行为确定，而且绝不会再次造成
+// "invalid UTF-8 in input message"。
+func normalizeNativeOutputUTF8(raw []byte) (string, string) {
+	if len(raw) == 0 {
+		return "", ""
+	}
+
+	if bytes.HasPrefix(raw, []byte{0xEF, 0xBB, 0xBF}) {
+		text := string(raw[3:])
+		if utf8.ValidString(text) {
+			return escapeNativeControlRunes(text), "已移除 UTF-8 BOM"
+		}
+		raw = raw[3:]
+	}
+
+	if bytes.HasPrefix(raw, []byte{0xFF, 0xFE}) {
+		return escapeNativeControlRunes(decodeNativeUTF16(raw[2:], binary.LittleEndian)), "UTF-16LE 已转换为 UTF-8"
+	}
+	if bytes.HasPrefix(raw, []byte{0xFE, 0xFF}) {
+		return escapeNativeControlRunes(decodeNativeUTF16(raw[2:], binary.BigEndian)), "UTF-16BE 已转换为 UTF-8"
+	}
+
+	if order, ok := detectNativeUTF16WithoutBOM(raw); ok {
+		name := "UTF-16BE"
+		if order == binary.LittleEndian {
+			name = "UTF-16LE"
+		}
+		return escapeNativeControlRunes(decodeNativeUTF16(raw, order)), name + "（无 BOM）已转换为 UTF-8"
+	}
+
+	if utf8.Valid(raw) {
+		return escapeNativeControlRunes(string(raw)), ""
+	}
+
+	return escapeInvalidNativeUTF8(raw), "检测到非 UTF-8 原始字节，已逐字节转义为 \\xNN"
+}
+
+func detectNativeUTF16WithoutBOM(raw []byte) (binary.ByteOrder, bool) {
+	if len(raw) < 8 {
+		return nil, false
+	}
+
+	sampleLength := len(raw)
+	if sampleLength > 4096 {
+		sampleLength = 4096
+	}
+	sampleLength -= sampleLength % 2
+	if sampleLength < 8 {
+		return nil, false
+	}
+
+	var evenZero, oddZero int
+	pairs := sampleLength / 2
+	for i := 0; i < sampleLength; i += 2 {
+		if raw[i] == 0 {
+			evenZero++
+		}
+		if raw[i+1] == 0 {
+			oddZero++
+		}
+	}
+
+	// ASCII/拉丁文本的 UTF-16 通常在高字节位置有大量 NUL。阈值故意保守，
+	// 避免把普通二进制或本地代码页文本误判为 UTF-16。
+	if oddZero*100 >= pairs*60 && evenZero*100 <= pairs*10 {
+		return binary.LittleEndian, true
+	}
+	if evenZero*100 >= pairs*60 && oddZero*100 <= pairs*10 {
+		return binary.BigEndian, true
+	}
+	return nil, false
+}
+
+func decodeNativeUTF16(raw []byte, order binary.ByteOrder) string {
+	unitCount := len(raw) / 2
+	units := make([]uint16, unitCount)
+	for i := 0; i < unitCount; i++ {
+		units[i] = order.Uint16(raw[i*2 : i*2+2])
+	}
+
+	text := string(utf16.Decode(units))
+	if len(raw)%2 == 1 {
+		text += fmt.Sprintf(`\x%02X`, raw[len(raw)-1])
+	}
+	return text
+}
+
+func escapeInvalidNativeUTF8(raw []byte) string {
+	const hexDigits = "0123456789ABCDEF"
+	var out strings.Builder
+	out.Grow(len(raw))
+
+	for len(raw) > 0 {
+		r, size := utf8.DecodeRune(raw)
+		if r == utf8.RuneError && size == 1 {
+			b := raw[0]
+			out.WriteString(`\x`)
+			out.WriteByte(hexDigits[b>>4])
+			out.WriteByte(hexDigits[b&0x0F])
+			raw = raw[1:]
+			continue
+		}
+
+		writeNativeSafeRune(&out, r)
+		raw = raw[size:]
+	}
+	return out.String()
+}
+
+func escapeNativeControlRunes(text string) string {
+	var out strings.Builder
+	out.Grow(len(text))
+	for _, r := range text {
+		writeNativeSafeRune(&out, r)
+	}
+	return out.String()
+}
+
+func writeNativeSafeRune(out *strings.Builder, r rune) {
+	switch r {
+	case '\n', '\r', '\t':
+		out.WriteRune(r)
+	default:
+		if r < 0x20 || r == 0x7F {
+			if r <= 0xFF {
+				fmt.Fprintf(out, `\x%02X`, r)
+			} else {
+				fmt.Fprintf(out, `\u%04X`, r)
+			}
+			return
+		}
+		out.WriteRune(r)
+	}
+}
+
+func truncateNativeUTF8(text string, maxBytes int) (string, bool) {
+	if maxBytes < 0 {
+		maxBytes = 0
+	}
+	if len(text) <= maxBytes {
+		return text, false
+	}
+
+	prefix := text[:maxBytes]
+	for len(prefix) > 0 && !utf8.ValidString(prefix) {
+		prefix = prefix[:len(prefix)-1]
+	}
+
+	// 避免把工具生成的可见字节转义截成 "\\"、"\\x" 或 "\\xA"。
+	// 即使截断发生在一个非法原始字节中间，返回值仍保持可读且可解析。
+	if slash := strings.LastIndexByte(prefix, '\\'); slash >= 0 {
+		tail := prefix[slash:]
+		if tail == `\` || tail == `\x` ||
+			(len(tail) == 3 && strings.HasPrefix(tail, `\x`) && isNativeHexByte(tail[2])) {
+			prefix = prefix[:slash]
+		}
+	}
+	return prefix, true
+}
+
+func isNativeHexByte(value byte) bool {
+	return value >= '0' && value <= '9' ||
+		value >= 'a' && value <= 'f' ||
+		value >= 'A' && value <= 'F'
+}
+
+var _ io.Writer = (*cappedOutputWriter)(nil)
+
+// Execute 直接运行白名单内的 Windows 原生 .exe。
+func (t *NativeCommandTool) Execute(
 	input map[string]any,
 	executionEnvironment ToolExecutionEnvironment,
 ) (string, error) {
-	if executionEnvironment.WorkingDirectory == "" {
-		return "", fmt.Errorf("BashTool 缺少 WorkingDirectory")
+	if runtime.GOOS != "windows" {
+		return "", fmt.Errorf("command 工具仅支持 Windows；当前运行平台为 %s", runtime.GOOS)
 	}
-	// 使用 ValidatePath 校验工作目录本身
-	if _, err := ValidatePath(executionEnvironment.WorkingDirectory, "."); err != nil {
-		return "", fmt.Errorf("BashTool 工作目录无效: %w", err)
+	if err := validateNativeUTF8Input("WorkingDirectory", executionEnvironment.WorkingDirectory); err != nil {
+		return "", err
 	}
-	cmdStr, ok := input["command"].(string)
-	if !ok || strings.TrimSpace(cmdStr) == "" {
-		return "", fmt.Errorf("bash 工具需要 command 参数")
+	if strings.TrimSpace(executionEnvironment.WorkingDirectory) == "" {
+		return "", fmt.Errorf("NativeCommandTool 缺少 WorkingDirectory")
 	}
 
-	// 安全检查 1+2：引号感知扫描危险元字符，并按顶层 | 切分成管道段
-	segments, err := splitPipelineSegments(cmdStr)
+	workingDirectory, err := filepath.Abs(executionEnvironment.WorkingDirectory)
+	if err != nil {
+		return "", fmt.Errorf("解析 WorkingDirectory 失败: %w", err)
+	}
+	info, err := os.Stat(workingDirectory)
+	if err != nil {
+		return "", fmt.Errorf("访问 WorkingDirectory 失败: %w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("WorkingDirectory 不是目录: %s", workingDirectory)
+	}
+
+	programValue, ok := input["program"].(string)
+	if !ok || strings.TrimSpace(programValue) == "" {
+		return "", fmt.Errorf("command 工具需要 program 参数")
+	}
+	if err := validateNativeUTF8Input("program", programValue); err != nil {
+		return "", err
+	}
+	if strings.ContainsAny(programValue, `/\\:`) {
+		return "", fmt.Errorf("program 只能填写白名单程序名，不能包含路径: %s", programValue)
+	}
+
+	program := normalizeProgramName(programValue)
+	if blockedNativePrograms[program] {
+		return "", fmt.Errorf("程序 %s 已禁用：不允许启动命令解释器、WSL 或脚本宿主", programValue)
+	}
+	doc, allowed := nativeProgramByName[program]
+	if !allowed {
+		return "", fmt.Errorf("程序不在白名单中: %s；允许值为 %s", programValue, strings.Join(allowedProgramNames(), ", "))
+	}
+
+	args, err := readStringArguments(input)
+	if err != nil {
+		return "", err
+	}
+	timeoutSeconds, err := readOptionalInt(
+		input,
+		"timeout_seconds",
+		defaultCommandTimeoutSeconds,
+		1,
+		maxCommandTimeoutSeconds,
+	)
+	if err != nil {
+		return "", err
+	}
+	maxOutputBytes, err := readOptionalInt(
+		input,
+		"max_output_bytes",
+		defaultCommandOutputBytes,
+		minCommandOutputBytes,
+		maxCommandOutputBytes,
+	)
 	if err != nil {
 		return "", err
 	}
 
-	// 安全检查 3：每一个管道段都必须以白名单命令开头
-	// strings.Fields 按空白字符（空格/tab/换行）切分字符串，取第一个词作为命令名
-	for _, seg := range segments {
-		seg = strings.TrimSpace(seg)
-		parts := strings.Fields(seg)
-		if len(parts) == 0 {
-			return "", fmt.Errorf("命令中存在空的管道段: %s", cmdStr)
-		}
-
-		cmdNameKey := normalizeCommandName(parts[0])
-		if blockedShellCommands[cmdNameKey] {
-			return "", fmt.Errorf("命令 %s 已禁用：不允许启动 WSL、二级 shell、PowerShell 或 cmd.exe（完整命令: %s）", parts[0], cmdStr)
-		}
-		if !allowedCommands[cmdNameKey] {
-			return "", fmt.Errorf("不在白名单中: %s（完整命令: %s）。只能使用工具描述里列出的命令名，不接受项目名/别名等其他写法", parts[0], cmdStr)
-		}
-
-		// find 的 -exec/-execdir/-ok/-okdir 可以执行任意命令，且用 "+" 结尾时
-		// 不含分号，能绕过上面的元字符扫描，因此单独禁止这几个参数。
-		if cmdNameKey == "find" {
-			for _, p := range parts[1:] {
-				switch p {
-				case "-exec", "-execdir", "-ok", "-okdir":
-					return "", fmt.Errorf("find 不允许使用 %s 参数（可借此执行任意命令，绕过白名单）: %s", p, cmdStr)
-				}
-			}
-		}
-
-		// xargs 会把管道输入拼接成新命令去执行，必须额外校验它实际调用的
-		// 目标子命令，否则可以借道 xargs 绕过白名单执行任意程序。
-		if cmdNameKey == "xargs" {
-			targetCmd, found := findXargsTargetCommand(parts)
-			if found {
-				targetCmdKey := normalizeCommandName(targetCmd)
-				if !allowedCommands[targetCmdKey] {
-					return "", fmt.Errorf("xargs 目标命令不在白名单中: %s（完整命令: %s）", targetCmd, cmdStr)
-				}
-			}
-			// 没找到显式目标命令时 xargs 默认执行 echo，属于白名单内命令，放行
-		}
-	}
-
-	// 创建带超时的 context
-	// context.WithTimeout 返回一个新 context 和一个 cancel 函数
-	// 30 秒后 context 自动超时，ExecCommandContext 会 kill 进程
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel() // 函数返回时释放 context 资源
-
-	// 只使用 Git for Windows 自带的 bash.exe。绝不通过 PATH 查找 bash，
-	// 避免误启动 C:\Windows\System32\bash.exe / WSL。
-	gitBashPath, err := findGitBashExecutable()
+	executablePath, err := resolveNativeExecutable(doc)
 	if err != nil {
 		return "", err
 	}
-	cmd := exec.CommandContext(ctx, gitBashPath, "--noprofile", "--norc", "-c", cmdStr)
-	cmd.Dir = executionEnvironment.WorkingDirectory
-	// CHERE_INVOKING 保持 cmd.Dir 指定的工作目录；禁用用户 profile 也能减少启动开销
-	// 和不可控的别名/脚本注入。
-	cmd.Env = append(os.Environ(), "CHERE_INVOKING=1")
+	args = prepareNativeArgs(program, args)
 
-	// CombinedOutput 执行命令并返回 stdout + stderr 合并的字节数组
-	output, err := cmd.CombinedOutput()
-
-	if err != nil {
-		// 检查是否超时
-		if ctx.Err() == context.DeadlineExceeded {
-			return string(output), fmt.Errorf("命令超时（30s）: %w", err)
-		}
-		// 其他错误：返回输出 + 错误信息
-		return string(output), fmt.Errorf("命令执行失败: %w", err)
+	parentContext := executionEnvironment.Context
+	if parentContext == nil {
+		parentContext = context.Background()
 	}
+	if parentContext.Err() != nil {
+		return "", formatNativeInfrastructureError(
+			program,
+			args,
+			executablePath,
+			workingDirectory,
+			"启动前会话已取消",
+			"",
+			parentContext.Err(),
+		)
+	}
+	commandContext, cancelCommand := context.WithTimeout(
+		parentContext,
+		time.Duration(timeoutSeconds)*time.Second,
+	)
+	defer cancelCommand()
 
-	return string(output), nil
+	cmd := exec.CommandContext(commandContext, executablePath, args...)
+	cmd.Dir = workingDirectory
+	cmd.Env = sanitizedNativeEnvironment(program)
+
+	output := newCappedOutputWriter(maxOutputBytes)
+	cmd.Stdout = output
+	cmd.Stderr = output
+
+	err = cmd.Run()
+	result := output.UTF8String()
+
+	return classifyNativeCommandResult(
+		program,
+		args,
+		executablePath,
+		workingDirectory,
+		err,
+		result,
+		commandContext,
+	)
 }

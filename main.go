@@ -66,8 +66,9 @@ func loadPersonalities(dir string) (map[string]string, error) {
 
 var personalities map[string]string
 
-const systemPromptBase = `你是一个 AI 助手。你可以使用 bash 工具执行 shell 命令来操作文件。
-当用户要求创建文件、读文件、执行命令时，你必须调用 bash 工具，不要只用文字说明。
+const systemPromptBase = `你是一个 AI 助手。
+当用户要求创建文件、读文件、改文件时，优先调用 file 工具。
+当用户要求执行本机程序、搜索代码、运行 go/git 时，调用 command 工具（program + args 数组，不是 shell 字符串）。
 需要旧会话信息时，按照本次 system message 提供的会话文件位置读取必要片段。
 如果 activate_skill 工具列出的技能和用户需求匹配，先调用 activate_skill。`
 
@@ -75,6 +76,7 @@ var registry = tool.NewRegistry()
 var mcpServerManager *mcp.MCPServerManager
 var conversationEventReceivers = service.NewConversationEventReceivers()
 var conversationExecutionLocks = service.NewConversationExecutionLocks()
+var conversationRunRegistry = service.NewConversationRunRegistry()
 var projectConversationStore = memory.NewProjectConversationStore()
 var configuredTokenCounter agent.AgentTokenCounter
 var configuredModelContextWindowTokens int
@@ -464,7 +466,8 @@ func continueMainAgentAfterSubAgents(
 		configuredTokenCounter,
 		configuredModelContextWindowTokens,
 		service.AgentRunOptions{
-			StreamText: true,
+			KeepRecentMemoryTokens: applicationConfig.KeepRecentMemoryTokens,
+			StreamText:             true,
 			ReceiveEvent: func(agentEvent agent.AgentEvent) {
 				textDeltaEvent, isTextDelta :=
 					agentEvent.(agent.AgentTextDeltaEvent)
@@ -832,11 +835,18 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 		conversationExecutionLocks.LockConversation(conversationID)
 	defer unlockConversationExecution()
 
+	runContext, endConversationRun := conversationRunRegistry.BeginRun(
+		conversationID,
+		r.Context(),
+	)
+	defer endConversationRun()
+
 	runResult, runAgentError := service.RunAgentTask(
 		agent.UserTaskInput{Message: webAgentTaskRequest.Message},
 		agent.AgentExecutionEnvironment{
 			WorkingDirectory: webAgentTaskRequest.WorkingDirectory,
 			ConversationID:   conversationID,
+			Context:          runContext,
 		},
 		systemPromptBase,
 		cfg,
@@ -844,7 +854,10 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 		projectConversationStore,
 		configuredTokenCounter,
 		configuredModelContextWindowTokens,
-		service.AgentRunOptions{},
+		service.AgentRunOptions{
+			Context:                runContext,
+			KeepRecentMemoryTokens: cfg.KeepRecentMemoryTokens,
+		},
 	)
 	if runAgentError != nil {
 		writeAPIError(w, "handleChat.run", conversationID, runAgentError)
@@ -934,11 +947,18 @@ func handleChatStream(w http.ResponseWriter, r *http.Request) {
 			conversationExecutionLocks.LockConversation(conversationId)
 		defer unlockConversationExecution()
 
+		runContext, endConversationRun := conversationRunRegistry.BeginRun(
+			conversationId,
+			r.Context(),
+		)
+		defer endConversationRun()
+
 		runResult, runAgentError := service.RunAgentTask(
 			agent.UserTaskInput{Message: webAgentTaskRequest.Message},
 			agent.AgentExecutionEnvironment{
 				WorkingDirectory: webAgentTaskRequest.WorkingDirectory,
 				ConversationID:   conversationId,
+				Context:          runContext,
 			},
 			systemPromptBase,
 			cfg,
@@ -947,7 +967,9 @@ func handleChatStream(w http.ResponseWriter, r *http.Request) {
 			configuredTokenCounter,
 			configuredModelContextWindowTokens,
 			service.AgentRunOptions{
-				StreamText: true,
+				Context:                runContext,
+				KeepRecentMemoryTokens: cfg.KeepRecentMemoryTokens,
+				StreamText:             true,
 				ReceiveEvent: func(agentEvent agent.AgentEvent) {
 					writeAgentEventSSE(w, flusher, agentEvent)
 				},
@@ -957,14 +979,7 @@ func handleChatStream(w http.ResponseWriter, r *http.Request) {
 			writeSSEError(w, flusher, "handleChatStream.run", conversationId, runAgentError)
 			return
 		}
-		if runResult.FinalText() != "" {
-			doneJSON, _ := json.Marshal(map[string]string{
-				"type": "done",
-				"text": runResult.FinalText(),
-			})
-			fmt.Fprintf(w, "data: %s\n\n", doneJSON)
-			flusher.Flush()
-		}
+		writeAgentRunFinishedSSE(w, flusher, runResult)
 	}()
 	<-done
 }
@@ -975,6 +990,55 @@ func assignWebAgentConversationID(webAgentTaskRequest *model.ChatRequest) {
 	if webAgentTaskRequest.ConversationId == "" {
 		webAgentTaskRequest.ConversationId = service.GenerateConversationId()
 	}
+}
+
+func writeAgentRunFinishedSSE(
+	responseWriter http.ResponseWriter,
+	responseWriterFlusher http.Flusher,
+	runResult agent.AgentRunResult,
+) {
+	if runResult == nil {
+		return
+	}
+	finishedEvent := map[string]any{
+		"text": runResult.FinalText(),
+	}
+	if cancelledResult, isCancelled := runResult.(agent.AgentCancelledResult); isCancelled {
+		finishedEvent["type"] = "cancelled"
+		finishedEvent["reason"] = cancelledResult.Reason
+		finishedEvent["partialText"] = cancelledResult.PartialText
+	} else if runResult.FinalText() == "" {
+		return
+	} else {
+		finishedEvent["type"] = "done"
+	}
+	finishedJSON, encodeFinishedError := json.Marshal(finishedEvent)
+	if encodeFinishedError != nil {
+		return
+	}
+	fmt.Fprintf(responseWriter, "data: %s\n\n", finishedJSON)
+	responseWriterFlusher.Flush()
+}
+
+// handleStopConversation 取消指定会话当前正在执行的 Agent.Run。
+// 路径：POST /api/conversations/{id}/stop
+func handleStopConversation(
+	responseWriter http.ResponseWriter,
+	httpRequest *http.Request,
+) {
+	conversationID := strings.TrimSpace(httpRequest.PathValue("id"))
+	if conversationID == "" {
+		writeAPIError(responseWriter, "handleStopConversation.validate", "",
+			invalidRequestError("handleStopConversation.validate",
+				fmt.Errorf("conversationId 不能为空")))
+		return
+	}
+	cancelled := conversationRunRegistry.CancelRun(conversationID)
+	responseWriter.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(responseWriter).Encode(map[string]any{
+		"conversationId": conversationID,
+		"cancelled":      cancelled,
+	})
 }
 
 func validateWebAgentTaskRequest(webAgentTaskRequest model.ChatRequest) error {
@@ -1055,10 +1119,21 @@ func writeAgentEventSSE(
 			"type":    "memory_save_failed",
 			"message": concreteAgentEvent.Cause.Error(),
 		}
+	case agent.AgentCancelledEvent:
+		eventJSONFields = map[string]any{
+			"type":        "cancelled",
+			"text":        concreteAgentEvent.PartialText,
+			"reason":      concreteAgentEvent.Reason,
+			"partialText": concreteAgentEvent.PartialText,
+		}
 	case agent.AgentCompletedEvent:
 		eventJSONFields = map[string]any{
 			"type": "agent_completed",
 			"text": concreteAgentEvent.Result.FinalText(),
+		}
+		if cancelledResult, isCancelled := concreteAgentEvent.Result.(agent.AgentCancelledResult); isCancelled {
+			eventJSONFields["resultKind"] = "cancelled"
+			eventJSONFields["reason"] = cancelledResult.Reason
 		}
 	default:
 		return
@@ -1077,7 +1152,7 @@ func writeAgentEventSSE(
 
 // buildHarnessRuntimeDependencies 用当前全局资源装配一个项目目录的
 // Harness Runtime 依赖。被管理 Agent 的工具表现取全局注册表（排除
-// run_subagent），bash、activate_skill、create_skill 和当前全局 MCP
+// run_subagent），command、file、activate_skill、create_skill 和当前全局 MCP
 // 工具自动全部可见，不按 Agent 过滤。
 func buildHarnessRuntimeDependencies(
 	applicationConfig config.Config,
@@ -1101,7 +1176,7 @@ func buildHarnessRuntimeDependencies(
 // 自然语言实况；没有运行中的 Server 时明确说明无 MCP 资源。
 func harnessMCPLiveStatusText() string {
 	noMCPResourceText := "- 当前没有运行中的 MCP Server；" +
-		"被管理 Agent 只有 bash、activate_skill、create_skill 三个基础工具。"
+		"被管理 Agent 只有 command、file、activate_skill、create_skill 四个基础工具。"
 	if mcpServerManager == nil {
 		return noMCPResourceText
 	}
@@ -1233,11 +1308,22 @@ func handleHarnessChatStream(
 			)
 		defer unlockConversationExecution()
 
+		// 先处理完成队列中积压的 Agent 汇报，再执行用户消息，
+		// 避免 Agent 失败/完成回调被用户对话锁挡住。
+		harnessRuntime.DrainPendingReports()
+
+		runContext, endConversationRun := conversationRunRegistry.BeginRun(
+			harness.HarnessConversationID,
+			httpRequest.Context(),
+		)
+		defer endConversationRun()
+
 		runResult, runAgentError := service.RunAgentTask(
 			agent.UserTaskInput{Message: harnessChatRequest.Message},
 			agent.AgentExecutionEnvironment{
 				WorkingDirectory: harnessChatRequest.WorkingDirectory,
 				ConversationID:   harness.HarnessConversationID,
+				Context:          runContext,
 			},
 			harnessRuntime.HarnessSystemPromptWithLiveStatus(),
 			cfg,
@@ -1246,7 +1332,9 @@ func handleHarnessChatStream(
 			configuredTokenCounter,
 			configuredModelContextWindowTokens,
 			service.AgentRunOptions{
-				StreamText: true,
+				Context:                runContext,
+				KeepRecentMemoryTokens: cfg.KeepRecentMemoryTokens,
+				StreamText:             true,
 				ReceiveEvent: func(receivedAgentEvent agent.AgentEvent) {
 					writeAgentEventSSE(responseWriter, flusher, receivedAgentEvent)
 				},
@@ -1258,14 +1346,7 @@ func handleHarnessChatStream(
 				runAgentError)
 			return
 		}
-		if runResult.FinalText() != "" {
-			doneJSON, _ := json.Marshal(map[string]string{
-				"type": "done",
-				"text": runResult.FinalText(),
-			})
-			fmt.Fprintf(responseWriter, "data: %s\n\n", doneJSON)
-			flusher.Flush()
-		}
+		writeAgentRunFinishedSSE(responseWriter, flusher, runResult)
 	}()
 	<-done
 }
@@ -1356,6 +1437,66 @@ func handleHarnessAgentMemory(
 			"error_kind", service.ErrorInternal,
 			"error", encodeMemoryError)
 	}
+}
+
+// handleHarnessAgentHeartbeat 是远程保活接口：被管理 Agent 每轮循环调用一次，
+// 刷新注册表中的最后心跳时间，主管理据此判断 Agent 是否仍在工作。
+// 路径：POST /api/harness/agents/{name}/heartbeat
+func handleHarnessAgentHeartbeat(
+	responseWriter http.ResponseWriter,
+	httpRequest *http.Request,
+) {
+	workingDirectory := httpRequest.URL.Query().Get("workingDirectory")
+	if !validateHarnessRequestCommon(
+		responseWriter,
+		"handleHarnessAgentHeartbeat",
+		workingDirectory,
+	) {
+		return
+	}
+	agentName := strings.TrimSpace(httpRequest.PathValue("name"))
+	if agentName == "" {
+		writeAPIError(responseWriter, "handleHarnessAgentHeartbeat.validate",
+			harness.HarnessConversationID,
+			invalidRequestError("handleHarnessAgentHeartbeat.validate",
+				fmt.Errorf("agent 名称不能为空")))
+		return
+	}
+	harnessRuntime, createRuntimeError := harness.GetOrCreateRuntime(
+		workingDirectory,
+		buildHarnessRuntimeDependencies(config.Load()),
+	)
+	if createRuntimeError != nil {
+		writeAPIError(responseWriter, "handleHarnessAgentHeartbeat.runtime",
+			harness.HarnessConversationID, createRuntimeError)
+		return
+	}
+	agentRecord, agentFound :=
+		harnessRuntime.AgentRegistry().GetAgent(agentName)
+	if !agentFound {
+		writeAPIError(responseWriter, "handleHarnessAgentHeartbeat.agent",
+			harness.HarnessConversationID,
+			invalidRequestError("handleHarnessAgentHeartbeat.agent",
+				fmt.Errorf("没有名为 %q 的 Agent", agentName)))
+		return
+	}
+	_ = agentRecord
+	if heartbeatError := harnessRuntime.AgentRegistry().HeartbeatAgent(
+		agentName,
+	); heartbeatError != nil {
+		writeAPIError(responseWriter, "handleHarnessAgentHeartbeat.write",
+			harness.HarnessConversationID, heartbeatError)
+		return
+	}
+	recordAfterHeartbeat, _ := harnessRuntime.AgentRegistry().GetAgent(agentName)
+	responseWriter.Header().Set("Content-Type", "application/json;charset=UTF-8")
+	_ = json.NewEncoder(responseWriter).Encode(map[string]any{
+		"agent":           agentName,
+		"conversationId":  recordAfterHeartbeat.ConversationID,
+		"status":          string(recordAfterHeartbeat.Status),
+		"heartbeat":       "ok",
+		"lastHeartbeatAt": recordAfterHeartbeat.LastHeartbeatAt,
+	})
 }
 
 // ============================================================================
@@ -1686,7 +1827,7 @@ func handleCouncilStream(w http.ResponseWriter, r *http.Request) {
 			for _, name := range names {
 				messages := make([]model.Message, len(history))
 				copy(messages, history)
-				resp, err := service.Chat(messages, personalities[name], cfg, nil, 4096)
+				resp, err := service.Chat(r.Context(), messages, personalities[name], cfg, nil, 4096)
 				if err != nil {
 					writeSSEError(w, flusher, "handleCouncilStream.chat", "", err)
 					return
@@ -1801,8 +1942,8 @@ func main() {
 		"personality_count", len(names),
 		"personality_names", strings.Join(names, ", "))
 
-	if err := registry.Register(tool.NewBashTool()); err != nil {
-		slog.Error("工具注册失败", "component", "startup", "tool_name", "bash", "error", err)
+	if err := registry.Register(tool.NewNativeCommandTool()); err != nil {
+		slog.Error("工具注册失败", "component", "startup", "tool_name", "command", "error", err)
 		os.Exit(1)
 	}
 	if err := registry.Register(tool.NewSkillTool()); err != nil {
@@ -1853,6 +1994,7 @@ func main() {
 		handleConversationEvents,
 	)
 	http.HandleFunc("GET /api/conversations/{id}", handleGetConversation)
+	http.HandleFunc("POST /api/conversations/{id}/stop", handleStopConversation)
 	http.HandleFunc("DELETE /api/conversations/{id}", handleDeleteConversation)
 	http.HandleFunc("GET /api/logs", handleListRecentApplicationLogs)
 	http.HandleFunc("POST /api/council", handleCouncil)
@@ -1862,6 +2004,10 @@ func main() {
 	http.HandleFunc(
 		"GET /api/harness/agents/{name}/memory",
 		handleHarnessAgentMemory,
+	)
+	http.HandleFunc(
+		"POST /api/harness/agents/{name}/heartbeat",
+		handleHarnessAgentHeartbeat,
 	)
 	http.HandleFunc("GET /harness", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "harness.html")

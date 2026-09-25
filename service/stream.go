@@ -3,7 +3,9 @@ package service
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,8 +17,19 @@ import (
 
 // ChatStream 发送流式请求到 DeepSeek，通过 onToken 回调实时推送 token，
 // 返回 *ApiResponse（完整文本 + 工具调用 + token 用量）。
-func ChatStream(messages []model.Message, systemPrompt string, cfg config.Config,
-	tools []map[string]any, maxTokens int, onToken func(string)) (*model.ApiResponse, error) {
+// requestContext 取消时中断 HTTP 读取，并尽量返回已收到的部分正文。
+func ChatStream(
+	requestContext context.Context,
+	messages []model.Message,
+	systemPrompt string,
+	cfg config.Config,
+	tools []map[string]any,
+	maxTokens int,
+	onToken func(string),
+) (*model.ApiResponse, error) {
+	if requestContext == nil {
+		requestContext = context.Background()
+	}
 	if strings.TrimSpace(cfg.ApiKey) == "" {
 		return nil, NewAppError(ErrorConfig, "service.ChatStream", 0,
 			fmt.Errorf("DEEPSEEK_API_KEY 未设置"))
@@ -38,7 +51,12 @@ func ChatStream(messages []model.Message, systemPrompt string, cfg config.Config
 		return nil, NewAppError(ErrorInternal, "service.ChatStream.marshal", 0, err)
 	}
 
-	req, err := http.NewRequest("POST", cfg.ApiEndpoint, bytes.NewReader(jsonBody))
+	req, err := http.NewRequestWithContext(
+		requestContext,
+		"POST",
+		cfg.ApiEndpoint,
+		bytes.NewReader(jsonBody),
+	)
 	if err != nil {
 		return nil, NewAppError(ErrorConfig, "service.ChatStream.newRequest", 0, err)
 	}
@@ -161,20 +179,23 @@ func ChatStream(messages []model.Message, systemPrompt string, cfg config.Config
 	}
 
 done:
-	if err := scanner.Err(); err != nil {
-		return &model.ApiResponse{
-			Text:         fullText.String(),
-			ToolCalls:    toolCalls,
-			InputTokens:  inputTokens,
-			OutputTokens: outputTokens,
-		}, newNetworkError("service.ChatStream.readStream", err)
-	}
-	return &model.ApiResponse{
+	partialResponse := &model.ApiResponse{
 		Text:         fullText.String(),
 		ToolCalls:    toolCalls,
 		InputTokens:  inputTokens,
 		OutputTokens: outputTokens,
-	}, nil
+	}
+	if err := scanner.Err(); err != nil {
+		if errors.Is(err, context.Canceled) ||
+			errors.Is(requestContext.Err(), context.Canceled) {
+			return partialResponse, context.Canceled
+		}
+		return partialResponse, newNetworkError("service.ChatStream.readStream", err)
+	}
+	if errors.Is(requestContext.Err(), context.Canceled) {
+		return partialResponse, context.Canceled
+	}
+	return partialResponse, nil
 }
 
 type toolAccumulator struct {

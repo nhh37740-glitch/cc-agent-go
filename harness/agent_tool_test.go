@@ -192,27 +192,27 @@ func TestHarnessSystemPromptWithLiveStatus(t *testing.T) {
 
 	emptyPrompt := unitRuntime.HarnessSystemPromptWithLiveStatus()
 	for _, expectedPart := range []string{
-		"测试 Harness prompt", "上限 11", "已创建 0", "还可创建 11", "没有已创建",
+		"测试 Harness prompt", "上限 11", "临时 0", "还可创建临时 11",
 	} {
 		if !strings.Contains(emptyPrompt, expectedPart) {
 			t.Fatalf("空名单实况应包含 %q，实际:\n%s", expectedPart, emptyPrompt)
 		}
 	}
 
-	if _, _, upsertError := unitRuntime.agentRegistry.UpsertAgent("coder"); upsertError != nil {
-		t.Fatalf("upsert 失败: %v", upsertError)
-	}
 	if _, _, upsertError := unitRuntime.agentRegistry.UpsertAgent("writer"); upsertError != nil {
 		t.Fatalf("upsert 失败: %v", upsertError)
 	}
-	if markRunningError := unitRuntime.agentRegistry.MarkRunning("coder"); markRunningError != nil {
+	if _, _, upsertError := unitRuntime.agentRegistry.UpsertAgent("ghost"); upsertError != nil {
+		t.Fatalf("upsert 失败: %v", upsertError)
+	}
+	if markRunningError := unitRuntime.agentRegistry.MarkRunning("writer"); markRunningError != nil {
 		t.Fatalf("标记 running 失败: %v", markRunningError)
 	}
 
 	rosterPrompt := unitRuntime.HarnessSystemPromptWithLiveStatus()
 	for _, expectedPart := range []string{
-		"已创建 2", "运行中 1", "还可创建 9",
-		"coder", "writer", "harness-agent-coder",
+		"临时 2", "运行中 1", "还可创建临时 9",
+		"writer", "ghost", "harness-agent-writer",
 	} {
 		if !strings.Contains(rosterPrompt, expectedPart) {
 			t.Fatalf("名单实况应包含 %q，实际:\n%s", expectedPart, rosterPrompt)

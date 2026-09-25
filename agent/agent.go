@@ -1,7 +1,9 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -19,6 +21,12 @@ type AgentConfiguration struct {
 	MaximumToolResultTokens   int
 	MaximumStoredMemoryTokens int
 	ModelContextWindowTokens  int
+	// KeepRecentMemoryTokens 每次请求主动附带的最近历史 token 预算。
+	// 历史摘要不计入预算；预算内的最近对话与摘要一起拼在请求开头，
+	// 提升前缀稳定性以命中上下文缓存。预算外内容仍用工具按需读取。
+	KeepRecentMemoryTokens int
+	// RoundHeartbeat 每轮模型调用前调用一次；用于 Harness 保活检测。
+	RoundHeartbeat func()
 }
 
 type Agent struct {
@@ -100,22 +108,71 @@ func (configuredAgent *Agent) Run(
 		systemPrompt += "\n\n项目 AGENTS.md：\n" + projectRules
 	}
 	systemPrompt += "\n\n" + memoryReference.SystemInstruction()
-	currentRunMessages := []model.Message{{
+	currentRunMessages := []model.Message{}
+	historyMessages, loadHistoryError := loadRecentConversation(
+		executionEnvironment,
+		configuredAgent.conversationStore,
+		configuredAgent.configuration.KeepRecentMemoryTokens,
+		configuredAgent.countTokens,
+	)
+	if loadHistoryError != nil {
+		return nil, fmt.Errorf("加载最近会话历史失败: %w", loadHistoryError)
+	}
+	if len(historyMessages) > 0 {
+		currentRunMessages = append(currentRunMessages, historyMessages...)
+	}
+	currentRunMessages = append(currentRunMessages, model.Message{
 		Role: "user",
 		Content: []model.MessageContentBlock{
 			model.TextContentBlock{Text: agentTaskInput.TaskText()},
 		},
-	}}
+	})
+	runContext := executionEnvironment.Context
+	if runContext == nil {
+		runContext = context.Background()
+	}
 	toolExecutionEnvironment := tool.ToolExecutionEnvironment{
 		WorkingDirectory: executionEnvironment.WorkingDirectory,
 		ConversationID:   executionEnvironment.ConversationID,
+		Context:          runContext,
 	}
 	var partialTextParts []string
 	lastInputTokens := 0
 	totalOutputTokens := 0
 	hasExecutedToolCall := false
 
+	finishCancelled := func(reason string) (AgentRunResult, error) {
+		partialText := strings.Join(partialTextParts, "\n\n")
+		if strings.TrimSpace(partialText) == "" {
+			partialText = "（已停止：尚未产生可保存的模型正文）"
+		}
+		memorySaveResult := configuredAgent.saveCompletedRun(
+			agentTaskInput,
+			executionEnvironment,
+			partialText+"\n\n[运行已停止："+reason+"]",
+			lastInputTokens,
+			totalOutputTokens,
+		)
+		cancelledResult := AgentCancelledResult{
+			PartialText: partialText,
+			Reason:      reason,
+			MemorySave:  memorySaveResult,
+		}
+		configuredAgent.emit(AgentCancelledEvent{
+			PartialText: partialText,
+			Reason:      reason,
+		})
+		configuredAgent.emit(AgentCompletedEvent{Result: cancelledResult})
+		return cancelledResult, nil
+	}
+
 	for round := 1; round <= configuredAgent.configuration.MaximumRounds; round++ {
+		if runContext.Err() != nil {
+			return finishCancelled(cancellationReason(runContext.Err()))
+		}
+		if configuredAgent.configuration.RoundHeartbeat != nil {
+			configuredAgent.configuration.RoundHeartbeat()
+		}
 		toolDefinitions := configuredAgent.availableTools.GetDefinitions()
 		isFinalResultRound := round == configuredAgent.configuration.MaximumRounds &&
 			hasExecutedToolCall
@@ -179,6 +236,7 @@ func (configuredAgent *Agent) Run(
 			PreparedRequestTokens: preparedRequestTokens,
 		})
 		modelResponse, callModelError := configuredAgent.callModel(AgentModelCallRequest{
+			Context:             runContext,
 			SystemPrompt:        systemPrompt,
 			Messages:            currentRunMessages,
 			ToolDefinitions:     toolDefinitions,
@@ -188,6 +246,12 @@ func (configuredAgent *Agent) Run(
 			},
 		})
 		if callModelError != nil {
+			if isCancellationError(callModelError) || runContext.Err() != nil {
+				if modelResponse.Text != "" {
+					partialTextParts = append(partialTextParts, modelResponse.Text)
+				}
+				return finishCancelled(cancellationReason(callModelError))
+			}
 			return nil, fmt.Errorf("Agent 第 %d 轮模型调用失败: %w", round, callModelError)
 		}
 		lastInputTokens = modelResponse.InputTokens
@@ -238,6 +302,9 @@ func (configuredAgent *Agent) Run(
 
 		toolResultMessage := model.Message{Role: "user"}
 		for _, returnedToolCall := range modelResponse.ToolCalls {
+			if runContext.Err() != nil {
+				return finishCancelled(cancellationReason(runContext.Err()))
+			}
 			configuredAgent.emit(AgentToolStartedEvent{
 				Round: round, ToolUseID: returnedToolCall.ID, ToolName: returnedToolCall.Name,
 			})
@@ -246,6 +313,9 @@ func (configuredAgent *Agent) Run(
 				returnedToolCall.Input,
 				toolExecutionEnvironment,
 			)
+			if executeToolError != nil && isCancellationError(executeToolError) {
+				return finishCancelled(cancellationReason(executeToolError))
+			}
 			if executeToolError != nil {
 				configuredAgent.emit(AgentToolFailedEvent{
 					Round: round, ToolUseID: returnedToolCall.ID,
@@ -328,10 +398,19 @@ func (configuredAgent *Agent) truncateToolResult(toolResult string) (string, err
 	if truncateToolResultError != nil {
 		return "", truncateToolResultError
 	}
+	// PI 风格截断标记：明确原始规模、保留规模、以及如何精确读取。
 	return truncatedToolResult.Text +
 		fmt.Sprintf(
-			"\n\n[结果已按 token 截断：原始 %d token。请使用更具体的 rg、head 或 tail 命令读取必要片段。]",
+			"\n\n[工具结果已截断：原始 %d token，保留 %d token。\n"+
+				"如需更多内容，不要重跑整个命令——用更精确的参数读取必要片段：\n"+
+				"- 文本搜索：rg -n \"关键词\" <文件>\n"+
+				"- 读文件开头/结尾：head -n 200 <文件> / tail -n 200 <文件>\n"+
+				"- 读指定区间：sed -n '40,90p' <文件>\n"+
+				"- 查看目录：ls -la <目录>；定位大文件：du -h <目录> | sort -h\n]"+
+				"\n[截断了 %d token]",
 			truncatedToolResult.OriginalTokens,
+			configuredAgent.configuration.MaximumToolResultTokens,
+			truncatedToolResult.OriginalTokens-configuredAgent.configuration.MaximumToolResultTokens,
 		), nil
 }
 
@@ -565,6 +644,17 @@ func (configuredAgent *Agent) emit(agentEvent AgentEvent) {
 	if configuredAgent.receiveAgentEvent != nil {
 		configuredAgent.receiveAgentEvent(agentEvent)
 	}
+}
+
+func isCancellationError(err error) bool {
+	return errors.Is(err, context.Canceled)
+}
+
+func cancellationReason(err error) string {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return "user_stop_or_client_disconnect"
+	}
+	return err.Error()
 }
 
 func EncodeInternalContinuationTask(subAgentResults any) (InternalContinuationTaskInput, error) {

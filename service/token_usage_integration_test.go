@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -45,6 +46,7 @@ func TestLocalDeepSeekTokenizerAndProviderUsageForFixedRequest(t *testing.T) {
 		t.Fatal(countPreparedRequestError)
 	}
 	providerResponse, callProviderError := Chat(
+		context.Background(),
 		fixedMessages,
 		fixedSystemPrompt,
 		applicationConfig,

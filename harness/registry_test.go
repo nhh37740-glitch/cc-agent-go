@@ -40,7 +40,7 @@ func TestAgentRegistryUpsertAndReload(t *testing.T) {
 		t.Fatalf("LoadAgentRegistry: %v", loadError)
 	}
 
-	createdRecord, created, upsertError := agentRegistry.UpsertAgent("编码员")
+	createdRecord, created, upsertError := agentRegistry.UpsertAgent("临时甲")
 	if upsertError != nil {
 		t.Fatalf("UpsertAgent: %v", upsertError)
 	}
@@ -51,9 +51,12 @@ func TestAgentRegistryUpsertAndReload(t *testing.T) {
 		t.Fatalf("中文名称会话 ID = %q，期望 harness-agent-agent-1",
 			createdRecord.ConversationID)
 	}
+	if createdRecord.Kind != AgentKindTemporary {
+		t.Fatalf("临时名称 kind = %q，期望 temporary", createdRecord.Kind)
+	}
 
 	reloadedRecord, createdAgain, upsertAgainError :=
-		agentRegistry.UpsertAgent("编码员")
+		agentRegistry.UpsertAgent("临时甲")
 	if upsertAgainError != nil {
 		t.Fatalf("同名 UpsertAgent: %v", upsertAgainError)
 	}
@@ -73,13 +76,38 @@ func TestAgentRegistryUpsertAndReload(t *testing.T) {
 	if reloadError != nil {
 		t.Fatalf("重新加载 LoadAgentRegistry: %v", reloadError)
 	}
-	persistedRecord, found := reloadedRegistry.GetAgent("编码员")
+	persistedRecord, found := reloadedRegistry.GetAgent("临时甲")
 	if !found {
 		t.Fatal("重启后注册表丢失了 Agent 记录")
 	}
 	if persistedRecord.ConversationID != createdRecord.ConversationID {
 		t.Fatalf("重启后会话 ID = %q，期望 %q",
 			persistedRecord.ConversationID, createdRecord.ConversationID)
+	}
+}
+
+// TestResidentNameUsesFixedSlug 固定常驻 Agent 名字映射到固定 slug。
+func TestResidentNameUsesFixedSlug(t *testing.T) {
+	workingDirectory := t.TempDir()
+	agentRegistry, loadError := LoadAgentRegistry(workingDirectory, 11)
+	if loadError != nil {
+		t.Fatalf("LoadAgentRegistry: %v", loadError)
+	}
+
+	createdRecord, created, upsertError := agentRegistry.UpsertAgent("编码员")
+	if upsertError != nil {
+		t.Fatalf("UpsertAgent: %v", upsertError)
+	}
+	if !created {
+		t.Fatal("第一次 UpsertAgent 应返回 created=true")
+	}
+	if createdRecord.Kind != AgentKindResident {
+		t.Fatalf("常驻名称 kind = %q，期望 resident", createdRecord.Kind)
+	}
+	if createdRecord.Slug != "coder" ||
+		createdRecord.ConversationID != "harness-agent-coder" {
+		t.Fatalf("常驻 slug/会话 = %q/%q，期望 coder/harness-agent-coder",
+			createdRecord.Slug, createdRecord.ConversationID)
 	}
 }
 
@@ -249,5 +277,69 @@ func TestAgentRegistryMarkResultCollected(t *testing.T) {
 
 	if err := agentRegistry.MarkResultCollected("ghost"); err == nil {
 		t.Fatal("对不存在的 Agent 标记已收取应返回错误")
+	}
+}
+
+// TestAgentRegistryHeartbeatAndCurrentTask 固定心跳与当前任务字段的读写。
+func TestAgentRegistryHeartbeatAndCurrentTask(t *testing.T) {
+	workingDirectory := t.TempDir()
+	agentRegistry, loadError := LoadAgentRegistry(workingDirectory, 11)
+	if loadError != nil {
+		t.Fatalf("LoadAgentRegistry: %v", loadError)
+	}
+
+	if _, _, upsertError := agentRegistry.UpsertAgent("writer"); upsertError != nil {
+		t.Fatalf("UpsertAgent: %v", upsertError)
+	}
+	if markRunningError := agentRegistry.MarkRunning("writer"); markRunningError != nil {
+		t.Fatalf("MarkRunning: %v", markRunningError)
+	}
+	if setTaskError := agentRegistry.SetCurrentTask("writer", "写一份测试文档"); setTaskError != nil {
+		t.Fatalf("SetCurrentTask: %v", setTaskError)
+	}
+	record, found := agentRegistry.GetAgent("writer")
+	if !found {
+		t.Fatal("Agent 记录不存在")
+	}
+	if record.CurrentTask != "写一份测试文档" {
+		t.Fatalf("CurrentTask = %q", record.CurrentTask)
+	}
+	if record.LastHeartbeatAt <= 0 {
+		t.Fatal("MarkRunning/SetCurrentTask 应写入最后心跳时间")
+	}
+
+	if heartbeatError := agentRegistry.HeartbeatAgent("writer"); heartbeatError != nil {
+		t.Fatalf("HeartbeatAgent: %v", heartbeatError)
+	}
+	if heartbeatError := agentRegistry.HeartbeatAgent("ghost"); heartbeatError == nil {
+		t.Fatal("对不存在的 Agent 心跳应返回错误")
+	}
+
+	// 完成/失败后当前任务清空，心跳保留。
+	if markCompletedError := agentRegistry.MarkCompleted("writer", "写完了"); markCompletedError != nil {
+		t.Fatalf("MarkCompleted: %v", markCompletedError)
+	}
+	completedRecord, _ := agentRegistry.GetAgent("writer")
+	if completedRecord.CurrentTask != "" {
+		t.Fatalf("完成后 CurrentTask 应为空，实际 %q", completedRecord.CurrentTask)
+	}
+	if completedRecord.Status != ManagedAgentStatusCompleted {
+		t.Fatalf("完成状态 = %q", completedRecord.Status)
+	}
+}
+
+// TestHeartbeatStatusText 固定心跳状态文案。
+func TestHeartbeatStatusText(t *testing.T) {
+	now := currentEpochSeconds()
+	normalText := heartbeatStatusText(now)
+	if !strings.Contains(normalText, "正常") {
+		t.Fatalf("最近心跳应显示正常，实际 %q", normalText)
+	}
+	staleText := heartbeatStatusText(now - heartbeatStaleAfterSeconds - 10)
+	if !strings.Contains(staleText, "超时") || !strings.Contains(staleText, "疑似卡死") {
+		t.Fatalf("超时心跳应提示卡死，实际 %q", staleText)
+	}
+	if unknownText := heartbeatStatusText(0); !strings.Contains(unknownText, "未知") {
+		t.Fatalf("无心跳应显示未知，实际 %q", unknownText)
 	}
 }

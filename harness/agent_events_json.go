@@ -68,11 +68,23 @@ func AgentEventJSONFields(receivedAgentEvent agent.AgentEvent) map[string]any {
 			"type":    "memory_save_failed",
 			"message": concreteAgentEvent.Cause.Error(),
 		}
-	case agent.AgentCompletedEvent:
+	case agent.AgentCancelledEvent:
 		return map[string]any{
+			"type":        "cancelled",
+			"text":        concreteAgentEvent.PartialText,
+			"reason":      concreteAgentEvent.Reason,
+			"partialText": concreteAgentEvent.PartialText,
+		}
+	case agent.AgentCompletedEvent:
+		fields := map[string]any{
 			"type": "agent_completed",
 			"text": concreteAgentEvent.Result.FinalText(),
 		}
+		if cancelledResult, isCancelled := concreteAgentEvent.Result.(agent.AgentCancelledResult); isCancelled {
+			fields["resultKind"] = "cancelled"
+			fields["reason"] = cancelledResult.Reason
+		}
+		return fields
 	default:
 		return nil
 	}

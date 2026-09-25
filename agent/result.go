@@ -63,3 +63,20 @@ func (result AgentMaximumRoundsReachedResult) MemorySaveResult() AgentMemorySave
 func (AgentMaximumRoundsReachedResult) runResultKind() string {
 	return "maximum_rounds_reached"
 }
+
+// AgentCancelledResult 表示用户停止或客户端断开后，保留已产生进度并结束循环。
+type AgentCancelledResult struct {
+	PartialText string
+	Reason      string
+	MemorySave  AgentMemorySaveResult
+}
+
+func (result AgentCancelledResult) FinalText() string {
+	return result.PartialText
+}
+func (result AgentCancelledResult) MemorySaveResult() AgentMemorySaveResult {
+	return result.MemorySave
+}
+func (AgentCancelledResult) runResultKind() string {
+	return "cancelled"
+}

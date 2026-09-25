@@ -156,7 +156,7 @@ func TestContinueConversationAfterSubAgentsStreamLoadsLatestHistoryAndHidesInter
 
 	if len(receivedDeepSeekRequest.Messages) != 1 {
 		t.Fatalf(
-			"DeepSeek message count = %d, want 1",
+			"DeepSeek message count = %d, want 1（未配置 KeepRecentMemoryTokens 时不装配历史）",
 			len(receivedDeepSeekRequest.Messages),
 		)
 	}

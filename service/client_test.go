@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -18,7 +19,7 @@ func TestChatClassifiesProviderAuthErrorAndRedactsAPIKey(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	_, err := Chat(nil, "", config.Config{
+	_, err := Chat(context.Background(), nil, "", config.Config{
 		ApiKey:      apiKey,
 		ApiEndpoint: server.URL,
 		Model:       "test-model",
@@ -49,7 +50,7 @@ func TestChatClassifiesInvalidProviderResponse(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	_, err := Chat(nil, "", config.Config{
+	_, err := Chat(context.Background(), nil, "", config.Config{
 		ApiKey:      "test-key",
 		ApiEndpoint: server.URL,
 		Model:       "test-model",

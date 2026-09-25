@@ -107,8 +107,8 @@ func TestOneAgentUsesTwoWorkingDirectoriesWithoutMixingToolOrMemoryData(
 	_ = os.WriteFile(filepath.Join(secondWorkingDirectory, "project.txt"), []byte("second"), 0644)
 
 	registeredTools := tool.NewRegistry()
-	if registerBashError := registeredTools.Register(tool.NewBashTool()); registerBashError != nil {
-		t.Fatal(registerBashError)
+	if registerFileError := registeredTools.Register(tool.NewFileTool()); registerFileError != nil {
+		t.Fatal(registerFileError)
 	}
 	modelCallNumber := 0
 	configuredAgent := newTestAgent(
@@ -120,8 +120,11 @@ func TestOneAgentUsesTwoWorkingDirectoriesWithoutMixingToolOrMemoryData(
 			if modelCallNumber%2 == 1 {
 				return model.ApiResponse{
 					ToolCalls: []model.ToolCall{{
-						ID: "read-project", Name: "bash",
-						Input: map[string]any{"command": "cat project.txt"},
+						ID: "read-project", Name: "file",
+						Input: map[string]any{
+							"operation": "read",
+							"path":      "project.txt",
+						},
 					}},
 					InputTokens: 10, OutputTokens: 2,
 				}, nil

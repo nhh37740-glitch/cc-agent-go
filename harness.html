@@ -1,135 +1,843 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="aurora">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Harness · cc-agent-go</title>
 <style>
-    * { box-sizing: border-box; }
-    body {
-        margin: 0; background: #111418; color: #d7dce2;
-        font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-        height: 100vh; display: flex; flex-direction: column; overflow: hidden;
-    }
-    .topbar {
-        display: flex; align-items: center; gap: 16px; padding: 10px 18px;
-        background: #171b21; border-bottom: 1px solid #262c35; flex-shrink: 0;
-    }
-    .brand { display: flex; align-items: center; gap: 8px; }
-    .brand-mark {
-        background: #c9a227; color: #111418; font-weight: 700;
-        width: 26px; height: 26px; border-radius: 6px;
-        display: inline-flex; align-items: center; justify-content: center;
-    }
-    .brand-name { font-weight: 600; }
-    .brand-version { color: #8b95a1; font-size: 12px; }
-    .project-picker { display: flex; gap: 8px; flex: 1; max-width: 620px; }
-    .project-picker input {
-        flex: 1; background: #0d1014; border: 1px solid #2c333d; color: #d7dce2;
-        border-radius: 6px; padding: 7px 10px; font-size: 13px;
-    }
-    .button {
-        background: #232a33; color: #d7dce2; border: 1px solid #323b46;
-        border-radius: 6px; padding: 7px 14px; font-size: 13px; cursor: pointer;
-        text-decoration: none; display: inline-flex; align-items: center; gap: 4px;
-    }
-    .button:hover { background: #2c3540; }
-    .button.primary { background: #c9a227; border-color: #c9a227; color: #111418; font-weight: 600; }
-    .button.primary:hover { background: #d9b438; }
-    .button.small { padding: 5px 10px; font-size: 12px; }
-    .button.ghost { background: transparent; }
-    .button:disabled { opacity: 0.5; cursor: default; }
-    .topbar-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-    .state-pill {
-        font-size: 11px; padding: 3px 9px; border-radius: 999px;
-        background: #2a313b; color: #9aa5b1;
-    }
-    .state-pill.ok { background: #1d3a2a; color: #6fd39a; }
-    .state-pill.bad { background: #3d2222; color: #e08a8a; }
+/* ============================================================
+   Harness · 9 主题设计系统 v3（严格按 ui-ux-pro-max skill）
+   每主题：独立布局骨架 + 真实 SVG 插画 + 独立卡片/对话框/按钮
+   + 独立思考/工作动画 + 独立交互 + 独立配色 + 独立字体
+   ============================================================ */
+:root {
+    --motion-fast: 150ms; --motion-base: 220ms; --motion-slow: 320ms;
+    --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+    --z-ambient: 0; --z-content: 10; --z-topbar: 20;
+    --font-ui: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --font-mono: "Cascadia Mono", "JetBrains Mono", Consolas, ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--font-ui); font-size: 14px; line-height: 1.65;
+    display: flex; flex-direction: column; overflow: hidden;
+}
+::selection { background: var(--accent-soft); }
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: var(--border-strong); }
+*::-webkit-scrollbar-track { background: transparent; }
 
-    .layout {
-        flex: 1; display: grid; grid-template-columns: 280px 1fr 400px;
-        min-height: 0;
-    }
-    .panel-title {
-        font-size: 12px; font-weight: 600; color: #9aa5b1; letter-spacing: 0.05em;
-        padding: 12px 14px 8px; display: flex; align-items: center; justify-content: space-between;
-        text-transform: uppercase;
-    }
-    .agents-panel, .detail-panel {
-        background: #151920; border-right: 1px solid #262c35;
-        overflow-y: auto; min-height: 0;
-    }
-    .detail-panel { border-right: none; border-left: 1px solid #262c35; display: flex; flex-direction: column; }
-    .muted { color: #8b95a1; font-size: 12px; padding: 0 14px 8px; }
+/* ================= 氛围与插画层 ================= */
+.ambient { position: fixed; inset: 0; z-index: var(--z-ambient); pointer-events: none; overflow: hidden; }
+.ambient .glow { position: absolute; border-radius: 50%; filter: blur(90px); }
+.ambient .glow-1 { top: -20%; left: -10%; width: 56vw; height: 56vw; background: var(--glow-1); }
+.ambient .glow-2 { bottom: -25%; right: -12%; width: 50vw; height: 50vw; background: var(--glow-2); }
+/* 插画 SVG：默认全隐藏，按主题显示；固定在背景，不拦截交互 */
+.ambient svg.art { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 40vh; display: none; }
+html[data-theme="aurora"] .art-aurora { display: block; }
+html[data-theme="terminal"] .art-terminal { display: block; }
+html[data-theme="neon"] .art-neon { display: block; }
+html[data-theme="paper"] .art-paper { display: block; }
+html[data-theme="terra"] .art-terra { display: block; }
+html[data-theme="forest"] .art-forest { display: block; }
+html[data-theme="ocean"] .art-ocean { display: block; }
+html[data-theme="mono"] .art-mono { display: block; }
+html[data-theme="brut"] .art-brut { display: block; }
 
-    .agent-row {
-        margin: 0 10px 6px; padding: 9px 11px; border-radius: 8px;
-        background: #1a1f27; border: 1px solid #262c35; cursor: pointer;
-    }
-    .agent-row:hover { border-color: #38414d; }
-    .agent-row.selected { border-color: #c9a227; }
-    .agent-row .agent-name { font-weight: 600; font-size: 13px; }
-    .agent-row .agent-meta {
-        display: flex; justify-content: space-between; align-items: center;
-        margin-top: 5px; font-size: 11px; color: #8b95a1;
-    }
-    .status-pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #2a313b; color: #9aa5b1; }
-    .status-pill.running { background: #1d3a2a; color: #6fd39a; }
-    .status-pill.completed { background: #1f3145; color: #7fb3e8; }
-    .status-pill.failed { background: #3d2222; color: #e08a8a; }
+/* ================= 顶栏 ================= */
+.topbar {
+    display: flex; align-items: center; gap: 16px; padding: 10px 20px;
+    background: var(--topbar-bg); border-bottom: 1px solid var(--border);
+    flex-shrink: 0; position: relative; z-index: var(--z-topbar);
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-mark {
+    width: 30px; height: 30px; border-radius: 9px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 15px; color: var(--on-accent);
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 2px 12px var(--accent-glow);
+}
+.brand-name { font-weight: 650; }
+.brand-version { color: var(--text-dim); font-size: 11px; }
+.project-picker { display: flex; gap: 8px; flex: 1; max-width: 620px; }
+.project-picker input {
+    flex: 1; background: var(--input-bg); border: 1px solid var(--border);
+    color: var(--text); border-radius: var(--radius-sm); padding: 8px 12px;
+    font-size: 13px; font-family: var(--font-mono);
+    transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
+}
+.project-picker input:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.topbar-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.theme-picker { display: flex; align-items: center; gap: 7px; }
+.theme-picker-label { color: var(--text-dim); font-size: 11px; }
+.theme-picker select {
+    height: 30px; padding: 0 24px 0 10px; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); background: var(--panel-2); color: var(--text);
+    font-size: 12.5px; cursor: pointer;
+}
+.state-pill { font-size: 11px; padding: 4px 11px; border-radius: 999px; background: var(--panel-3); color: var(--text-dim); transition: all var(--motion-base); }
+.state-pill.ok { background: var(--green-soft); color: var(--green); }
+.state-pill.bad { background: var(--red-soft); color: var(--red); }
 
-    .chat-panel { display: flex; flex-direction: column; min-height: 0; }
-    .chat-history { flex: 1; overflow-y: auto; padding: 18px 22px; content-visibility: auto; contain-intrinsic-size: auto 500px; }
-    .empty-state { color: #5f6b78; text-align: center; margin-top: 80px; font-size: 13px; line-height: 2; }
-    .message { margin-bottom: 16px; max-width: 860px; }
-    .message .message-role { font-size: 11px; color: #8b95a1; margin-bottom: 4px; }
-    .message .message-body {
-        background: #1a1f27; border: 1px solid #262c35; border-radius: 10px;
-        padding: 10px 14px; font-size: 14px; line-height: 1.65;
-    }
-    .message.user .message-body { background: #233042; border-color: #30405a; }
-    .message.background .message-body { border-color: #6b5a1e; }
-    .message.background .message-role { color: #c9a227; }
-    .message.error .message-body { background: #3d2222; border-color: #5c2e2e; color: #f0b8b8; white-space: pre-wrap; }
-    .bubble-log { margin-top: 6px; font-family: Consolas, monospace; font-size: 11px; color: #6f7b88; }
-    .bubble-log div { padding: 1px 0; }
+/* ================= 通用组件 ================= */
+.button {
+    background: var(--panel-3); color: var(--text);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm); padding: 7px 14px; font-size: 13px;
+    cursor: pointer; text-decoration: none;
+    display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+    min-height: 32px; font-family: var(--font-ui);
+    transition: background-color var(--motion-fast), border-color var(--motion-fast),
+                transform var(--motion-fast), box-shadow var(--motion-base);
+}
+.button:hover { border-color: var(--accent); transform: translateY(-1px); }
+.button:active { transform: translateY(0) scale(.97); }
+.button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.button.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); border: none; color: var(--on-accent); font-weight: 650; box-shadow: 0 2px 12px var(--accent-glow); }
+.button.small { padding: 4px 10px; font-size: 11px; min-height: 28px; }
+.button.ghost { background: transparent; border-color: var(--border); }
+.button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 
-    .chat-form {
-        display: flex; gap: 10px; padding: 12px 18px;
-        border-top: 1px solid #262c35; background: #151920; flex-shrink: 0;
-    }
-    .chat-form textarea {
-        flex: 1; resize: none; height: 44px; background: #0d1014;
-        border: 1px solid #2c333d; color: #d7dce2; border-radius: 6px;
-        padding: 9px 11px; font-size: 13px; font-family: inherit;
-    }
+/* 布局基础（每主题覆盖，使用完整 grid-template-areas，避免残留冲突） */
+.layout { flex: 1; display: grid; min-height: 0; position: relative; z-index: var(--z-content); }
+.agents-panel { background: var(--panel); overflow-y: auto; min-height: 0; }
+.chat-panel { display: flex; flex-direction: column; min-height: 0; background: transparent; }
+.detail-panel { background: var(--panel); display: flex; flex-direction: column; overflow-y: auto; min-height: 0; }
+.panel-title {
+    font-size: 11px; font-weight: 650; color: var(--text-dim); letter-spacing: .08em;
+    text-transform: uppercase; padding: 14px 16px 10px;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.muted { color: var(--text-dim); font-size: 11px; padding: 0 16px 10px; }
+.agent-row {
+    margin: 0 12px 8px; padding: 11px 13px; border-radius: var(--radius-sm);
+    background: var(--panel-2); border: 1px solid var(--border);
+    cursor: pointer; position: relative;
+    transition: transform var(--motion-fast), border-color var(--motion-fast), box-shadow var(--motion-base), background-color var(--motion-fast);
+}
+.agent-row:hover { transform: translateY(-1px); border-color: var(--border-strong); box-shadow: 0 4px 14px rgba(0,0,0,.10); }
+.agent-row.selected { border-color: var(--accent); background: var(--accent-soft); }
+.agent-row .agent-name { font-weight: 650; font-size: 13px; }
+.agent-row .agent-meta { display: flex; justify-content: space-between; margin-top: 7px; font-size: 11px; color: var(--text-dim); }
+.status-pill { font-size: 11px; padding: 3px 9px; border-radius: 999px; background: var(--panel-3); color: var(--text-dim); }
+.status-pill.running { background: var(--green-soft); color: var(--green); }
+.status-pill.completed { background: var(--blue-soft); color: var(--blue); }
+.status-pill.failed { background: var(--red-soft); color: var(--red); }
+.chat-history { flex: 1; overflow-y: auto; padding: 22px 26px; }
+.empty-state { color: var(--text-faint); text-align: center; margin-top: 96px; font-size: 13px; line-height: 2.1; }
+.message { margin-bottom: 18px; max-width: 880px; }
+.message .message-role { font-size: 11px; color: var(--text-dim); margin-bottom: 5px; letter-spacing: .03em; }
+.message .message-body { background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 16px; font-size: 14px; line-height: 1.65; }
+.message.user .message-body { background: var(--bubble-user-bg); border-color: var(--bubble-user-border); }
+.message.background .message-body { border-left: 3px solid var(--yellow); }
+.message.background .message-role { color: var(--yellow); }
+.message.error .message-body { background: var(--red-soft); border-color: var(--red-border); color: var(--red); white-space: pre-wrap; }
+.bubble-log { margin-top: 7px; font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
+.bubble-log div { padding: 1px 0; }
+.chat-form { display: flex; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--panel); flex-shrink: 0; }
+.chat-form textarea {
+    flex: 1; resize: none; min-height: 44px; max-height: 160px;
+    background: var(--input-bg); border: 1px solid var(--border);
+    color: var(--text); border-radius: var(--radius-sm);
+    padding: 10px 13px; font-size: 13px; font-family: var(--font-ui); line-height: 1.5;
+    transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
+}
+.chat-form textarea:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.chat-form textarea::placeholder { color: var(--text-faint); }
+.progress-stream { flex: 1; overflow-y: auto; padding: 0 16px 12px; min-height: 120px; font-size: 13px; line-height: 1.6; }
+.progress-log-line { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); padding: 1px 0; }
+.progress-text { white-space: pre-wrap; }
+.memory-view { flex: 1; overflow-y: auto; padding: 0 16px 16px; font-size: 13px; border-top: 1px solid var(--border); }
+.memory-message { margin: 10px 0; padding: 9px 12px; background: var(--panel-2); border-radius: var(--radius-sm); border: 1px solid var(--border); }
+.memory-message .memory-role { font-size: 11px; color: var(--text-dim); margin-bottom: 3px; }
+.inline-error { margin: 10px 16px; padding: 9px 12px; background: var(--red-soft); color: var(--red); border: 1px solid var(--red-border); border-radius: var(--radius-sm); font-size: 11px; white-space: pre-wrap; }
+.md-pre { background: var(--input-bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; overflow-x: auto; font-size: 12.5px; }
+.md-code { background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; font-size: 12px; font-family: var(--font-mono); }
+.md-h { margin: 12px 0 7px; }
+.md-hr { border: none; border-top: 1px solid var(--border-strong); margin: 14px 0; }
+.md-quote { border-left: 3px solid var(--accent); margin: 10px 0; padding: 3px 14px; color: var(--text-dim); }
+.conversation-card {
+    width: 100%; display: block; margin: 0 0 5px; padding: 10px 12px;
+    border: 1px solid transparent; border-radius: var(--radius-sm);
+    text-align: left; background: transparent; color: var(--text);
+    cursor: pointer; font-size: 13px; line-height: 1.4; font-family: var(--font-ui);
+    transition: background-color var(--motion-fast), border-color var(--motion-fast);
+}
+.conversation-card:hover { background: var(--panel-2); border-color: var(--border); }
+.conversation-card.active { border-color: var(--accent); background: var(--accent-soft); }
+.conversation-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.conversation-meta { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px; color: var(--text-dim); font-size: 11px; }
+.session-separator { text-align: center; color: var(--text-faint); font-size: 11px; margin: 14px 0; padding: 4px 0; border-top: 1px solid var(--border); }
+.session-separator span { position: relative; top: -8px; background: var(--bg); padding: 0 10px; }
 
-    .progress-stream {
-        flex: 1; overflow-y: auto; padding: 0 14px 10px; min-height: 120px;
-        font-size: 13px; line-height: 1.6;
-    }
-    .progress-log-line { font-family: Consolas, monospace; font-size: 11px; color: #6f7b88; padding: 1px 0; }
-    .progress-text { white-space: pre-wrap; }
-    .memory-view {
-        flex: 1; overflow-y: auto; padding: 0 14px 14px; font-size: 13px;
-        border-top: 1px solid #262c35;
-    }
-    .memory-message { margin: 8px 0; padding: 8px 10px; background: #1a1f27; border-radius: 8px; border: 1px solid #262c35; }
-    .memory-message .memory-role { font-size: 11px; color: #8b95a1; margin-bottom: 3px; }
-    .inline-error {
-        margin: 8px 14px; padding: 8px 11px; background: #3d2222; color: #f0b8b8;
-        border: 1px solid #5c2e2e; border-radius: 8px; font-size: 12px; white-space: pre-wrap;
-    }
+@media (max-width: 1080px) {
+    .layout { grid-template-columns: 1fr; grid-template-areas: "chat"; }
+    .agents-panel, .detail-panel { display: none; }
+    .project-picker { max-width: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
 
-    .md-pre { background: #0d1014; border: 1px solid #262c35; border-radius: 8px; padding: 10px; overflow-x: auto; font-size: 12px; }
-    .md-code { background: #0d1014; border-radius: 4px; padding: 1px 5px; font-size: 12px; }
-    .md-h { margin: 10px 0 6px; }
-    .md-hr { border: none; border-top: 1px solid #2c333d; margin: 12px 0; }
-    .md-quote { border-left: 3px solid #38414d; margin: 8px 0; padding: 2px 12px; color: #9aa5b1; }
+
+
+/* ═══ 1. AURORA 极光 · Glassmorphism 玻璃拟态 ═══
+   布局：三栏悬浮玻璃卡片（间隙呼吸）｜插画：极光弧线 SVG｜
+   对话框：渐变玻璃异形圆角｜按钮：玻璃胶囊｜思考：极光流动｜工作：气泡浮起 */
+html[data-theme="aurora"] {
+    color-scheme: dark;
+    --bg: #070a14; --panel: rgba(17,22,40,.66); --panel-2: rgba(24,30,52,.74); --panel-3: rgba(34,42,70,.8);
+    --border: rgba(148,163,255,.18); --border-strong: rgba(148,163,255,.42);
+    --text: #e8ecf9; --text-dim: #9aa4cf; --text-faint: #5d688f;
+    --accent: #7c6cf0; --accent-strong: #9b8cff; --accent-2: #22d3ee;
+    --accent-soft: rgba(124,108,240,.18); --accent-glow: rgba(124,108,240,.4);
+    --on-accent: #ffffff;
+    --green: #34d399; --green-soft: rgba(52,211,153,.16);
+    --yellow: #fbbf24; --yellow-soft: rgba(251,191,36,.16);
+    --red: #fb7185; --red-soft: rgba(251,113,133,.16); --red-border: rgba(251,113,133,.42);
+    --blue: #60a5fa; --blue-soft: rgba(96,165,250,.16);
+    --bubble-user-bg: linear-gradient(135deg, rgba(124,108,240,.26), rgba(34,211,238,.16));
+    --bubble-user-border: rgba(124,108,240,.48);
+    --topbar-bg: rgba(9,12,22,.7); --input-bg: rgba(8,11,20,.6);
+    --radius: 18px; --radius-sm: 12px;
+    --glow-1: rgba(124,108,240,.18); --glow-2: rgba(34,211,238,.12);
+}
+html[data-theme="aurora"] .layout { grid-template-columns: 250px minmax(0,1fr) 340px; grid-template-rows: minmax(0,1fr); grid-template-areas: "agents chat detail"; gap: 16px; padding: 16px; }
+html[data-theme="aurora"] .agents-panel, html[data-theme="aurora"] .detail-panel, html[data-theme="aurora"] .chat-panel {
+    border: 1px solid var(--border); border-radius: var(--radius);
+    backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px);
+    box-shadow: 0 12px 40px rgba(0,0,0,.35);
+}
+html[data-theme="aurora"] .message .message-body { border-radius: 18px; backdrop-filter: blur(8px); box-shadow: 0 4px 18px rgba(0,0,0,.18); }
+html[data-theme="aurora"] .message.user .message-body { border-radius: 18px 18px 6px 18px; }
+html[data-theme="aurora"] .message:not(.user) .message-body { border-radius: 18px 18px 18px 6px; }
+html[data-theme="aurora"] .button, html[data-theme="aurora"] .chat-form textarea { border-radius: 999px; }
+html[data-theme="aurora"] .chat-form { background: transparent; }
+html[data-theme="aurora"] .chat-form textarea { padding-left: 18px; }
+html[data-theme="aurora"] body[data-harness-state="thinking"] .art-aurora { animation: aur-drift 8s ease-in-out infinite; transform-origin: bottom; }
+@keyframes aur-drift { 0%,100% { transform: translateX(0) scaleX(1); opacity: .75; } 50% { transform: translateX(3%) scaleX(1.05); opacity: 1; } }
+html[data-theme="aurora"] body[data-harness-state="working"] .message .message-body { animation: aur-float 3s ease-in-out infinite; }
+@keyframes aur-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+
+/* ═══ 2. TERMINAL 终端 · Retro terminal ═══
+   布局：左窄列表 + 右上对话 + 右下进度｜插画：终端窗口 SVG｜
+   对话框：无边框终端块｜按钮：直角方块｜思考：光标闪烁｜工作：扫描线 */
+html[data-theme="terminal"] {
+    color-scheme: dark;
+    --bg: #040805; --panel: #070c07; --panel-2: #0a120a; --panel-3: #0f1c0f;
+    --border: #1d4a24; --border-strong: #33cc55;
+    --text: #b6ffc4; --text-dim: #55cc77; --text-faint: #2a7a3f;
+    --accent: #33ff66; --accent-strong: #66ff99; --accent-2: #33ff66;
+    --accent-soft: rgba(51,255,102,.10); --accent-glow: rgba(51,255,102,.4);
+    --on-accent: #04140a;
+    --green: #33ff66; --green-soft: rgba(51,255,102,.10);
+    --yellow: #ffb000; --yellow-soft: rgba(255,176,0,.12);
+    --red: #ff5555; --red-soft: rgba(255,85,85,.12); --red-border: #ff5555;
+    --blue: #55cc77; --blue-soft: rgba(85,204,119,.12);
+    --bubble-user-bg: #0a140a; --bubble-user-border: #2a7a3f;
+    --topbar-bg: #040704; --input-bg: #0a120a;
+    --radius: 0; --radius-sm: 0;
+    --font-ui: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+    --font-mono: var(--font-ui);
+    --glow-1: rgba(51,255,102,.05); --glow-2: rgba(51,255,102,.03);
+}
+html[data-theme="terminal"] .layout { grid-template-columns: 210px minmax(0,1fr); grid-template-rows: minmax(0,1fr) minmax(0,1fr); grid-template-areas: "agents chat" "agents detail"; }
+html[data-theme="terminal"] .agents-panel { border-right: 1px solid var(--border); }
+html[data-theme="terminal"] .detail-panel { border-top: 1px solid var(--border); flex-direction: row; }
+html[data-theme="terminal"] .detail-panel .progress-stream { flex: 1; }
+html[data-theme="terminal"] .detail-panel .memory-view { border-top: none; border-left: 1px solid var(--border); }
+html[data-theme="terminal"] body { background-image: repeating-linear-gradient(0deg, rgba(51,255,102,.03) 0 1px, transparent 1px 3px); }
+html[data-theme="terminal"] .brand-mark { border-radius: 0; border: 1px solid var(--accent); background: transparent; color: var(--accent); box-shadow: none; }
+html[data-theme="terminal"] .message .message-body { border-radius: 0; border: none; background: transparent; padding: 6px 2px; }
+html[data-theme="terminal"] .message .message-role::before { content: "> "; color: var(--accent); }
+html[data-theme="terminal"] .message.user .message-role::before { content: "$ "; color: var(--yellow); }
+html[data-theme="terminal"] .button, html[data-theme="terminal"] .chat-form textarea, html[data-theme="terminal"] .agent-row { border-radius: 0; }
+html[data-theme="terminal"] .button.primary { background: var(--accent); box-shadow: none; color: #04140a; }
+html[data-theme="terminal"] body[data-harness-state="thinking"] .brand-name::after { content: "▊"; color: var(--accent); animation: term-cursor 1s steps(1) infinite; }
+@keyframes term-cursor { 0%,49% { opacity: 1; } 50%,100% { opacity: 0; } }
+html[data-theme="terminal"] body[data-harness-state="working"] .art-terminal { animation: term-blink 2s steps(2) infinite; }
+@keyframes term-blink { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
+
+/* ═══ 3. NEON 赛博 · Cyberpunk HUD ═══
+   布局：顶部 agent 横条 + 下部左对话右进度｜插画：霓虹环+网格 SVG｜
+   对话框：发光霓虹｜按钮：描边发光｜思考：霓虹闪烁｜工作：信号线 */
+html[data-theme="neon"] {
+    color-scheme: dark;
+    --bg: #0a0518; --panel: rgba(20,12,44,.82); --panel-2: rgba(32,22,66,.88); --panel-3: rgba(48,34,96,.9);
+    --border: rgba(232,121,249,.32); --border-strong: rgba(34,211,238,.6);
+    --text: #f0eaff; --text-dim: #b9a8e8; --text-faint: #6f5fa8;
+    --accent: #e879f9; --accent-strong: #f0abfc; --accent-2: #22d3ee;
+    --accent-soft: rgba(232,121,249,.16); --accent-glow: rgba(232,121,249,.42);
+    --on-accent: #160a26;
+    --green: #34f5c5; --green-soft: rgba(52,245,197,.14);
+    --yellow: #ffd166; --yellow-soft: rgba(255,209,102,.14);
+    --red: #ff6b9d; --red-soft: rgba(255,107,157,.14); --red-border: rgba(255,107,157,.46);
+    --blue: #22d3ee; --blue-soft: rgba(34,211,238,.14);
+    --bubble-user-bg: linear-gradient(135deg, rgba(232,121,249,.22), rgba(34,211,238,.14));
+    --bubble-user-border: rgba(232,121,249,.52);
+    --topbar-bg: rgba(12,6,26,.82); --input-bg: rgba(22,13,48,.9);
+    --radius: 10px; --radius-sm: 6px;
+    --font-ui: "Segoe UI", "PingFang SC", sans-serif;
+    --font-mono: "Cascadia Mono", Consolas, monospace;
+    --glow-1: rgba(232,121,249,.16); --glow-2: rgba(34,211,238,.13);
+}
+html[data-theme="neon"] .layout { grid-template-columns: minmax(0,1fr) 320px; grid-template-rows: auto minmax(0,1fr); grid-template-areas: "agents agents" "chat detail"; gap: 8px; padding: 8px; }
+html[data-theme="neon"] .agents-panel { display: flex; align-items: center; gap: 12px; overflow-x: auto; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); }
+html[data-theme="neon"] .agents-panel .panel-title { white-space: nowrap; }
+html[data-theme="neon"] .agents-panel #agent-list { display: flex; gap: 8px; }
+html[data-theme="neon"] .agents-panel .agent-row { margin: 0; white-space: nowrap; }
+html[data-theme="neon"] .chat-panel, html[data-theme="neon"] .detail-panel { border: 1px solid var(--border); border-radius: var(--radius); }
+html[data-theme="neon"] .detail-panel { border-left: 1px solid var(--border); }
+html[data-theme="neon"] body { background-image: linear-gradient(rgba(232,121,249,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(34,211,238,.05) 1px, transparent 1px); background-size: 44px 44px; }
+html[data-theme="neon"] .message .message-body { box-shadow: 0 0 18px var(--accent-soft), inset 0 0 12px var(--accent-soft); border-radius: 8px; }
+html[data-theme="neon"] .button { border-radius: 6px; box-shadow: 0 0 8px var(--accent-soft); }
+html[data-theme="neon"] .button.primary { box-shadow: 0 0 16px var(--accent-glow), inset 0 0 8px rgba(255,255,255,.15); }
+html[data-theme="neon"] body[data-harness-state="thinking"] .art-neon { animation: neon-flicker 2.5s linear infinite; }
+@keyframes neon-flicker { 0%,100% { opacity: 1; } 92% { opacity: 1; } 93% { opacity: .4; } 94% { opacity: 1; } 96% { opacity: .6; } 97% { opacity: 1; } }
+html[data-theme="neon"] body[data-harness-state="working"] .chat-form { animation: neon-line 3s ease-in-out infinite; }
+@keyframes neon-line { 0%,100% { box-shadow: inset 0 0 0 1px var(--border); } 50% { box-shadow: inset 0 0 0 1px var(--accent-soft), 0 0 20px var(--accent-glow); } }
+
+
+/* ═══ 4. PAPER 纸张 · Editorial ═══
+   布局：左页对话 + 右页上下分区｜插画：印刷线框+落款印 SVG｜
+   对话框：衬线+页边线｜按钮：衬线文本｜思考：墨迹呼吸｜工作：印章 */
+html[data-theme="paper"] {
+    color-scheme: light;
+    --bg: #f4efe3; --panel: #fdfaf2; --panel-2: #f6f0e2; --panel-3: #ece3cf;
+    --border: #d8cbb0; --border-strong: #a98c5a;
+    --text: #2b2418; --text-dim: #7a6a4a; --text-faint: #a99a78;
+    --accent: #b3442c; --accent-strong: #8f3421; --accent-2: #2b2418;
+    --accent-soft: rgba(179,68,44,.11); --accent-glow: rgba(179,68,44,.22);
+    --on-accent: #fdf8ec;
+    --green: #3f7a52; --green-soft: rgba(63,122,82,.13);
+    --yellow: #a07c1e; --yellow-soft: rgba(160,124,30,.15);
+    --red: #b3442c; --red-soft: rgba(179,68,44,.11); --red-border: rgba(179,68,44,.42);
+    --blue: #4a5f7a; --blue-soft: rgba(74,95,122,.13);
+    --bubble-user-bg: #f7ecdc; --bubble-user-border: #c9a87a;
+    --topbar-bg: #faf6ea; --input-bg: #fffdf6;
+    --radius: 4px; --radius-sm: 2px;
+    --font-ui: Georgia, "Noto Serif SC", "Songti SC", serif;
+    --font-mono: "Courier New", Consolas, monospace;
+    --glow-1: rgba(179,68,44,.06); --glow-2: rgba(43,36,24,.05);
+}
+html[data-theme="paper"] .layout { grid-template-columns: minmax(0,1fr) 300px; grid-template-rows: minmax(0,1fr) minmax(0,1fr); grid-template-areas: "chat agents" "chat detail"; }
+html[data-theme="paper"] .chat-panel { border-right: 2px double var(--border); }
+html[data-theme="paper"] .agents-panel { border-bottom: 1px solid var(--border); }
+html[data-theme="paper"] .detail-panel { border-top: 1px solid var(--border); }
+html[data-theme="paper"] .panel-title { border-bottom: 1px solid var(--border); }
+html[data-theme="paper"] .message .message-body { border-radius: 0; box-shadow: inset 3px 0 0 var(--accent); font-family: Georgia, "Noto Serif SC", serif; }
+html[data-theme="paper"] .message.user .message-body { box-shadow: inset 3px 0 0 var(--yellow); }
+html[data-theme="paper"] .button { border-radius: 0; font-family: Georgia, serif; letter-spacing: .03em; }
+html[data-theme="paper"] .button.primary { background: var(--accent); box-shadow: none; }
+html[data-theme="paper"] .chat-form textarea { border-radius: 0; }
+html[data-theme="paper"] body[data-harness-state="thinking"] .art-paper { animation: pap-ink 2.2s ease-in-out infinite; }
+@keyframes pap-ink { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+html[data-theme="paper"] body[data-harness-state="working"] .status-pill.running { animation: pap-seal 1.4s cubic-bezier(.68,-0.55,.27,1.55); }
+@keyframes pap-seal { 0% { transform: scale(2.2) rotate(-20deg); opacity: 0; } 100% { transform: scale(1) rotate(-8deg); opacity: 1; } }
+
+/* ═══ 5. TERRA 陶土 → 孟菲斯 MEMPHIS · 人文乐观主义 ═══
+   哲学：反抗功能主义的冷漠——设计应当快乐、大胆、有温度。
+   布局原则：非对称错位网格 + 撞色几何色块 + 夸张圆角（不追求秩序，追求愉悦）；
+   色彩观：高饱和撞色（陶土橘 × 克莱因蓝 × 草绿 × 明黄）；
+   层级观：色块即层级，主次靠色彩重量而非留白；
+   对话框：波普圆泡；按钮：撞色胶囊；思考：色块跳跳；工作：几何旋转。 */
+html[data-theme="terra"] {
+    color-scheme: light;
+    --bg: #fdf3e3; --panel: #ffffff; --panel-2: #fff7e8; --panel-3: #f7e8c8;
+    --border: #e8d5ae; --border-strong: #2f6bff;
+    --text: #2b2418; --text-dim: #8a6a44; --text-faint: #b59a72;
+    --accent: #ff5d3a; --accent-strong: #d9482a; --accent-2: #2f6bff;
+    --accent-soft: rgba(255,93,58,.14); --accent-glow: rgba(255,93,58,.28);
+    --on-accent: #fffaf0;
+    --green: #2fa85c; --green-soft: rgba(47,168,92,.15);
+    --yellow: #ffc93c; --yellow-soft: rgba(255,201,60,.22);
+    --red: #ff3d5a; --red-soft: rgba(255,61,90,.12); --red-border: rgba(255,61,90,.4);
+    --blue: #2f6bff; --blue-soft: rgba(47,107,255,.13);
+    --bubble-user-bg: linear-gradient(135deg, #ff5d3a, #ffc93c); --bubble-user-border: #2b2418;
+    --topbar-bg: #ffffff; --input-bg: #fffdf8;
+    --radius: 22px; --radius-sm: 14px;
+    --font-ui: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --font-mono: "Cascadia Mono", Consolas, monospace;
+    --glow-1: rgba(255,201,60,.25); --glow-2: rgba(47,107,255,.10);
+}
+/* 非对称错位网格 */
+html[data-theme="terra"] .layout {
+    grid-template-columns: 210px minmax(0,1fr) 300px;
+    grid-template-rows: minmax(0,1fr);
+    grid-template-areas: "agents chat detail";
+    gap: 16px; padding: 16px;
+}
+/* 撞色几何：面板带粗彩边 + 错位硬阴影 */
+html[data-theme="terra"] .agents-panel,
+html[data-theme="terra"] .detail-panel,
+html[data-theme="terra"] .chat-panel {
+    border-radius: 20px; border: 3px solid #2b2418;
+    box-shadow: 6px 6px 0 #2f6bff;
+}
+html[data-theme="terra"] .agents-panel { border-top: 8px solid #ffc93c; }
+html[data-theme="terra"] .chat-panel { border-top: 8px solid #ff5d3a; transform: rotate(-.4deg); }
+html[data-theme="terra"] .detail-panel { border-top: 8px solid #2fa85c; transform: rotate(.4deg); }
+html[data-theme="terra"] .agents-panel { transform: translateY(6px); }
+/* 波普对话框：鲜艳色块 + 黑色描边 */
+html[data-theme="terra"] .message .message-body {
+    border-radius: 18px; border: 2px solid #2b2418;
+    box-shadow: 4px 4px 0 #2b2418;
+}
+html[data-theme="terra"] .message.user .message-body { background: linear-gradient(135deg, #ff5d3a, #ffc93c); color: #2b2418; }
+html[data-theme="terra"] .message.background .message-body { background: #2fa85c; color: #fff; }
+/* 撞色胶囊按钮 */
+html[data-theme="terra"] .button { border-radius: 999px; border: 2px solid #2b2418; box-shadow: 3px 3px 0 #2b2418; font-weight: 700; }
+html[data-theme="terra"] .button.primary { background: linear-gradient(135deg, #2f6bff, #2fa85c); color: #fff; }
+html[data-theme="terra"] .button.ghost { background: #fff; }
+html[data-theme="terra"] .chat-form { background: transparent; }
+html[data-theme="terra"] .chat-form textarea { border: 2px solid #2b2418; border-radius: 16px; }
+html[data-theme="terra"] .agent-row { border: 2px solid #2b2418; border-radius: 14px; box-shadow: 3px 3px 0 #2b2418; }
+html[data-theme="terra"] .agent-row.selected { background: #ffc93c; }
+html[data-theme="terra"] .conversation-card.active { background: #ffc93c; border: 2px solid #2b2418; }
+/* 思考动画：色块跳动（活泼） */
+html[data-theme="terra"] body[data-harness-state="thinking"] .brand-mark { animation: ter-hop .7s cubic-bezier(.36,1.6,.5,1) infinite alternate; }
+@keyframes ter-hop { 0% { transform: translateY(0) rotate(-3deg); } 100% { transform: translateY(-5px) rotate(3deg); } }
+/* 工作动画：几何旋转（孟菲斯旋转几何） */
+html[data-theme="terra"] body[data-harness-state="working"] .art-terra { animation: ter-spin 5s linear infinite; transform-origin: center; }
+@keyframes ter-spin { 0% { transform: rotate(0); } 100% { transform: rotate(360deg); } }
+
+/* ═══ 6. FOREST 森林 → 有机现代主义 ORGANIC MODERNISM ═══
+   哲学：拒绝直角冰冷的机器感——设计应如生命般流动、圆润、和谐。
+   布局原则：曲线边界 + 柔和渐变 + 无尖锐棱角（面板像流体而非盒子）；
+   色彩观：自然渐变（苔绿→草绿→暖木），低对比柔光；
+   层级观：靠柔和光影分层，不靠硬边框；
+   对话框：水滴圆泡；按钮：鹅卵石；思考：呼吸涨落；工作：波纹扩散。 */
+html[data-theme="forest"] {
+    color-scheme: dark;
+    --bg: #0d1510; --panel: rgba(22,32,24,.88); --panel-2: rgba(28,42,30,.92); --panel-3: rgba(36,52,38,.94);
+    --border: rgba(120,170,130,.22); --border-strong: rgba(140,195,150,.45);
+    --text: #e2efe4; --text-dim: #9cb8a2; --text-faint: #5e7a64;
+    --accent: #7cc78a; --accent-strong: #a2ddad; --accent-2: #d4b04a;
+    --accent-soft: rgba(124,199,138,.16); --accent-glow: rgba(124,199,138,.3);
+    --on-accent: #0c180e;
+    --green: #7cc78a; --green-soft: rgba(124,199,138,.16);
+    --yellow: #d4b04a; --yellow-soft: rgba(212,176,74,.15);
+    --red: #e08a6a; --red-soft: rgba(224,138,106,.14); --red-border: rgba(224,138,106,.4);
+    --blue: #8fb8ac; --blue-soft: rgba(143,184,172,.14);
+    --bubble-user-bg: linear-gradient(135deg, rgba(124,199,138,.22), rgba(212,176,74,.12));
+    --bubble-user-border: rgba(124,199,138,.45);
+    --topbar-bg: rgba(12,18,14,.85); --input-bg: rgba(16,26,18,.85);
+    --radius: 26px; --radius-sm: 18px;
+    --font-ui: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --font-mono: "Cascadia Mono", Consolas, monospace;
+    --glow-1: rgba(124,199,138,.12); --glow-2: rgba(212,176,74,.07);
+}
+/* 有机曲线布局：三栏全圆润，间距柔和 */
+html[data-theme="forest"] .layout {
+    grid-template-columns: 220px minmax(0,1fr) 280px;
+    grid-template-rows: minmax(0,1fr);
+    grid-template-areas: "agents chat detail";
+    gap: 20px; padding: 20px;
+}
+html[data-theme="forest"] .agents-panel,
+html[data-theme="forest"] .detail-panel,
+html[data-theme="forest"] .chat-panel {
+    border-radius: 34px; border: 1px solid var(--border);
+    background: linear-gradient(160deg, var(--panel-2), var(--panel));
+    box-shadow: 0 14px 40px rgba(0,0,0,.3);
+}
+html[data-theme="forest"] .agents-panel { border-radius: 34px 34px 34px 12px; }
+html[data-theme="forest"] .detail-panel { border-radius: 34px 12px 34px 34px; }
+html[data-theme="forest"] .agent-row { border-radius: 22px; background: rgba(28,42,30,.6); }
+html[data-theme="forest"] .agent-row.selected { background: var(--accent-soft); }
+html[data-theme="forest"] .conversation-card.active { background: var(--accent-soft); border-radius: 14px; }
+/* 水滴圆泡对话框 */
+html[data-theme="forest"] .message .message-body { border-radius: 24px 24px 24px 8px; }
+html[data-theme="forest"] .message.user .message-body { border-radius: 24px 24px 8px 24px; }
+/* 鹅卵石按钮 */
+html[data-theme="forest"] .button { border-radius: 999px; background: rgba(36,52,38,.8); }
+html[data-theme="forest"] .button.primary { background: linear-gradient(135deg, #7cc78a, #d4b04a); color: #0c180e; }
+html[data-theme="forest"] .chat-form { background: transparent; }
+html[data-theme="forest"] .chat-form textarea { border-radius: 24px; background: rgba(16,26,18,.85); }
+/* 思考动画：呼吸涨落 */
+html[data-theme="forest"] body[data-harness-state="thinking"] .chat-panel { animation: for-breathe 4s ease-in-out infinite; }
+@keyframes for-breathe { 0%,100% { box-shadow: 0 14px 40px rgba(0,0,0,.3); } 50% { box-shadow: 0 14px 44px rgba(124,199,138,.18); } }
+/* 工作动画：波纹扩散 */
+html[data-theme="forest"] body[data-harness-state="working"] .status-pill.running::after { content: ""; display: inline-block; width: 8px; height: 8px; margin-left: 7px; border-radius: 50%; background: var(--green); animation: for-ripple 1.8s ease-out infinite; }
+@keyframes for-ripple { 0% { transform: scale(.6); opacity: .9; } 70% { transform: scale(2.4); opacity: 0; } 100% { transform: scale(2.4); opacity: 0; } }
+
+/* ═══ 7. OCEAN 深海 → 沉浸式暗色 IMMERSIVE DARK ═══
+   哲学：界面如深海的宁静——低刺激、高专注，让内容自身发光浮现。
+   布局原则：极暗背景 + 单一冷色强调 + 面板弱化退后（内容优先，不抢眼）；
+   色彩观：深蓝黑底 + 冷青强调，全暗色低亮度（护眼、沉浸）；
+   层级观：暗底让「亮的内容」自然浮现，边框几乎消失；
+   对话框：微光卡片；按钮：冷光圆角；思考：幽光呼吸；工作：光点漂浮。 */
+html[data-theme="ocean"] {
+    color-scheme: dark;
+    --bg: #04070d; --panel: rgba(8,14,24,.6); --panel-2: rgba(12,20,34,.7); --panel-3: rgba(16,26,44,.8);
+    --border: rgba(80,150,210,.14); --border-strong: rgba(100,190,240,.32);
+    --text: #cfe0ef; --text-dim: #6f8ea8; --text-faint: #3d5a72;
+    --accent: #4cc9f0; --accent-strong: #7dd8f8; --accent-2: #4cc9f0;
+    --accent-soft: rgba(76,201,240,.10); --accent-glow: rgba(76,201,240,.22);
+    --on-accent: #04101d;
+    --green: #4cc9a8; --green-soft: rgba(76,201,168,.10);
+    --yellow: #d4a44a; --yellow-soft: rgba(212,164,74,.10);
+    --red: #e06a6a; --red-soft: rgba(224,106,106,.10); --red-border: rgba(224,106,106,.3);
+    --blue: #4cc9f0; --blue-soft: rgba(76,201,240,.10);
+    --bubble-user-bg: linear-gradient(135deg, rgba(76,201,240,.12), rgba(76,201,168,.08));
+    --bubble-user-border: rgba(76,201,240,.28);
+    --topbar-bg: rgba(4,8,14,.75); --input-bg: rgba(8,14,24,.6);
+    --radius: 12px; --radius-sm: 8px;
+    --font-ui: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --font-mono: "Cascadia Mono", Consolas, monospace;
+    --glow-1: rgba(76,201,240,.06); --glow-2: rgba(76,201,168,.04);
+}
+/* 沉浸式布局：主对话居中加宽，侧栏弱化窄化 */
+html[data-theme="ocean"] .layout {
+    grid-template-columns: 200px minmax(0,1fr) 300px;
+    grid-template-rows: minmax(0,1fr);
+    grid-template-areas: "agents chat detail";
+    gap: 12px; padding: 14px;
+}
+html[data-theme="ocean"] .agents-panel,
+html[data-theme="ocean"] .detail-panel {
+    background: transparent; border: none; opacity: .85;
+}
+html[data-theme="ocean"] .chat-panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; box-shadow: 0 0 40px rgba(76,201,240,.05);
+}
+html[data-theme="ocean"] .panel-title { color: var(--text-faint); }
+html[data-theme="ocean"] .agent-row { background: rgba(8,14,24,.5); border: none; }
+html[data-theme="ocean"] .agent-row.selected { background: var(--accent-soft); border: 1px solid var(--border-strong); }
+html[data-theme="ocean"] .conversation-card.active { background: var(--accent-soft); }
+/* 微光对话框 */
+html[data-theme="ocean"] .message .message-body { background: rgba(10,18,30,.6); border: 1px solid var(--border); box-shadow: 0 0 20px rgba(76,201,240,.04); }
+html[data-theme="ocean"] .message.user .message-body { background: rgba(76,201,240,.10); border-color: rgba(76,201,240,.22); }
+html[data-theme="ocean"] .button { background: rgba(10,18,30,.7); border: 1px solid var(--border); }
+html[data-theme="ocean"] .button.primary { background: linear-gradient(135deg, #4cc9f0, #4cc9a8); color: #04101d; }
+html[data-theme="ocean"] .chat-form { background: transparent; border-top: 1px solid var(--border); }
+html[data-theme="ocean"] .chat-form textarea { background: rgba(8,14,24,.6); border: none; }
+/* 思考动画：幽光呼吸 */
+html[data-theme="ocean"] body[data-harness-state="thinking"] .chat-panel { animation: oce-glow 5s ease-in-out infinite; }
+@keyframes oce-glow { 0%,100% { box-shadow: 0 0 30px rgba(76,201,240,.04); } 50% { box-shadow: 0 0 60px rgba(76,201,240,.12); } }
+/* 工作动画：光点漂浮 */
+html[data-theme="ocean"] body[data-harness-state="working"] .status-pill.running::after { content: "·"; display: inline-block; margin-left: 6px; color: var(--accent); font-size: 16px; animation: oce-drift 3s ease-in-out infinite; }
+@keyframes oce-drift { 0%,100% { transform: translateY(0); opacity: .6; } 50% { transform: translateY(-4px); opacity: 1; } }
+
+/* ═══ 8. MONO 极简 · Minimal ═══
+   布局：极窄侧栏 + 对话居中 + 超宽留白｜插画：留白+细线 SVG｜
+   对话框：下划线气泡｜按钮：细线文本｜思考：墨点呼吸｜工作：细线生长 */
+html[data-theme="mono"] {
+    color-scheme: light;
+    --bg: #f5f5f2; --panel: #ffffff; --panel-2: #f0f0ec; --panel-3: #e6e6e0;
+    --border: #e0e0d8; --border-strong: #b8b8ac;
+    --text: #1c1c18; --text-dim: #6f6f64; --text-faint: #a9a99c;
+    --accent: #2563eb; --accent-strong: #1d4ed8; --accent-2: #2563eb;
+    --accent-soft: rgba(37,99,235,.09); --accent-glow: rgba(37,99,235,.16);
+    --on-accent: #ffffff;
+    --green: #3f7a52; --green-soft: rgba(63,122,82,.11);
+    --yellow: #a0842c; --yellow-soft: rgba(160,132,44,.13);
+    --red: #b0433a; --red-soft: rgba(176,67,58,.09); --red-border: rgba(176,67,58,.36);
+    --blue: #2563eb; --blue-soft: rgba(37,99,235,.09);
+    --bubble-user-bg: #f0f0ec; --bubble-user-border: #e0e0d8;
+    --topbar-bg: #fafaf7; --input-bg: #ffffff;
+    --radius: 6px; --radius-sm: 4px;
+    --font-ui: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --font-mono: "Cascadia Mono", Consolas, monospace;
+    --glow-1: rgba(37,99,235,.04); --glow-2: rgba(0,0,0,.02);
+}
+html[data-theme="mono"] .layout { grid-template-columns: 180px minmax(0,720px) 1fr; grid-template-rows: minmax(0,1fr); grid-template-areas: "agents chat detail"; justify-content: center; }
+html[data-theme="mono"] .agents-panel { border-right: 1px solid var(--border); }
+html[data-theme="mono"] .detail-panel { border-left: 1px solid var(--border); }
+html[data-theme="mono"] .agents-panel .agent-row, html[data-theme="mono"] .conversation-card { background: transparent; border: none; border-bottom: 1px solid var(--border); border-radius: 0; }
+html[data-theme="mono"] .agent-row:hover { background: var(--panel-2); }
+html[data-theme="mono"] .message { max-width: 640px; }
+html[data-theme="mono"] .message .message-body { background: transparent; border: none; border-bottom: 1px solid var(--border); border-radius: 0; padding: 8px 2px; }
+html[data-theme="mono"] .message.user .message-body { border-bottom-color: var(--accent-soft); }
+html[data-theme="mono"] .button { border-radius: 0; background: transparent; border: 1px solid var(--border); }
+html[data-theme="mono"] .button:hover { border-color: var(--accent); }
+html[data-theme="mono"] .button.primary { background: var(--accent); box-shadow: none; }
+html[data-theme="mono"] .chat-form textarea { border-radius: 0; }
+html[data-theme="mono"] body[data-harness-state="thinking"] .brand-mark { animation: mono-dot 2.4s ease-in-out infinite; }
+@keyframes mono-dot { 0%,100% { transform: scale(1); opacity: .7; } 50% { transform: scale(1.2); opacity: 1; } }
+html[data-theme="mono"] body[data-harness-state="working"] .art-mono { animation: mono-grow 1.4s ease-out infinite; transform-origin: center; }
+@keyframes mono-grow { 0% { transform: scaleX(.4); opacity: .3; } 50% { transform: scaleX(1); opacity: 1; } 100% { transform: scaleX(.4); opacity: .3; } }
+
+/* ═══ 9. BRUT 粗野 · Brutalism ═══
+   布局：非对称（左 agent 竖条 + 右上进度 + 右下对话错位）｜插画：斜纹色带 SVG｜
+   对话框：直角粗边硬阴影｜按钮：硬阴影方块｜思考：方块抖动｜工作：硬切位移 */
+html[data-theme="brut"] {
+    color-scheme: light;
+    --bg: #f2f2ed; --panel: #ffffff; --panel-2: #e8e8e2; --panel-3: #d8d8d0;
+    --border: #141414; --border-strong: #141414;
+    --text: #141414; --text-dim: #4a4a44; --text-faint: #8a8a80;
+    --accent: #e8b400; --accent-strong: #cc9a00; --accent-2: #141414;
+    --accent-soft: rgba(232,180,0,.2); --accent-glow: rgba(232,180,0,.32);
+    --on-accent: #141414;
+    --green: #2e7d46; --green-soft: rgba(46,125,70,.15);
+    --yellow: #e8b400; --yellow-soft: rgba(232,180,0,.22);
+    --red: #c02c2c; --red-soft: rgba(192,44,44,.11); --red-border: #141414;
+    --blue: #1a4fa0; --blue-soft: rgba(26,79,160,.11);
+    --bubble-user-bg: #e8b400; --bubble-user-border: #141414;
+    --topbar-bg: #141414; --input-bg: #ffffff;
+    --radius: 0; --radius-sm: 0;
+    --font-ui: "Arial Black", "Helvetica Neue", "PingFang SC", sans-serif;
+    --font-mono: "Courier New", Consolas, monospace;
+    --glow-1: rgba(232,180,0,.14); --glow-2: rgba(20,20,20,.07);
+}
+html[data-theme="brut"] .layout { grid-template-columns: 240px minmax(0,1fr); grid-template-rows: 210px minmax(0,1fr); grid-template-areas: "agents detail" "agents chat"; gap: 10px; padding: 10px; }
+html[data-theme="brut"] .agents-panel { border: 3px solid var(--border); }
+html[data-theme="brut"] .detail-panel { border: 3px solid var(--border); background: var(--accent-soft); }
+html[data-theme="brut"] .chat-panel { border: 3px solid var(--border); }
+html[data-theme="brut"] .topbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: -6px; height: 6px; background: repeating-linear-gradient(45deg, var(--accent) 0 12px, #141414 12px 24px); }
+html[data-theme="brut"] .message .message-body { border-radius: 0; border: 2px solid var(--border); box-shadow: 4px 4px 0 var(--border); }
+html[data-theme="brut"] .button { border-radius: 0; box-shadow: 3px 3px 0 var(--border); border: 2px solid var(--border); }
+html[data-theme="brut"] .button:active { box-shadow: 1px 1px 0 var(--border); transform: translate(2px,2px); }
+html[data-theme="brut"] .button.primary { background: var(--accent); box-shadow: 3px 3px 0 var(--border); }
+html[data-theme="brut"] .chat-form textarea { border-radius: 0; border: 2px solid var(--border); }
+html[data-theme="brut"] .agent-row, html[data-theme="brut"] .conversation-card { border-radius: 0; border: 2px solid var(--border); }
+html[data-theme="brut"] .agent-row.selected { box-shadow: 4px 4px 0 var(--accent); }
+html[data-theme="brut"] body[data-harness-state="thinking"] .brand-mark { animation: bru-shake .6s steps(2) infinite; }
+@keyframes bru-shake { 0%,100% { transform: translate(0,0); } 50% { transform: translate(2px,-2px); } }
+html[data-theme="brut"] body[data-harness-state="working"] .art-brut { animation: bru-slide 1s steps(4) infinite; }
+@keyframes bru-slide { 0%,100% { transform: translateX(0); } 50% { transform: translateX(8px); } }
+
+
+/* ═══ 10. DYNAMIC 动态全息 · HOLOGRAPHIC ═══
+   哲学：信息如数据流悬浮在空间——工作状态可视化、粒子化、可折叠。
+   布局原则：默认全屏沉浸对话；侧栏折叠为悬浮按钮，hover 展开；
+   动态可视化：运行中的 Agent 化作浮动全息气泡环绕对话区，
+   思考过程以打字气泡 + 粒子拖尾实时呈现；
+   色彩观：深空底 + 青色全息光 + 渐变辉光；
+   对话框：全息玻璃气泡（打字光标）；按钮：发光全息；
+   思考：数据流呼吸；工作：全息粒子风暴。 */
+html[data-theme="dynamic"] {
+    color-scheme: dark;
+    --bg: #04060f; --panel: rgba(10,16,32,.72); --panel-2: rgba(14,22,42,.8); --panel-3: rgba(20,30,56,.86);
+    --border: rgba(80,200,255,.16); --border-strong: rgba(80,220,255,.45);
+    --text: #dcecff; --text-dim: #8fb4d8; --text-faint: #4f6a8f;
+    --accent: #38e0ff; --accent-strong: #7dedff; --accent-2: #b06bff;
+    --accent-soft: rgba(56,224,255,.12); --accent-glow: rgba(56,224,255,.3);
+    --on-accent: #04121e;
+    --green: #4cffb0; --green-soft: rgba(76,255,176,.12);
+    --yellow: #ffd166; --yellow-soft: rgba(255,209,102,.12);
+    --red: #ff6b9d; --red-soft: rgba(255,107,157,.12); --red-border: rgba(255,107,157,.4);
+    --blue: #38e0ff; --blue-soft: rgba(56,224,255,.12);
+    --bubble-user-bg: linear-gradient(135deg, rgba(56,224,255,.2), rgba(176,107,255,.13));
+    --bubble-user-border: rgba(56,224,255,.5);
+    --topbar-bg: rgba(4,8,18,.72); --input-bg: rgba(8,14,28,.7);
+    --radius: 16px; --radius-sm: 10px;
+    --font-ui: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --font-mono: "Cascadia Mono", Consolas, monospace;
+    --glow-1: rgba(56,224,255,.1); --glow-2: rgba(176,107,255,.08);
+}
+/* ---- 布局：默认全屏对话，侧栏折叠为窄条（点击切换，非 hover） ---- */
+html[data-theme="dynamic"] .layout {
+    grid-template-columns: 46px minmax(0,1fr) 46px;
+    grid-template-rows: minmax(0,1fr);
+    grid-template-areas: "agents chat detail";
+    gap: 0; padding: 0;
+    transition: grid-template-columns .35s var(--ease-out);
+}
+html[data-theme="dynamic"] .agents-panel,
+html[data-theme="dynamic"] .detail-panel {
+    overflow: hidden; cursor: pointer;
+    background: rgba(8,12,26,.85); border: none; position: relative; z-index: 5;
+    transition: width .35s var(--ease-out), min-width .35s var(--ease-out);
+}
+html[data-theme="dynamic"] .agents-panel.collapsed,
+html[data-theme="dynamic"] .detail-panel.collapsed {
+    width: 46px; min-width: 46px;
+}
+html[data-theme="dynamic"] .agents-panel:not(.collapsed) {
+    width: 260px; min-width: 260px; overflow-y: auto;
+}
+html[data-theme="dynamic"] .detail-panel:not(.collapsed) {
+    width: 300px; min-width: 300px; overflow-y: auto;
+}
+/* 折叠态只显示竖排标题条 */
+html[data-theme="dynamic"] .agents-panel .panel-title,
+html[data-theme="dynamic"] .detail-panel .panel-title { writing-mode: vertical-rl; text-orientation: mixed; justify-content: center; padding: 14px 8px; letter-spacing: .15em; cursor: pointer; }
+html[data-theme="dynamic"] .agents-panel.collapsed #agent-list,
+html[data-theme="dynamic"] .agents-panel.collapsed #conversation-list-section,
+html[data-theme="dynamic"] .agents-panel.collapsed #pool-summary,
+html[data-theme="dynamic"] .detail-panel.collapsed .progress-stream,
+html[data-theme="dynamic"] .detail-panel.collapsed .memory-view,
+html[data-theme="dynamic"] .agents-panel.collapsed .panel-title button,
+html[data-theme="dynamic"] .detail-panel.collapsed .panel-title button { display: none; }
+html[data-theme="dynamic"] .agents-panel:not(.collapsed) #agent-list { display: block; }
+html[data-theme="dynamic"] .agents-panel:not(.collapsed) .panel-title,
+html[data-theme="dynamic"] .detail-panel:not(.collapsed) .panel-title { writing-mode: horizontal-tb; justify-content: space-between; }
+/* ---- 对话区：全屏沉浸 ---- */
+html[data-theme="dynamic"] .chat-panel {
+    background: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(56,224,255,.05), transparent 60%);
+}
+html[data-theme="dynamic"] .chat-history { padding: 24px 34px; }
+html[data-theme="dynamic"] .message { max-width: 820px; margin-left: auto; margin-right: auto; }
+/* 全息玻璃气泡 */
+html[data-theme="dynamic"] .message .message-body {
+    border-radius: 16px; backdrop-filter: blur(8px);
+    box-shadow: 0 0 24px var(--accent-soft), inset 0 0 16px rgba(56,224,255,.04);
+    border: 1px solid var(--border);
+}
+html[data-theme="dynamic"] .message.user .message-body { border-radius: 16px 16px 4px 16px; }
+html[data-theme="dynamic"] .message:not(.user) .message-body { border-radius: 16px 16px 16px 4px; }
+/* 最新思考消息：打字光标 + 辉光 */
+html[data-theme="dynamic"] .message:last-child:not(.user) .message-body::after {
+    content: "▍"; color: var(--accent); margin-left: 2px;
+    animation: dyn-cursor 1s steps(1) infinite;
+}
+@keyframes dyn-cursor { 0%,49% { opacity: 1; } 50%,100% { opacity: 0; } }
+/* ---- 工作气泡容器（JS 生成浮动 agent 气泡） ---- */
+.work-orbit { position: fixed; inset: 0; pointer-events: none; z-index: 4; }
+/* 思考中气泡（运行中 Agent）：左侧轨道，紧贴折叠侧栏，不盖对话区；专属琥珀金色 */
+html[data-theme="dynamic"] .bubble {
+    position: relative; display: flex; flex-direction: column; gap: 6px;
+    padding: 12px 16px; border-radius: 14px; max-width: 250px;
+    animation: dyn-orbit 4s ease-in-out infinite;
+    pointer-events: none;
+    z-index: 6;
+    flex-shrink: 0;
+    color: #e8ecf8;
+}
+/* 工作 Agent 专属色：默认琥珀金（JS 会注入每个 Agent 的专属色覆盖）；不透明实底，悬浮不叠字 */
+html[data-theme="dynamic"] .bubble-running {
+    background: linear-gradient(135deg, rgba(22,28,44,.97), rgba(16,20,34,.97));
+    border: 1px solid rgba(255,190,60,.6);
+    box-shadow: 0 0 22px rgba(255,170,50,.28), inset 0 0 12px rgba(255,170,50,.08);
+}
+html[data-theme="dynamic"] .bubble-running .bubble-head {
+    display: flex; align-items: center; gap: 7px;
+    color: #ffe0a0; font-size: 12px; font-weight: 700;
+}
+html[data-theme="dynamic"] .bubble-running .dot {
+    width: 8px; height: 8px; border-radius: 50%; background: #ffbe3c;
+    box-shadow: 0 0 8px rgba(255,190,60,.8);
+    animation: dyn-pulse 1.2s ease-in-out infinite;
+}
+html[data-theme="dynamic"] .bubble-running .bubble-think {
+    color: #c9a05e; font-size: 11px; line-height: 1.5;
+    max-height: 120px; overflow: hidden;
+    font-family: var(--font-mono);
+    border-top: 1px solid rgba(255,190,60,.25); padding-top: 5px;
+}
+/* 失败气泡：右侧轨道，紧贴右侧折叠栏，红色系 */
+html[data-theme="dynamic"] .bubble-failed {
+    align-items: center; background: linear-gradient(135deg, rgba(255,107,157,.22), rgba(255,80,80,.14));
+    border: 1px solid var(--red-border); color: #ff9ab0;
+    box-shadow: 0 0 20px rgba(255,107,157,.18);
+    font-size: 12px; font-weight: 700;
+    flex-direction: row; animation: dyn-fail 3s ease-in-out infinite;
+    margin-left: auto;
+}
+@keyframes dyn-fail {
+    0%,100% { transform: translateX(0) scale(1); }
+    50% { transform: translateX(-4px) scale(1.03); }
+}
+@keyframes dyn-orbit {
+    0%,100% { transform: translateY(0) scale(1); opacity: .9; }
+    50% { transform: translateY(-8px) scale(1.05); opacity: 1; }
+}
+@keyframes dyn-pulse { 0%,100% { opacity: .5; transform: scale(1); } 50% { opacity: 1; transform: scale(1.3); } }
+/* 粒子层：主管理青色 + 工作 Agent 琥珀金双色粒子 */
+.particle-layer { position: fixed; inset: 0; pointer-events: none; z-index: 2; overflow: hidden; }
+html[data-theme="dynamic"] .particle-layer .part {
+    position: absolute; border-radius: 50%;
+    animation: dyn-rise linear infinite;
+}
+html[data-theme="dynamic"] .particle-layer .part.cyan {
+    background: radial-gradient(circle, rgba(56,224,255,.8), transparent 70%);
+}
+html[data-theme="dynamic"] .particle-layer .part.gold {
+    background: radial-gradient(circle, rgba(255,190,60,.9), transparent 70%);
+}
+@keyframes dyn-rise {
+    0% { transform: translateY(105vh) translateX(0); opacity: 0; }
+    12% { opacity: .8; }
+    88% { opacity: .6; }
+    100% { transform: translateY(-8vh) translateX(24px); opacity: 0; }
+}
+/* ---- 按钮：发光全息 ---- */
+html[data-theme="dynamic"] .button { border-radius: 10px; background: rgba(12,20,38,.7); border: 1px solid var(--border); }
+html[data-theme="dynamic"] .button.primary { background: linear-gradient(135deg, #38e0ff, #b06bff); color: #04121e; box-shadow: 0 0 16px var(--accent-glow); }
+html[data-theme="dynamic"] .chat-form { background: transparent; border-top: 1px solid var(--border); }
+html[data-theme="dynamic"] .chat-form textarea { background: rgba(8,14,28,.6); border: 1px solid var(--border); }
+/* ---- 思考/工作动画 ---- */
+html[data-theme="dynamic"] body[data-harness-state="thinking"] .chat-panel { animation: dyn-think 3s ease-in-out infinite; }
+@keyframes dyn-think { 0%,100% { box-shadow: inset 0 0 0 1px var(--border); } 50% { box-shadow: inset 0 0 0 1px var(--accent-soft), 0 0 34px -8px var(--accent-glow); } }
+html[data-theme="dynamic"] body[data-harness-state="working"] .particle-layer .part { animation-duration: 3.5s; }
+html[data-theme="dynamic"] body[data-harness-state="working"] .bubble { animation-duration: 2s; }
+
 </style>
-</head>
 <body>
+<!-- 主题氛围与插画层（每主题有独立 SVG 图案，纯装饰不参与交互） -->
+<div class="ambient" aria-hidden="true">
+    <div class="glow glow-1"></div>
+    <div class="glow glow-2"></div>
+    <svg class="art art-aurora" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="aur1" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#7c6cf0" stop-opacity=".55"/><stop offset=".5" stop-color="#22d3ee" stop-opacity=".35"/><stop offset="1" stop-color="#e879f9" stop-opacity=".45"/></linearGradient></defs>
+        <path d="M0 320 C180 120 360 300 540 180 C720 60 900 240 1200 90 L1200 400 L0 400 Z" fill="url(#aur1)"/>
+        <path d="M0 360 C220 200 420 340 640 250 C860 160 1020 280 1200 200 L1200 400 L0 400 Z" fill="url(#aur1)" opacity=".5"/>
+    </svg>
+    <svg class="art art-terminal" viewBox="0 0 1200 300" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+        <path d="M40 60 H1160 V250 H40 Z" fill="none" stroke="#33ff66" stroke-width="2" opacity=".5"/>
+        <circle cx="60" cy="46" r="5" fill="#ff5555" opacity=".7"/><circle cx="80" cy="46" r="5" fill="#ffb000" opacity=".7"/><circle cx="100" cy="46" r="5" fill="#33ff66" opacity=".7"/>
+        <path d="M80 150 L130 110 L80 70" fill="none" stroke="#33ff66" stroke-width="3" opacity=".8"/>
+        <path d="M150 70 H320" stroke="#33ff66" stroke-width="2" opacity=".6"/>
+        <path d="M80 210 L130 170 L80 130" fill="none" stroke="#55cc77" stroke-width="2" opacity=".4"/>
+        <path d="M150 130 H280" stroke="#55cc77" stroke-width="2" opacity=".4"/>
+    </svg>
+    <svg class="art art-neon" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="1050" cy="120" r="90" fill="none" stroke="#e879f9" stroke-width="2" opacity=".55"/>
+        <circle cx="1050" cy="120" r="120" fill="none" stroke="#22d3ee" stroke-width="1" opacity=".35"/>
+        <path d="M60 340 L240 340 M60 300 L240 300" stroke="#e879f9" stroke-width="2" opacity=".5"/>
+        <path d="M300 120 L420 120" stroke="#22d3ee" stroke-width="2" opacity=".5"/>
+    </svg>
+    <svg class="art art-paper" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+        <path d="M40 40 H900" stroke="#a98c5a" stroke-width="1.5" opacity=".45"/>
+        <path d="M40 60 H900" stroke="#a98c5a" stroke-width=".5" opacity=".3"/>
+        <path d="M940 40 H1160" stroke="#b3442c" stroke-width="2" opacity=".5"/>
+        <rect x="1010" y="90" width="60" height="60" fill="none" stroke="#b3442c" stroke-width="2" opacity=".5" transform="rotate(-8 1040 120)"/>
+        <text x="1040" y="128" font-family="KaiTi,STKaiti,serif" font-size="26" fill="#b3442c" opacity=".5" text-anchor="middle" transform="rotate(-8 1040 120)">检</text>
+        <path d="M80 330 L200 240 L320 330" fill="none" stroke="#a98c5a" stroke-width="1.2" opacity=".4"/>
+        <path d="M220 330 L340 250 L460 330" fill="none" stroke="#a98c5a" stroke-width="1.2" opacity=".3"/>
+    </svg>
+    <svg class="art art-terra" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="150" cy="110" r="52" fill="#f2a541" opacity=".8"/>
+        <circle cx="150" cy="110" r="72" fill="none" stroke="#f2a541" stroke-width="3" opacity=".35"/>
+        <path d="M0 400 L200 260 L400 400 Z" fill="#d96c3a" opacity=".3"/>
+        <path d="M250 400 L460 290 L700 400 Z" fill="#b8532a" opacity=".22"/>
+        <path d="M520 400 L760 310 L1000 400 Z" fill="#d96c3a" opacity=".18"/>
+        <path d="M0 360 Q150 330 300 360 T600 360 T900 360 T1200 360 L1200 400 L0 400 Z" fill="#f2a541" opacity=".25"/>
+    </svg>
+    <svg class="art art-forest" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+        <ellipse cx="180" cy="120" rx="60" ry="30" fill="#6fbf73" opacity=".4" transform="rotate(-24 180 120)"/>
+        <ellipse cx="220" cy="140" rx="52" ry="26" fill="#8fd493" opacity=".3" transform="rotate(18 220 140)"/>
+        <ellipse cx="980" cy="100" rx="66" ry="32" fill="#6fbf73" opacity=".35" transform="rotate(22 980 100)"/>
+        <ellipse cx="1020" cy="130" rx="48" ry="24" fill="#c9a227" opacity=".3" transform="rotate(-16 1020 130)"/>
+        <path d="M180 250 Q170 280 178 310" stroke="#6fbf73" stroke-width="2" opacity=".5" fill="none"/>
+        <path d="M1000 240 Q990 270 998 300" stroke="#8fd493" stroke-width="2" opacity=".4" fill="none"/>
+        <circle cx="186" cy="318" r="4" fill="#6fbf73" opacity=".6"/>
+    </svg>
+    <svg class="art art-ocean" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+        <path d="M0 300 Q150 260 300 300 T600 300 T900 300 T1200 300 L1200 400 L0 400 Z" fill="#38bdf8" opacity=".3"/>
+        <path d="M0 340 Q150 310 300 340 T600 340 T900 340 T1200 340 L1200 400 L0 400 Z" fill="#2dd4bf" opacity=".25"/>
+        <circle cx="420" cy="200" r="6" fill="none" stroke="#7dd3fc" stroke-width="2" opacity=".5"/>
+        <circle cx="760" cy="150" r="4" fill="none" stroke="#7dd3fc" stroke-width="1.5" opacity=".4"/>
+        <circle cx="620" cy="230" r="3" fill="none" stroke="#7dd3fc" stroke-width="1.5" opacity=".35"/>
+    </svg>
+    <svg class="art art-mono" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+        <line x1="0" y1="360" x2="1200" y2="360" stroke="#e0e0d8" stroke-width="1"/>
+        <circle cx="600" cy="180" r="3" fill="#b8b8ac" opacity=".4"/>
+    </svg>
+    <svg class="art art-brut" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+        <rect x="0" y="0" width="1200" height="14" fill="#e8b400"/>
+        <rect x="0" y="360" width="1200" height="40" fill="#141414"/>
+        <path d="M1000 400 L1200 260 L1200 400 Z" fill="#e8b400" opacity=".8"/>
+        <path d="M0 200 L120 120 L0 120 Z" fill="#141414" opacity=".12"/>
+    </svg>
+<div class="particle-layer" aria-hidden="true"></div>
+</div>
 <header class="topbar">
     <div class="brand">
         <span class="brand-mark">H</span>
@@ -145,6 +853,21 @@
         <a class="button ghost small" href="/">WebAgent</a>
         <a class="button ghost small" href="/council">元老院</a>
         <span id="server-state" class="state-pill">未连接</span>
+        <label class="theme-picker">
+            <span class="theme-picker-label">主题</span>
+            <select id="theme-select">
+                <option value="aurora">极光 Aurora</option>
+                <option value="terminal">终端 Terminal</option>
+                <option value="neon">赛博 Neon</option>
+                <option value="paper">纸张 Paper</option>
+                <option value="terra">陶土 Terra</option>
+                <option value="forest">森林 Forest</option>
+                <option value="ocean">深海 Ocean</option>
+                <option value="mono">极简 Mono</option>
+                <option value="brut">粗野 Brut</option>
+                <option value="dynamic">动态全息 Dynamic</option>
+            </select>
+        </label>
     </div>
 </header>
 
@@ -158,12 +881,16 @@
         <div id="conversation-list-section">
             <div class="panel-title">历史会话
                 <button id="refresh-conversations" class="button small ghost" type="button">刷新</button>
+                <button id="new-conversation" class="button small ghost" type="button" title="新建会话">+ 新建</button>
             </div>
             <div id="conversation-list"></div>
         </div>
     </aside>
 
     <section class="chat-panel">
+        <div class="panel-title">对话
+            <button id="new-session" class="button small ghost" type="button" title="开始新会话">+ New Session</button>
+        </div>
         <div id="chat-history" class="chat-history">
             <div class="empty-state">
                 填写项目绝对路径并点击「连接」。<br>
@@ -173,6 +900,7 @@
         </div>
         <form id="chat-form" class="chat-form">
             <textarea id="chat-input" placeholder="告诉 Harness 你的目标，例如：实现一个元老院应用（Ctrl+Enter 发送）"></textarea>
+            <button id="stop-button" class="button ghost" type="button" hidden>停止</button>
             <button id="send-button" class="button primary" type="submit">发送</button>
         </form>
     </section>
@@ -188,6 +916,9 @@
         <div id="memory-view" class="memory-view"></div>
     </aside>
 </main>
+<!-- 动态主题：工作 Agent 全息气泡层 -->
+<div class="work-orbit" aria-hidden="true"></div>
+
 
 <script>
 "use strict";
@@ -201,6 +932,9 @@ const chatHistory = document.getElementById("chat-history");
 const chatForm = document.getElementById("chat-form");
 const chatInput = document.getElementById("chat-input");
 const sendButton = document.getElementById("send-button");
+const stopButton = document.getElementById("stop-button");
+let activeChatAbortController = null;
+const HARNESS_CONVERSATION_ID = "harness";
 const detailTitle = document.getElementById("detail-title");
 const progressStream = document.getElementById("progress-stream");
 const loadMemoryButton = document.getElementById("load-memory");
@@ -230,6 +964,41 @@ let progressTextElement = null;
 let progressAnimationFrameId = null;
 let memoryAbortController = null;
 let memoryLoadGeneration = 0;
+let activeConversationId = null;           // received from backend via SSE conversation_id frame
+
+
+// ============================================================
+// New Session feature
+// ============================================================
+function newSession() {
+    // Clear conversation tracking
+    activeConversationId = null;
+
+    // Finalize any streaming bubbles
+    finalizeChatStreamBubble();
+    finalizeBackgroundBubble();
+
+    // Clear the chat display
+    chatHistory.innerHTML = "";
+
+    // Add a visual separator indicating a new session started
+    const separator = document.createElement("div");
+    separator.className = "session-separator";
+    separator.innerHTML = "<span>--- 新会话 ---</span>";
+    chatHistory.appendChild(separator);
+
+    // Clear conversation list active states
+    for (const card of conversationList.querySelectorAll(".conversation-card")) {
+        card.classList.remove("active");
+    }
+
+    // Refresh the conversation list from backend
+    loadConversations();
+
+    // Scroll to bottom
+    chatUserNearBottom = true;
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+}
 
 // ============================================================
 // 错误显示：真实 HTTP 状态 + 后端 JSON
@@ -287,7 +1056,7 @@ function renderMarkdown(sourceText) {
             codeBlockHTMLList.push(
                 `<pre class="md-pre"><code>${escapeHTML(codeContent.replace(/\n$/, ""))}</code></pre>`
             );
-            return ` ${codeBlockHTMLList.length - 1} `;
+            return `${codeBlockHTMLList.length - 1}`;
         }
     );
     workingText = escapeHTML(workingText);
@@ -319,7 +1088,7 @@ function renderMarkdown(sourceText) {
     };
     for (const rawLine of workingText.split("\n")) {
         const trimmedLine = rawLine.trim();
-        const codePlaceholder = /^ (\d+) $/.exec(trimmedLine);
+        const codePlaceholder = /^(\d+)$/.exec(trimmedLine);
         let lineMatch;
         if (codePlaceholder) {
             flushParagraph(); closeList();
@@ -457,6 +1226,7 @@ function receiveChatFrame(parsedFrame) {
     if (!parsedFrame || !parsedFrame.type) return;
     switch (parsedFrame.type) {
         case "conversation_id":
+            activeConversationId = parsedFrame.conversationId || parsedFrame.id || null;
             return;
         case "round_started":
             if (chatStreamBubble) {
@@ -622,6 +1392,7 @@ function connectProject() {
     closeAgentProgress();
     openHarnessChannel();
     loadAgents();
+    loadConversations();
     if (agentsPollTimer) clearInterval(agentsPollTimer);
     agentsPollTimer = setInterval(loadAgents, 10000);
 }
@@ -849,6 +1620,19 @@ function receiveSSEFrameText(frameText, frameReceiver) {
     frameReceiver(JSON.parse(dataLines.join("\n")));
 }
 
+
+async function requestStopHarnessChat() {
+    try {
+        await fetch(`/api/conversations/${encodeURIComponent(HARNESS_CONVERSATION_ID)}/stop`, {
+            method: "POST"
+        });
+        appendBubbleLogSafe("已请求停止 Harness");
+    } catch (stopError) {
+        appendBubbleLogSafe(`停止请求失败：${stopError.message}`);
+    }
+    if (activeChatAbortController) activeChatAbortController.abort();
+}
+
 async function submitChat() {
     const message = chatInput.value.trim();
     if (!activeWorkingDirectory) {
@@ -863,6 +1647,9 @@ async function submitChat() {
     finalizeChatStreamBubble();
     sendButton.disabled = true;
     sendButton.textContent = "执行中";
+    stopButton.hidden = false;
+    stopButton.disabled = false;
+    activeChatAbortController = new AbortController();
 
     try {
         const streamResponse = await fetch("/api/harness/chat/stream", {
@@ -870,8 +1657,10 @@ async function submitChat() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 workingDirectory: activeWorkingDirectory,
-                message
-            })
+                message: message,
+                conversationId: activeConversationId || ""
+            }),
+            signal: activeChatAbortController.signal
         });
         if (!streamResponse.ok) {
             await readJSONResponse(streamResponse, "发送消息");
@@ -889,7 +1678,12 @@ async function submitChat() {
             undecodedText = frames.pop() || "";
             for (const frame of frames) {
                 try {
-                    receiveSSEFrameText(frame, receiveChatFrame);
+                    receiveSSEFrameText(frame, eventObject => {
+                        if (eventObject && (eventObject.type === "cancelled" || eventObject.resultKind === "cancelled")) {
+                            appendBubbleLogSafe(`已停止：${eventObject.reason || "user_stop"}`);
+                        }
+                        receiveChatFrame(eventObject);
+                    });
                 } catch (parseError) {
                     appendBubbleLogSafe(`帧解析失败：${parseError.message}`);
                 }
@@ -906,15 +1700,26 @@ async function submitChat() {
             }
         }
     } catch (runError) {
-        appendChatError(runError.message);
-        setServerState(false, "请求失败");
+        if (runError && runError.name === "AbortError") {
+            appendBubbleLogSafe("用户停止或页面中断");
+        } else {
+            appendChatError(runError.message);
+            setServerState(false, "请求失败");
+        }
     } finally {
         finalizeChatStreamBubble();
         sendButton.disabled = false;
         sendButton.textContent = "发送";
+        stopButton.hidden = true;
+        stopButton.disabled = true;
+        activeChatAbortController = null;
         loadAgents();
     }
 }
+
+stopButton.addEventListener("click", () => {
+    requestStopHarnessChat();
+});
 
 function appendBubbleLogSafe(logText) {
     if (chatStreamBubble) appendBubbleLog(chatStreamBubble, logText);
@@ -935,12 +1740,442 @@ chatInput.addEventListener("keydown", browserKeyboardEvent => {
 document.getElementById("refresh-agents").addEventListener("click", loadAgents);
 loadMemoryButton.addEventListener("click", loadMemory);
 
-// 历史会话接口尚未在本页接入，禁用空按钮，避免产生“点了没反应”的假故障。
-refreshConversationsButton.disabled = true;
-refreshConversationsButton.title = "后端历史会话接口尚未接入";
-conversationList.innerHTML = '<div class="muted">历史会话功能尚未接入。</div>';
+// ============================================================
+// 历史会话列表
+// ============================================================
+function formatTime(epochSeconds) {
+    if (!epochSeconds) return "未知时间";
+    return new Date(epochSeconds * 1000).toLocaleString("zh-CN", {
+        month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit"
+    });
+}
+
+async function loadConversations() {
+    if (!activeWorkingDirectory) {
+        conversationList.innerHTML = '<div class="muted">请先连接项目。</div>';
+        return;
+    }
+    try {
+        const response = await fetch(
+            `/api/conversations?workingDirectory=${encodeURIComponent(activeWorkingDirectory)}`
+        );
+        const summaries = await readJSONResponse(response, "读取会话列表");
+        renderConversationList(Array.isArray(summaries) ? summaries : []);
+    } catch (loadError) {
+        const errorBox = document.createElement("div");
+        errorBox.className = "inline-error";
+        errorBox.textContent = loadError.message;
+        conversationList.replaceChildren(errorBox);
+    }
+}
+
+function renderConversationList(conversationSummaries) {
+    conversationList.replaceChildren();
+    if (!conversationSummaries.length) {
+        conversationList.innerHTML = '<div class="muted">还没有会话。</div>';
+        return;
+    }
+    for (const summary of conversationSummaries) {
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = "conversation-card";
+        card.dataset.conversationId = summary.conversationId;
+        card.title = summary.title || "未命名会话";
+        const titleEl = document.createElement("span");
+        titleEl.className = "conversation-title";
+        titleEl.textContent = summary.title || "未命名会话";
+        const meta = document.createElement("span");
+        meta.className = "conversation-meta";
+        const time = document.createElement("span");
+        time.textContent = formatTime(summary.updatedAt);
+        const count = document.createElement("span");
+        count.textContent = `${summary.messageCount || summary.currentWindowTokens || 0} 条消息`;
+        meta.append(time, count);
+        card.append(titleEl, meta);
+        card.addEventListener("click", () => loadConversation(summary.conversationId));
+        conversationList.append(card);
+    }
+}
+
+async function loadConversation(conversationId) {
+    try {
+        const response = await fetch(
+            `/api/conversations/${encodeURIComponent(conversationId)}` +
+            `?workingDirectory=${encodeURIComponent(activeWorkingDirectory)}`
+        );
+        const session = await readJSONResponse(response, "读取会话历史");
+        renderConversationHistory(session);
+        for (const card of conversationList.querySelectorAll(".conversation-card")) {
+            card.classList.toggle("active", card.dataset.conversationId === conversationId);
+        }
+    } catch (loadError) {
+        appendChatError(loadError.message);
+    }
+}
+
+function renderConversationHistory(session) {
+    finalizeChatStreamBubble();
+    finalizeBackgroundBubble();
+    chatHistory.replaceChildren();
+    const messages = Array.isArray(session.messages) ? session.messages : [];
+    if (!messages.length) {
+        chatHistory.innerHTML = '<div class="empty-state">这个会话还没有历史记录。</div>';
+        return;
+    }
+    for (const message of messages) {
+        const role = message.role;
+        const textParts = (message.content || [])
+            .filter(block => block.type === "text")
+            .map(block => block.text || "");
+        const text = textParts.join("\n") || "(非文本内容)";
+        const cssClass = role === "user" ? "user" : "";
+        const roleLabel = role === "user" ? "用户" : role === "assistant" ? "Agent" : role;
+        appendChatMessage(roleLabel, cssClass, text);
+    }
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+}
+
+refreshConversationsButton.addEventListener("click", loadConversations);
+document.getElementById("new-session").addEventListener("click", newSession);
+document.getElementById("new-conversation").addEventListener("click", newSession);
 
 if (activeWorkingDirectory) connectProject();
 </script>
+<script>
+    // ============================================================
+    // 多主题切换（哲学美学主题库：localStorage 持久化，默认 roman）
+    // ============================================================
+    (function () {
+        var themeSelect = document.getElementById("theme-select");
+        if (!themeSelect) return;
+        var savedTheme = localStorage.getItem("ccAgentTheme") || "aurora";
+        if (["aurora", "terminal", "neon", "paper", "terra", "forest", "ocean", "mono", "brut", "dynamic"].indexOf(savedTheme) < 0) savedTheme = "aurora";
+        document.documentElement.dataset.theme = savedTheme;
+        themeSelect.value = savedTheme;
+        themeSelect.addEventListener("change", function () {
+            document.documentElement.dataset.theme = themeSelect.value;
+            localStorage.setItem("ccAgentTheme", themeSelect.value);
+        });
+    })();
+</script>
+<script>
+// ============================================================
+// 状态驱动动画观察器（阶段2）：零改动业务逻辑，只把真实运行时状态映射到 body[data-harness-state]
+// 状态：idle / thinking（agent 思考·text_delta 流式渲染中）/ tool（工具调用中）/ working（AGENTS 工作中）
+// ============================================================
+(function () {
+    "use strict";
+    var body = document.body;
+    var lastLen = -1;
+    function setState(s) {
+        if (body.getAttribute("data-harness-state") !== s) {
+            body.setAttribute("data-harness-state", s);
+        }
+    }
+    function evaluate() {
+        var stopBtn = document.getElementById("stop-button");
+        var sendBtn = document.getElementById("send-button");
+        var chatHistory = document.getElementById("chat-history");
+        var working = stopBtn && !stopBtn.hidden;
+        if (!working && sendBtn && sendBtn.textContent.indexOf("执行中") >= 0) working = true;
+        var tool = false;
+        var thinking = false;
+        if (chatHistory) {
+            var logs = chatHistory.querySelectorAll(".bubble-log");
+            for (var i = 0; i < logs.length; i++) {
+                var t = logs[i].textContent || "";
+                if (t.indexOf("调用工具") >= 0 || t.indexOf("工具") >= 0) { tool = true; break; }
+            }
+            var len = chatHistory.textContent.length;
+            if (lastLen >= 0 && len > lastLen) thinking = true;
+            lastLen = len;
+        }
+        setState(working ? "working" : (tool ? "tool" : (thinking ? "thinking" : "idle")));
+    }
+    var mo = new MutationObserver(evaluate);
+    mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden"] });
+    setInterval(evaluate, 600);
+    evaluate();
+})();
+</script>
+<script>
+// ============================================================
+// 动态全息主题增强（仅 dynamic 主题生效）：粒子 + 思考气泡 + 失败气泡
+// 独立块：不修改任何现有业务逻辑，只读 DOM + 拉取 roster 做可视化
+// ============================================================
+(function () {
+    "use strict";
+    var particleLayer = document.querySelector(".particle-layer");
+    var workOrbit = document.querySelector(".work-orbit");
+    if (!particleLayer || !workOrbit) return;
+
+    var enabled = (document.documentElement.dataset.theme === "dynamic");
+    var themeSelect = document.getElementById("theme-select");
+    var workingDirectory = "";
+    var wdInput = document.getElementById("working-directory");
+
+    // 折叠切换：点一下收起 / 再点一下张开（覆盖 hover 行为）
+    var agentsPanel = document.querySelector(".agents-panel");
+    var detailPanel = document.querySelector(".detail-panel");
+    var agentsCollapsed = true;
+    var detailCollapsed = true;
+    function applyCollapse() {
+        if (!enabled) return;
+        if (agentsPanel) agentsPanel.classList.toggle("collapsed", agentsCollapsed);
+        if (detailPanel) detailPanel.classList.toggle("collapsed", detailCollapsed);
+    }
+    if (agentsPanel) agentsPanel.addEventListener("click", function (e) {
+        if (e.target.closest("button")) return; // 点按钮不折叠
+        agentsCollapsed = !agentsCollapsed; applyCollapse();
+    });
+    if (detailPanel) detailPanel.addEventListener("click", function (e) {
+        if (e.target.closest("button")) return;
+        detailCollapsed = !detailCollapsed; applyCollapse();
+    });
+
+    function setEnabled(on) {
+        enabled = on;
+        if (on) {
+            if (!particleLayer.querySelectorAll(".part").length) spawnParticles();
+            applyCollapse();
+            refreshAgents();
+        } else {
+            particleLayer.querySelectorAll(".part").forEach(function (n) { n.remove(); });
+            workOrbit.querySelectorAll(".bubble").forEach(function (n) { n.remove(); });
+            closeAllStreams();
+        }
+    }
+    if (themeSelect) themeSelect.addEventListener("change", function () { setEnabled(themeSelect.value === "dynamic"); });
+    if (wdInput) wdInput.addEventListener("input", function () { workingDirectory = wdInput.value.trim(); });
+
+    // ---- 工作 Agent 专属色板（按名字哈希稳定分配，区别于主管理青色） ----
+    var AGENT_COLORS = [
+        "#ffc94d", // 琥珀金
+        "#ff7eb6", // 玫红
+        "#7bffb0", // 薄荷
+        "#c07bff", // 紫罗兰
+        "#ff9e6b", // 橙
+        "#eaff6b", // 柠檬黄绿
+        "#ff6bf0", // 品红
+        "#ff8a8a"  // 珊瑚
+    ];
+    function hashColor(name) {
+        var h = 0;
+        for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+        return AGENT_COLORS[h % AGENT_COLORS.length];
+    }
+    function hexToRgba(hex, alpha) {
+        var r = parseInt(hex.slice(1, 3), 16);
+        var g = parseInt(hex.slice(3, 5), 16);
+        var b = parseInt(hex.slice(5, 7), 16);
+        return "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
+    }
+
+    // ---- 粒子系统（双色：主管理青色 + 工作 Agent 专属色随机） ----
+    function spawnParticles() {
+        for (var i = 0; i < 30; i++) {
+            var p = document.createElement("div");
+            p.className = "part";
+            var gold = AGENT_COLORS[Math.floor(Math.random() * AGENT_COLORS.length)];
+            p.style.background = "radial-gradient(circle, " + hexToRgba(gold, .9) + ", transparent 70%)";
+            if (i % 2 === 0) {
+                p.style.background = "radial-gradient(circle, rgba(56,224,255,.8), transparent 70%)";
+            }
+            var size = 2 + Math.random() * 4;
+            p.style.width = size + "px";
+            p.style.height = size + "px";
+            p.style.left = (Math.random() * 100) + "%";
+            p.style.animationDelay = (Math.random() * 4) + "s";
+            p.style.animationDuration = (3 + Math.random() * 5) + "s";
+            particleLayer.appendChild(p);
+        }
+    }
+
+    // ---- 气泡管理 ----
+    var runningStreams = {};  // name -> {es, el, textEl}
+    var failedBubbles = {};   // name -> el
+    function bubbles() { return workOrbit.querySelectorAll(".bubble"); }
+
+    function ensureRunningBubble(name, conversationId) {
+        if (runningStreams[name]) return;
+        // 专属配色 + 动画参数 + 特效（按名字哈希，稳定且各不相同）
+        var color = hashColor(name);
+        var colorSoft = hexToRgba(color, .20);
+        var colorBorder = hexToRgba(color, .55);
+        var colorGlow = hexToRgba(color, .35);
+        var colorText = hexToRgba(color, .95);
+        // 动画变体：不同 Agent 不同浮动节奏 / 位移 / 旋转（哈希选择，稳定）
+        var motionVariants = [
+            { dur: "3.2s", y: -10, x: 0,  rot: 0,   peak: .35 },
+            { dur: "4.1s", y: 0,  x: 9,  rot: 1.5, peak: .30 },
+            { dur: "3.6s", y: -6, x: -6, rot: -1,  peak: .40 },
+            { dur: "4.6s", y: 8,  x: 4,  rot: 0,   peak: .25 },
+            { dur: "3.4s", y: -12, x: 5, rot: 2,  peak: .45 },
+            { dur: "4.3s", y: 4,  x: -8, rot: -1.5,peak: .30 },
+            { dur: "3.8s", y: -8, x: 7,  rot: 1,   peak: .35 },
+            { dur: "4.8s", y: 6,  x: 0,  rot: -2,  peak: .28 }
+        ];
+        var variant = motionVariants[hashColor(name).length % motionVariants.length];
+        var animName = "agentFloat" + (hashColor(name).length % 8);
+        // 为该 Agent 注入专属关键帧（不同位移/旋转/节奏）
+        var styleEl = document.createElement("style");
+        styleEl.textContent = "@keyframes " + animName + " {" +
+            "0%,100% { transform: translate(0,0) rotate(0); opacity:.9 } " +
+            (variant.peak * 100) + "% { transform: translate(" + variant.x + "px," + variant.y + "px) rotate(" + variant.rot + "deg); opacity:1 }" +
+            "}";
+        document.head.appendChild(styleEl);
+        var b = document.createElement("div");
+        b.className = "bubble bubble-running";
+        // 注入专属配色：不透明深色实底 + 专属色描边辉光（悬浮不叠字）
+        b.style.background = "linear-gradient(135deg, rgba(22,28,44,.97), rgba(16,20,34,.97))";
+        b.style.borderColor = colorBorder;
+        b.style.boxShadow = "0 0 22px " + colorGlow + ", inset 0 0 12px " + hexToRgba(color, .08);
+        b.style.animation = animName + " " + variant.dur + " ease-in-out infinite";
+        var head = document.createElement("div");
+        head.className = "bubble-head";
+        head.style.color = colorText;
+        var dot = document.createElement("span");
+        dot.className = "dot";
+        dot.style.background = color;
+        dot.style.boxShadow = "0 0 8px " + hexToRgba(color, .8);
+        var label = document.createElement("span");
+        label.textContent = name;
+        head.append(dot, label);
+        var textEl = document.createElement("div");
+        textEl.className = "bubble-think";
+        textEl.style.color = hexToRgba(color, .8);
+        textEl.style.borderTopColor = hexToRgba(color, .25);
+        textEl.textContent = "思考中…";
+        b.append(head, textEl);
+        // 轨道内流式排布：气泡用 flex 列自动堆叠，永不重叠
+        var lane = document.getElementById("lane-running");
+        if (!lane) {
+            lane = document.createElement("div");
+            lane.id = "lane-running";
+            lane.style.cssText = "position:fixed;left:88px;top:110px;bottom:90px;width:250px;display:flex;flex-direction:column;gap:22px;overflow:hidden;z-index:6;pointer-events:none";
+            workOrbit.appendChild(lane);
+        }
+        lane.appendChild(b);
+        runningStreams[name] = { el: b, textEl: textEl, es: null, animName: animName, animDur: variant.dur, color: color };
+        // 开 EventSource 捕获思考过程（text_delta）
+        if (conversationId && workingDirectory) {
+            var es = new EventSource(
+                "/api/conversations/" + encodeURIComponent(conversationId) +
+                "/events?workingDirectory=" + encodeURIComponent(workingDirectory)
+            );
+            runningStreams[name].es = es;
+            es.onmessage = function (ev) {
+                try {
+                    var frame = JSON.parse(ev.data);
+                    if (frame.type === "text_delta" && frame.text) {
+                        appendThinkText(runningStreams[name], frame.text);
+                    } else if (frame.type === "tool_started" && frame.toolName) {
+                        appendThinkText(runningStreams[name], " [工具:" + frame.toolName + "] ");
+                    } else if (frame.type === "tool_failed") {
+                        appendThinkText(runningStreams[name], " [工具失败] ");
+                    }
+                } catch (e) { /* 忽略解析错误 */ }
+            };
+        }
+    }
+    function appendThinkText(entry, text) {
+        if (!entry || !entry.textEl) return;
+        entry.textEl.textContent += text;
+        if (entry.textEl.textContent.length > 400) {
+            entry.textEl.textContent = entry.textEl.textContent.slice(-400);
+        }
+    }
+    function removeRunningBubble(name) {
+        var entry = runningStreams[name];
+        if (!entry) return;
+        if (entry.es) { try { entry.es.close(); } catch (e) {} }
+        if (entry.el) entry.el.remove();
+        // 清理为该 Agent 注入的动态 keyframes style，避免累积
+        if (entry.animName) {
+            var styles = document.querySelectorAll("style");
+            for (var i = 0; i < styles.length; i++) {
+                if (styles[i].textContent.indexOf("@keyframes " + entry.animName) >= 0) {
+                    styles[i].remove();
+                }
+            }
+        }
+        delete runningStreams[name];
+    }
+
+    function ensureFailedBubble(name) {
+        if (failedBubbles[name]) return;
+        // 失败气泡沿用该 Agent 专属色，但降低饱和度 + 红色倾向（失败语义）
+        var color = hashColor(name);
+        var b = document.createElement("div");
+        b.className = "bubble bubble-failed";
+        // 不透明深色实底 + 专属色描边（悬浮不叠字）
+        b.style.background = "linear-gradient(135deg, rgba(38,20,32,.97), rgba(26,14,22,.97))";
+        b.style.borderColor = hexToRgba(color, .6);
+        b.style.color = color;
+        b.style.boxShadow = "0 0 20px " + hexToRgba(color, .22) + ", inset 0 0 10px " + hexToRgba(color, .06);
+        var label = document.createElement("span");
+        label.textContent = "✗ " + name + " 失败";
+        b.appendChild(label);
+        // 右侧轨道：flex 列自动堆叠，永不重叠
+        var lane = document.getElementById("lane-failed");
+        if (!lane) {
+            lane = document.createElement("div");
+            lane.id = "lane-failed";
+            lane.style.cssText = "position:fixed;right:88px;top:110px;bottom:90px;width:210px;display:flex;flex-direction:column;align-items:flex-end;gap:16px;overflow:hidden;z-index:6;pointer-events:none";
+            workOrbit.appendChild(lane);
+        }
+        lane.appendChild(b);
+        failedBubbles[name] = b;
+    }
+    function removeFailedBubble(name) {
+        if (failedBubbles[name]) {
+            failedBubbles[name].remove();
+            delete failedBubbles[name];
+        }
+    }
+
+    // ---- 拉取 roster 并同步气泡 ----
+    function refreshAgents() {
+        if (!enabled) return;
+        if (!workingDirectory && wdInput) workingDirectory = wdInput.value.trim();
+        if (!workingDirectory) return;
+        fetch("/api/harness/agents?workingDirectory=" + encodeURIComponent(workingDirectory))
+            .then(function (r) { return r.json(); })
+            .then(function (roster) {
+                var agents = roster.agents || [];
+                var runningNow = {};
+                var failedNow = {};
+                agents.forEach(function (a) {
+                    if (a.status === "running") {
+                        runningNow[a.name] = true;
+                        ensureRunningBubble(a.name, a.conversationId);
+                    } else if (a.status === "failed") {
+                        failedNow[a.name] = true;
+                        ensureFailedBubble(a.name);
+                    }
+                });
+                Object.keys(runningStreams).forEach(function (n) {
+                    if (!runningNow[n]) removeRunningBubble(n);
+                });
+                Object.keys(failedBubbles).forEach(function (n) {
+                    if (!failedNow[n]) removeFailedBubble(n);
+                });
+            })
+            .catch(function () { /* 服务未连接时静默 */ });
+    }
+
+    function closeAllStreams() {
+        Object.keys(runningStreams).forEach(removeRunningBubble);
+    }
+
+    setInterval(refreshAgents, 2000);
+    setEnabled(enabled);
+})();
+</script>
+})();
+</script>
+
+</script>
+
 </body>
 </html>

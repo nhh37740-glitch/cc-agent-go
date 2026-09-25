@@ -97,6 +97,27 @@ V4 官方 `tokenizer.json`：
 编号。MCP 请求失败时页面显示实际 HTTP 状态和后端错误 JSON；如果 Go 服务
 未运行，页面明确显示连接失败。
 
+## v16 Harness 编排层
+
+Harness 自身是一个只持有 `agent` 和 `memory` 两个工具的编排型 Agent。
+它负责创建被管理 Agent、派任务并回收结果：
+
+- `agent` 工具：三参数（agent/request/forget），非阻塞启动，后台 goroutine
+  执行；同名 Agent 拥有同一份持久记忆。
+- 注册表：`agents.json` 落盘，`sync.RWMutex`，容量上限
+  `MAX_HARNESS_AGENTS`（默认 11）。
+- 完成队列：后台结束后自动入队，消费者逐条标记已收取后触发 Harness
+  自调用汇报。
+- 实况注入：每次 Harness 对话自动追加当前 Agent 名单、MCP Server 和已创建应用。
+- `harness.html`：Agent 名单轮询、对话区 SSE、会话历史、Agent 详情逐 token 进度。
+
+Harness API 路由：
+
+- `POST /api/harness/chat/stream`
+- `GET /api/harness/agents`
+- `GET /api/harness/agents/{name}/memory`
+- `GET /harness`
+
 ## 运行与验证
 
 ```text
@@ -110,6 +131,9 @@ go test ./...
 打开 `http://localhost:8080/`，填写项目绝对目录并点击“加载项目”。左侧显示
 该目录的全部会话和 MCP Server；中间显示会话历史、当前任务和结果；右侧显示
 本次 Agent 事件及服务端 JSON 日志。
+
+打开 `http://localhost:8080/harness`，进入 Harness 编排页：左侧 Agent 名单，
+中间对话与会话历史，右侧 Agent 进度与记忆。
 
 项目看板：[GitHub Project #1](https://github.com/users/nhh37740-glitch/projects/1/views/1)。
 完整版本顺序见 [ROADMAP.md](ROADMAP.md)，实际文件和函数见

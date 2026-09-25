@@ -24,12 +24,13 @@ func (managedAgentTool) Name() string { return "agent" }
 
 func (toolForManagedAgents *managedAgentTool) Description() string {
 	return fmt.Sprintf(`启动或管理一个有持久记忆的独立 Agent。
-同一个名字永远是同一个 Agent、同一份记忆：第一次调用写清角色与职责，之后写当前任务。
-Agent 在后台独立执行，工具立即返回 running；完成后结果会自动汇报给你。
-被管理 Agent 可使用 bash、activate_skill、create_skill 和当前已连接的 MCP 工具。
-Agent 数量上限 %d 个；名额满时可以用 forget 释放不再需要的 Agent，或复用现有 Agent。
-forget 为 true 时从名单移除该 Agent 并释放名额；它的记忆文件保留，同名重建时记忆延续。`,
-		toolForManagedAgents.runtime.agentRegistry.MaximumAgents())
+同一名字永远是同一个 Agent、同一份记忆。
+固定 4 个常驻专项 Agent（编码员/调研员/审查员/运维员），职责见各自 residents/<slug>/AGENTS.md；
+派常驻任务时 agent 参数必须用固定名，不得另起近义名。
+其他名字为临时 Agent：只做一次性任务，不创建专属文档，靠最终汇报回传。
+被管理 Agent 可使用 command、file、activate_skill、create_skill 和当前已连接的 MCP 工具。
+Agent 数量上限 %d 个；常驻固定占名额，forget 只能移除临时 Agent。
+同一个 Agent 正在运行时要等它完成，不能重复启用。`, toolForManagedAgents.runtime.agentRegistry.MaximumAgents())
 }
 
 func (managedAgentTool) InputSchema() map[string]any {
@@ -66,6 +67,12 @@ func (toolForManagedAgents *managedAgentTool) Execute(
 
 	forgetAgent, _ := toolArguments["forget"].(bool)
 	if forgetAgent {
+		if IsResidentName(trimmedAgentName) {
+			return "", fmt.Errorf(
+				"不能 forget 常驻 Agent %q；常驻 Agent 固定保留，只能复用",
+				trimmedAgentName,
+			)
+		}
 		forgottenRecord, forgetError :=
 			toolForManagedAgents.runtime.agentRegistry.ForgetAgent(
 				trimmedAgentName,
@@ -107,6 +114,12 @@ func (toolForManagedAgents *managedAgentTool) Execute(
 	if markRunningError :=
 		toolForManagedAgents.runtime.agentRegistry.MarkRunning(trimmedAgentName); markRunningError != nil {
 		return "", markRunningError
+	}
+	if setTaskError := toolForManagedAgents.runtime.agentRegistry.SetCurrentTask(
+		trimmedAgentName,
+		trimmedRequestText,
+	); setTaskError != nil {
+		return "", setTaskError
 	}
 
 	go toolForManagedAgents.runtime.runManagedAgent(

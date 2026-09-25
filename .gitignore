@@ -8,6 +8,7 @@ logs/*.jsonl
 **/data/sessions/
 **/.cc-agent/
 
+.playwright-mcp/
 .cache/
 .gocache/
 
@@ -27,3 +28,21 @@ democode/v11/config/config.go
 democode/v6/workspace/
 democode/v6.5/workspace/
 democode/v7/workspace/
+
+# Local research captures and runtime workspace
+workspace/
+*-search.txt
+*-search.md
+page-*.txt
+page-*.md
+harness.bak.html
+*.png
+
+
+# Local research captures (not project source)
+*-snapshot.md
+google-results*.txt
+search-results*.md
+openai_article.txt
+youtube-trending-search.md
+

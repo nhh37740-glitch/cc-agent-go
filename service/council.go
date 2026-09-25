@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"sort"
 
@@ -82,7 +83,7 @@ func RunCouncil(topic string, maxRounds int, interruption string,
 			messages := make([]model.Message, len(history))
 			copy(messages, history)
 
-			resp, err := Chat(messages, systemPrompt, cfg, nil, 99120)
+			resp, err := Chat(context.Background(), messages, systemPrompt, cfg, nil, 99120)
 			if err != nil {
 				return transcript, totalTokens, fmt.Errorf("第 %d 轮 %s 发言失败: %w", round, name, err)
 			}

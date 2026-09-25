@@ -84,3 +84,10 @@ type AgentCompletedEvent struct {
 }
 
 func (AgentCompletedEvent) agentEventKind() string { return "completed" }
+
+type AgentCancelledEvent struct {
+	PartialText string
+	Reason      string
+}
+
+func (AgentCancelledEvent) agentEventKind() string { return "cancelled" }

@@ -68,7 +68,16 @@ v0–v10 已经完成 Agent 基础能力：HTTP、SSE、模型调用、工具循
 - `host.RunParticipantTurn` 展示外部主持人如何用同一个 Agent 执行角色任务
 - v15 不新增取消、重试、checkpoint、A2A、WebSocket 或 MCP 并发控制
 
-## v16：A2A 与远程 Agent 调用
+## v16：Harness ALL IN AGENT（编排层）
+
+目标：Harness 自身是一个只持有 agent 与 memory 两个工具的编排型 Agent，负责创建、派任务和回收被管理 Agent。
+
+- agent 工具（三参数自然语言，非阻塞启动，后台 goroutine 执行）
+- 注册表（agents.json 落盘，sync.RWMutex，容量上限 MAX_HARNESS_AGENTS 默认 11）
+- 完成队列、memory 工具、实况注入、harness.html 页面
+- 应用运行时与元老院端到端仍属本版本后续任务
+
+## v17：A2A 与远程 Agent 调用（计划中）
 
 目标：Go Agent 可以读取其他服务器的 Agent 信息，并向远程 Agent 发送任务。
 

@@ -21,18 +21,21 @@ const (
 )
 
 // ManagedAgentRecord 是被管理 Agent 的运行元数据。
-// 角色与职责不存注册表——由 Agent 自己的会话记忆持久保存。
+// 常驻 Agent 的详细职责在 residents/<slug>/AGENTS.md；临时 Agent 不维护专属文档。
 type ManagedAgentRecord struct {
 	Name            string             `json:"name"`
 	Slug            string             `json:"slug"`
+	Kind            AgentKind          `json:"kind"`
 	ConversationID  string             `json:"conversationId"`
 	Status          ManagedAgentStatus `json:"status"`
+	CurrentTask     string             `json:"currentTask,omitempty"`
 	Result          string             `json:"result,omitempty"`
 	ResultCollected bool               `json:"resultCollected"`
 	LastError       string             `json:"lastError,omitempty"`
 	TaskCount       int                `json:"taskCount"`
 	CreatedAt       float64            `json:"createdAt"`
 	UpdatedAt       float64            `json:"updatedAt"`
+	LastHeartbeatAt float64            `json:"lastHeartbeatAt,omitempty"`
 }
 
 type agentRegistryFile struct {
@@ -88,6 +91,9 @@ func LoadAgentRegistry(
 		if agentRecord == nil || agentRecord.Name == "" {
 			continue
 		}
+		if agentRecord.Kind == "" {
+			agentRecord.Kind = ClassifyAgentName(agentRecord.Name)
+		}
 		loadedRegistry.agentsByName[agentRecord.Name] = agentRecord
 		loadedRegistry.creationOrder = append(
 			loadedRegistry.creationOrder,
@@ -95,6 +101,52 @@ func LoadAgentRegistry(
 		)
 	}
 	return loadedRegistry, nil
+}
+
+// EnsurePermanentResidents 确保 4 个常驻 Agent 已在注册表中（idle）。
+// 已存在的记录只补齐 kind/slug，不重置状态与结果。
+// 常驻不占用池容量名额：容量上限只约束临时 Agent，避免池太小导致无法启动。
+func (agentRegistry *AgentRegistry) EnsurePermanentResidents() error {
+	agentRegistry.registryMutex.Lock()
+	defer agentRegistry.registryMutex.Unlock()
+
+	changed := false
+	for _, residentDefinition := range PermanentResidents {
+		existingRecord, alreadyExists := agentRegistry.agentsByName[residentDefinition.Name]
+		if alreadyExists {
+			if existingRecord.Kind != AgentKindResident {
+				existingRecord.Kind = AgentKindResident
+				changed = true
+			}
+			if existingRecord.Slug == "" {
+				existingRecord.Slug = residentDefinition.Slug
+				existingRecord.ConversationID = ManagedAgentConversationID(residentDefinition.Slug)
+				changed = true
+			}
+			continue
+		}
+		now := currentEpochSeconds()
+		newRecord := &ManagedAgentRecord{
+			Name:            residentDefinition.Name,
+			Slug:            residentDefinition.Slug,
+			Kind:            AgentKindResident,
+			ConversationID:  ManagedAgentConversationID(residentDefinition.Slug),
+			Status:          ManagedAgentStatusIdle,
+			ResultCollected: true,
+			CreatedAt:       now,
+			UpdatedAt:       now,
+		}
+		agentRegistry.agentsByName[residentDefinition.Name] = newRecord
+		agentRegistry.creationOrder = append(
+			agentRegistry.creationOrder,
+			residentDefinition.Name,
+		)
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	return agentRegistry.saveLocked()
 }
 
 func currentEpochSeconds() float64 {
@@ -133,11 +185,38 @@ func (agentRegistry *AgentRegistry) UpsertAgent(
 		)
 	}
 
+	if len(agentRegistry.agentsByName) >= agentRegistry.maximumAgents {
+		return ManagedAgentRecord{}, false, fmt.Errorf(
+			"Agent 数量已达上限 %d（当前 %d 个：%s）。"+
+				"请先用 forget 释放不再需要的 Agent，或复用现有 Agent",
+			agentRegistry.maximumAgents,
+			len(agentRegistry.agentsByName),
+			strings.Join(agentRegistry.agentNamesLocked(), ", "),
+		)
+	}
+
+	if agentRegistry.TemporaryAgentCountLocked() >= agentRegistry.maximumAgents {
+		return ManagedAgentRecord{}, false, fmt.Errorf(
+			"临时 Agent 数量已达上限 %d（当前临时 %d 个：%s）。"+
+				"常驻 Agent 不计入上限；可 forget 临时 Agent 释放名额，或复用现有 Agent",
+			agentRegistry.maximumAgents,
+			agentRegistry.TemporaryAgentCountLocked(),
+			strings.Join(agentRegistry.agentNamesLocked(), ", "),
+		)
+	}
+
 	agentSlug := agentRegistry.availableSlugLocked(trimmedAgentName)
 	now := currentEpochSeconds()
+	agentKind := ClassifyAgentName(trimmedAgentName)
+	if agentKind == AgentKindResident {
+		if residentDefinition, found := ResidentByName(trimmedAgentName); found {
+			agentSlug = residentDefinition.Slug
+		}
+	}
 	newRecord := &ManagedAgentRecord{
 		Name:            trimmedAgentName,
 		Slug:            agentSlug,
+		Kind:            agentKind,
 		ConversationID:  ManagedAgentConversationID(agentSlug),
 		Status:          ManagedAgentStatusIdle,
 		ResultCollected: true,
@@ -189,6 +268,12 @@ func (agentRegistry *AgentRegistry) ForgetAgent(
 	if !alreadyExists {
 		return ManagedAgentRecord{}, fmt.Errorf("没有名为 %q 的 Agent", agentName)
 	}
+	if existingRecord.Kind == AgentKindResident || IsResidentName(agentName) {
+		return ManagedAgentRecord{}, fmt.Errorf(
+			"不能 forget 常驻 Agent %q；常驻 Agent 固定保留，只能复用",
+			agentName,
+		)
+	}
 	delete(agentRegistry.agentsByName, agentName)
 	for index, orderedName := range agentRegistry.creationOrder {
 		if orderedName == agentName {
@@ -239,7 +324,7 @@ func (agentRegistry *AgentRegistry) agentNamesLocked() []string {
 	return agentNames
 }
 
-// MarkRunning 标记 Agent 开始执行新任务，清空上一次结果。
+// MarkRunning 标记 Agent 开始执行新任务，清空上一次结果和当前任务。
 func (agentRegistry *AgentRegistry) MarkRunning(agentName string) error {
 	agentRegistry.registryMutex.Lock()
 	defer agentRegistry.registryMutex.Unlock()
@@ -251,8 +336,46 @@ func (agentRegistry *AgentRegistry) MarkRunning(agentName string) error {
 	agentRecord.Result = ""
 	agentRecord.ResultCollected = true
 	agentRecord.LastError = ""
+	agentRecord.CurrentTask = ""
+	agentRecord.LastHeartbeatAt = currentEpochSeconds()
 	agentRecord.UpdatedAt = currentEpochSeconds()
 	return agentRegistry.saveLocked()
+}
+
+// SetCurrentTask 记录 Agent 当前正在执行的任务摘要，供实况注入与心跳检测。
+func (agentRegistry *AgentRegistry) SetCurrentTask(
+	agentName string,
+	taskText string,
+) error {
+	agentRegistry.registryMutex.Lock()
+	defer agentRegistry.registryMutex.Unlock()
+	agentRecord, found := agentRegistry.agentsByName[agentName]
+	if !found {
+		return fmt.Errorf("没有名为 %q 的 Agent", agentName)
+	}
+	agentRecord.CurrentTask = taskText
+	agentRecord.LastHeartbeatAt = currentEpochSeconds()
+	agentRecord.UpdatedAt = currentEpochSeconds()
+	return agentRegistry.saveLocked()
+}
+
+// MarkHeartbeat 刷新 Agent 的最后心跳时间。
+// 被管理 Agent 每轮循环调用一次；主管理据此判断 Agent 是否仍在工作。
+func (agentRegistry *AgentRegistry) MarkHeartbeat(agentName string) error {
+	agentRegistry.registryMutex.Lock()
+	defer agentRegistry.registryMutex.Unlock()
+	agentRecord, found := agentRegistry.agentsByName[agentName]
+	if !found {
+		return fmt.Errorf("没有名为 %q 的 Agent", agentName)
+	}
+	agentRecord.LastHeartbeatAt = currentEpochSeconds()
+	agentRecord.UpdatedAt = currentEpochSeconds()
+	return agentRegistry.saveLocked()
+}
+
+// SetAgentStatusForHarness 供 external 调用（HTTP 保活接口）复用。
+func (agentRegistry *AgentRegistry) HeartbeatAgent(agentName string) error {
+	return agentRegistry.MarkHeartbeat(agentName)
 }
 
 // MarkCompleted 标记完成并写入格式化结果，等待检查循环收取。
@@ -270,12 +393,15 @@ func (agentRegistry *AgentRegistry) MarkCompleted(
 	agentRecord.Result = formattedResult
 	agentRecord.ResultCollected = false
 	agentRecord.LastError = ""
+	agentRecord.CurrentTask = ""
 	agentRecord.TaskCount++
 	agentRecord.UpdatedAt = currentEpochSeconds()
 	return agentRegistry.saveLocked()
 }
 
 // MarkFailed 标记失败并写入错误，等待检查循环收取。
+// 注意：此方法会清空 Result。需要保留失败时的汇报正文时请用
+// MarkFailedWithReport。
 func (agentRegistry *AgentRegistry) MarkFailed(agentName string, cause error) error {
 	agentRegistry.registryMutex.Lock()
 	defer agentRegistry.registryMutex.Unlock()
@@ -289,6 +415,32 @@ func (agentRegistry *AgentRegistry) MarkFailed(agentName string, cause error) er
 	if cause != nil {
 		agentRecord.LastError = cause.Error()
 	}
+	agentRecord.CurrentTask = ""
+	agentRecord.TaskCount++
+	agentRecord.UpdatedAt = currentEpochSeconds()
+	return agentRegistry.saveLocked()
+}
+
+// MarkFailedWithReport 标记失败，同时把 Agent 的汇报正文保存到 Result，
+// 确保完成队列转给主管理时即使失败也有进度上下文可看。
+func (agentRegistry *AgentRegistry) MarkFailedWithReport(
+	agentName string,
+	cause error,
+	reportText string,
+) error {
+	agentRegistry.registryMutex.Lock()
+	defer agentRegistry.registryMutex.Unlock()
+	agentRecord, found := agentRegistry.agentsByName[agentName]
+	if !found {
+		return fmt.Errorf("没有名为 %q 的 Agent", agentName)
+	}
+	agentRecord.Status = ManagedAgentStatusFailed
+	agentRecord.Result = reportText
+	agentRecord.ResultCollected = false
+	if cause != nil {
+		agentRecord.LastError = cause.Error()
+	}
+	agentRecord.CurrentTask = ""
 	agentRecord.TaskCount++
 	agentRecord.UpdatedAt = currentEpochSeconds()
 	return agentRegistry.saveLocked()
@@ -352,6 +504,24 @@ func (agentRegistry *AgentRegistry) AgentCount() int {
 	agentRegistry.registryMutex.RLock()
 	defer agentRegistry.registryMutex.RUnlock()
 	return len(agentRegistry.agentsByName)
+}
+
+// TemporaryAgentCount 返回临时 Agent 数量（容量上限只约束临时 Agent）。
+func (agentRegistry *AgentRegistry) TemporaryAgentCount() int {
+	agentRegistry.registryMutex.RLock()
+	defer agentRegistry.registryMutex.RUnlock()
+	return agentRegistry.TemporaryAgentCountLocked()
+}
+
+// TemporaryAgentCountLocked 返回临时 Agent 数量（调用前必须持有任意锁）。
+func (agentRegistry *AgentRegistry) TemporaryAgentCountLocked() int {
+	count := 0
+	for _, agentRecord := range agentRegistry.agentsByName {
+		if agentRecord.Kind != AgentKindResident {
+			count++
+		}
+	}
+	return count
 }
 
 func (agentRegistry *AgentRegistry) MaximumAgents() int {

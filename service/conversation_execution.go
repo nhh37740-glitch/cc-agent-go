@@ -33,3 +33,25 @@ func (
 	conversationExecutionLock.Lock()
 	return conversationExecutionLock.Unlock
 }
+
+// TryLockConversation 尝试立即取得指定会话的主 Agent执行锁，不等待。
+// 成功时返回解锁函数和 true；失败（锁被其他执行持有）时返回 nil 和 false。
+// 用于完成队列消费者：主管理对话持锁时不死等，而是稍后重试或交给对话前处理。
+func (
+	conversationExecutionLocks *ConversationExecutionLocks,
+) TryLockConversation(conversationID string) (func(), bool) {
+	conversationExecutionLocks.conversationLocksMutex.Lock()
+	conversationExecutionLock :=
+		conversationExecutionLocks.locksByConversationID[conversationID]
+	if conversationExecutionLock == nil {
+		conversationExecutionLock = &sync.Mutex{}
+		conversationExecutionLocks.locksByConversationID[conversationID] =
+			conversationExecutionLock
+	}
+	conversationExecutionLocks.conversationLocksMutex.Unlock()
+
+	if !conversationExecutionLock.TryLock() {
+		return nil, false
+	}
+	return conversationExecutionLock.Unlock, true
+}

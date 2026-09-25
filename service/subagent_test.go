@@ -222,8 +222,11 @@ func TestRunSubAgentTruncatesLongToolResult(t *testing.T) {
 	}
 
 	toolResultText := findToolResultText(secondRoundDeepSeekRequest.Messages)
-	if !strings.Contains(toolResultText, "结果已按 token 截断") {
+	if !strings.Contains(toolResultText, "工具结果已截断") {
 		t.Fatalf("truncated tool result = %q", toolResultText)
+	}
+	if !strings.Contains(toolResultText, "rg -n") {
+		t.Fatalf("截断提示应包含精确读取指引（rg），实际 = %q", toolResultText)
 	}
 	if !strings.HasPrefix(toolResultText, "abcdefghijklmnopqrstuvwxyz") {
 		t.Fatal("truncated tool result does not preserve the beginning")

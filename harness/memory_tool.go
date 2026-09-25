@@ -86,6 +86,21 @@ func (memoryToolForHarness *harnessMemoryTool) Execute(
 	if loadConversationError != nil {
 		return "", fmt.Errorf("读取 Harness 会话记忆失败: %w", loadConversationError)
 	}
+	// 会话文件尚未创建时 LoadConversation 返回 (nil, nil)，按空会话处理。
+	if sessionJSON == nil {
+		memoryResultForEmptySession, encodeError := json.Marshal(map[string]any{
+			"conversationId": HarnessConversationID,
+			"title":          "",
+			"messageCount":   0,
+			"returnedCount":  0,
+			"messages":       []rememberedMessage{},
+			"note":           "Harness 会话文件尚未创建，当前没有可检索的记忆",
+		})
+		if encodeError != nil {
+			return "", fmt.Errorf("编码空记忆结果失败: %w", encodeError)
+		}
+		return string(memoryResultForEmptySession), nil
+	}
 
 	allMessages := sessionJSON.Messages
 	startIndex := len(allMessages) - recentMessages

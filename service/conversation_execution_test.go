@@ -59,3 +59,28 @@ func TestConversationExecutionLocksAllowDifferentConversations(
 		t.Fatal("different conversation was blocked")
 	}
 }
+
+func TestConversationExecutionLocksTryLock(t *testing.T) {
+	conversationExecutionLocks := NewConversationExecutionLocks()
+
+	// 空闲时 TryLock 成功。
+	unlockExecution, locked :=
+		conversationExecutionLocks.TryLockConversation("conversation-c")
+	if !locked {
+		t.Fatal("空闲会话 TryLock 应成功")
+	}
+
+	// 已持有时 TryLock 失败。
+	if _, lockedAgain :=
+		conversationExecutionLocks.TryLockConversation("conversation-c"); lockedAgain {
+		t.Fatal("已持有会话的 TryLock 应失败")
+	}
+
+	unlockExecution()
+
+	// 释放后可再次 TryLock。
+	if _, lockedAfterRelease :=
+		conversationExecutionLocks.TryLockConversation("conversation-c"); !lockedAfterRelease {
+		t.Fatal("释放后 TryLock 应成功")
+	}
+}

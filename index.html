@@ -1378,6 +1378,7 @@
                           required></textarea>
                 <div class="composer-actions">
                     <span class="composer-help">会话保存在 项目目录/.cc-agent/sessions/ · Ctrl+Enter 执行</span>
+                    <button id="stop-agent" class="button ghost" type="button" hidden>停止</button>
                     <button id="start-agent" class="button primary" type="submit">开始执行</button>
                 </div>
             </form>
@@ -1451,6 +1452,9 @@
     const taskForm = document.getElementById("agent-task-form");
     const taskMessage = document.getElementById("task-message");
     const startAgentButton = document.getElementById("start-agent");
+    const stopAgentButton = document.getElementById("stop-agent");
+    let activeTaskAbortController = null;
+    let activeTaskConversationID = "";
     const runStatus = document.getElementById("run-status");
     const runStatusText = document.getElementById("run-status-text");
     const runLogList = document.getElementById("run-log-list");
@@ -2161,6 +2165,21 @@
     // ============================================================
     // 提交任务（POST SSE）
     // ============================================================
+    async function requestStopActiveTask() {
+        const conversationID = activeTaskConversationID || activeConversationID;
+        if (!conversationID) return;
+        try {
+            await fetch(`/api/conversations/${encodeURIComponent(conversationID)}/stop`, {
+                method: "POST"
+            });
+            appendRunLog("stop_requested", { conversationId: conversationID });
+            setRunState("running", "正在停止…");
+        } catch (stopError) {
+            appendRunLog("stop_request_failed", stopError.message);
+        }
+        if (activeTaskAbortController) activeTaskAbortController.abort();
+    }
+
     async function submitTask() {
         if (startAgentButton.disabled) return;
         const workingDirectory = currentWorkingDirectory();
@@ -2187,6 +2206,10 @@
         setRunState("running", "正在连接 Agent");
         startAgentButton.disabled = true;
         startAgentButton.textContent = "执行中";
+        stopAgentButton.hidden = false;
+        stopAgentButton.disabled = false;
+        activeTaskConversationID = activeConversationID || "";
+        activeTaskAbortController = new AbortController();
         appendRunLog("task_submitted", {
             conversationId: activeConversationID || "(由 Go 创建)",
             defaultPromptApplied: activeDefaultPrompt.length > 0
@@ -2203,7 +2226,8 @@
                     workingDirectory,
                     conversationId: activeConversationID,
                     message: outgoingMessage
-                })
+                }),
+                signal: activeTaskAbortController.signal
             });
             if (!streamResponse.ok) {
                 await readJSONResponse(streamResponse, "启动 Agent");
@@ -2223,20 +2247,42 @@
                 for (const frame of frames) {
                     const dataLine = frame.split("\n").find(line => line.startsWith("data: "));
                     if (!dataLine) continue;
-                    receiveAgentEvent(parseStreamFrame(dataLine.slice(6)));
+                    const eventObject = parseStreamFrame(dataLine.slice(6));
+                    if (eventObject && eventObject.type === "conversation_id" && eventObject.conversationId) {
+                        activeTaskConversationID = eventObject.conversationId;
+                    }
+                    if (eventObject && (eventObject.type === "cancelled" || eventObject.resultKind === "cancelled")) {
+                        setRunState("idle", "已停止，可发送纠正消息");
+                        appendRunLog("cancelled", eventObject);
+                    }
+                    receiveAgentEvent(eventObject);
                 }
                 if (done) break;
             }
         } catch (runError) {
-            finalizeStreamingMessage();
-            setRunState("failed", "Agent 执行失败");
-            appendRunLog("browser_request_failed", runError.message);
-            setServerState(false, "Go 服务请求失败");
+            if (runError && runError.name === "AbortError") {
+                finalizeStreamingMessage();
+                setRunState("idle", "已停止，可发送纠正消息");
+                appendRunLog("browser_aborted", "用户停止或页面中断");
+            } else {
+                finalizeStreamingMessage();
+                setRunState("failed", "Agent 执行失败");
+                appendRunLog("browser_request_failed", runError.message);
+                setServerState(false, "Go 服务请求失败");
+            }
         } finally {
             startAgentButton.disabled = false;
             startAgentButton.textContent = "开始执行";
+            stopAgentButton.hidden = true;
+            stopAgentButton.disabled = true;
+            activeTaskAbortController = null;
+            activeTaskConversationID = "";
         }
     }
+
+    stopAgentButton.addEventListener("click", () => {
+        requestStopActiveTask();
+    });
 
     taskForm.addEventListener("submit", browserSubmitEvent => {
         browserSubmitEvent.preventDefault();

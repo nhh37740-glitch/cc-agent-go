@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,9 @@ var safeConversationIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
 type AgentExecutionEnvironment struct {
 	WorkingDirectory string
 	ConversationID   string
+	// Context 控制本次 Run 是否继续。用户停止或客户端断开时会被取消。
+	// Validate 不检查 Context；为空时 Run 使用 context.Background()。
+	Context context.Context
 }
 
 func (executionEnvironment AgentExecutionEnvironment) Validate() error {

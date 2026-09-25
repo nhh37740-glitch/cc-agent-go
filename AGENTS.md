@@ -74,7 +74,7 @@ curl http://localhost:8080/api/chat -X POST -H "Content-Type: application/json" 
 
 ## 4. 架构契约
 
-### 主线实际目录结构（v15）
+### 主线实际目录结构（v16）
 
 ```
 cc-agent-go/
@@ -111,7 +111,8 @@ cc-agent-go/
 │   └── errors.go            # 自定义错误类型、DeepSeek 状态与网络错误分类
 ├── tool/
 │   ├── tool.go              # Tool 接口定义（隐式实现）
-│   ├── bash.go              # 白名单命令执行 + 30 秒超时
+│   ├── bash.go              # NativeCommandTool（工具名 command）：白名单原生 exe + 结构化结果
+│   ├── file_crud_tool.go    # FileTool：工作目录内文件增删改查
 │   ├── skill.go             # SkillTool：activate_skill —— 动态加载 skill prompt
 │   ├── create_skill.go      # CreateSkillTool：create_skill —— Agent 创建新 skill
 │   ├── function.go          # 动态工具：定义、参数和执行函数
@@ -119,6 +120,20 @@ cc-agent-go/
 │   └── validator.go         # 路径安全检查：resolve → Clean → HasPrefix
 ├── host/
 │   └── participant_host.go  # 外部应用调用 Agent 的示例
+├── harness/
+│   ├── harness.go           # 加载 prompt、装配 Runtime 依赖
+│   ├── runtime.go           # 每项目 Runtime：派任务、强制汇报、完成队列、实况 prompt
+│   ├── registry.go          # ManagedAgent 注册表（常驻/临时 kind）与 agents.json 落盘
+│   ├── residents.go         # 4 个常驻专项 Agent 定义（编码员/调研员/审查员/运维员）
+│   ├── workspace.go         # 首次创建 harness 文档树与默认 AGENTS.md
+│   ├── agent_tool.go        # agent 工具：request/forget，非阻塞启动，常驻不可 forget
+│   ├── memory_tool.go       # memory 工具：读取 Harness 会话记忆
+│   ├── docs_tool.go         # docs 工具：主管理受限读规则/共享文档，禁读专属 docs
+│   ├── agent_events_json.go # Agent 事件编码并扇出到会话频道
+│   ├── paths.go             # slug、会话编号、注册表/共享/常驻路径
+│   ├── system_prompt.md     # Harness 编排 prompt（常驻/临时分类、可读范围）
+│   └── managed_agent_prompt.md # 被管理 Agent 统一 prompt（强制最终汇报）
+├── harness.html             # Harness 编排页面
 ├── tokenizers/deepseek-v4-pro/
 │   └── tokenizer.json       # 固定 revision 的官方文件
 └── personalities/           # 旧元老院人格文件；不进入 Agent 内部
@@ -154,8 +169,13 @@ if err := action(); err != nil {
 | `GET` | `/api/conversations` | 会话列表 |
 | `GET` | `/api/conversations/{id}` | 加载指定会话 |
 | `GET` | `/api/conversations/{id}/events` | 保持会话事件 SSE，接收后台主 Agent回复 |
+| `POST` | `/api/conversations/{id}/stop` | 取消该会话当前正在执行的 Agent.Run（保留已产生进度） |
 | `DELETE` | `/api/conversations/{id}` | 删除指定会话 |
 | `GET` | `/api/logs` | 返回 `logs/server.jsonl` 最近的脱敏 JSON 日志 |
+| `POST` | `/api/harness/chat/stream` | Harness SSE 对话 |
+| `GET` | `/api/harness/agents` | 当前项目被管理 Agent 名单 |
+| `GET` | `/api/harness/agents/{name}/memory` | 读取指定被管理 Agent 的会话记忆 |
+| `GET` | `/harness` | Harness 编排页面 |
 | `POST` | `/api/council` | 非流式元老院讨论 |
 | `POST` | `/api/council/stream` | SSE 元老院讨论 |
 
@@ -322,7 +342,7 @@ if err := action(); err != nil {
 
 ## 7. 版本追踪
 
-**当前主线：v16 ⏳ A2A 与远程 Agent 调用**
+**当前主线：v16 ⏳ Harness ALL IN AGENT（编排层）**
 
 | 版本 | 新 Go 概念 | 涉及文件 | 状态 |
 | :--- | :--- | :--- | :--- |
@@ -342,7 +362,8 @@ if err := action(); err != nil {
 | v13 | RAG 计划已归档，未实现 | 无正式 Go 文件 | ⏭ 跳过 |
 | v14 | 通用型 agent-as-tool、JSON 输入输出、最多 5 个并行 SubAgent、goroutine + channel、工具表复制 | `config/config.go`、`service/subagent.go`、`tool/registry.go`、`main.go` | ✅ |
 | v15 | 私有字段 Agent、外部执行环境、三种任务输入、唯一循环、项目会话、精确 tokenizer、具体事件 | `agent/`、`memory/`、`modeltoken/`、`host/`、`service/agent_runner.go`、`main.go`、`index.html` | ✅ |
-| v16 | Agent Card、A2A 任务协议和远程 Agent 调用 | `a2a/` | ⏳ |
+| v16 | Harness ALL IN AGENT：agent/memory 工具、注册表、完成队列、实况注入、harness.html | `harness/`、`harness.html`、`main.go` | ⏳ |
+| v17 | A2A 与远程 Agent 调用 | `a2a/` | ⏳ |
 
 v9 新功能：元老院多 Agent 辩论，回合制发言，SSE 流式推送，公民插话，配置化人格 MD 文件。
 v10 新功能：Skill 系统 —— `activate_skill` 工具动态加载 skill prompt，`create_skill` 工具创建新 skill，skill 文件存于 `workspace/skills/`。`Description()` 每次扫目录自动发现新 skill，Execute() 按文件名匹配。Agent 可用 bash 工具增删 skill 文件，无需重启服务。
