@@ -50,8 +50,8 @@ Agent 不保存固定 workspace。调用者传入的 `workingDirectory` 必须�
 
 第一次 DeepSeek 调用只发送当前任务。system message 会告诉 DeepSeek
 当前工作目录、会话编号、会话文件位置和 `AGENTS.md` 位置；不会自动发送
-会话文件中的全部旧正文。需要旧信息时，DeepSeek 可以调用 bash，使用
-`rg`、`head`、`tail` 或 `cat` 读取必要片段。
+会话文件中的全部旧正文。需要旧信息时，DeepSeek 可以调用 `file` 工具
+读取文件，或通过 `command` 工具运行白名单中的 `rg` 搜索必要片段。
 
 狼人杀、剧本杀、元老院和其他应用负责角色、回合、顺序和胜负。它们只把
 一个角色的工作目录、角色会话编号和当前任务传给 `Agent.Run`，不得把应用
@@ -136,7 +136,7 @@ python scripts/release.py
 
 `scripts/release.py` 依次检查依赖方向、运行测试和静态分析，然后生成
 `dist/cc-agent-go`（Windows 上为 `.exe`）及 `dist/manifest.json`。清单记录
-Git commit、commit tree、工作树 SHA-256、构建工具版本及二进制 SHA-256。
+Git commit、commit tree、构建输入 SHA-256、构建工具版本及二进制 SHA-256。
 
 ## Docker 与 Jenkins
 
@@ -154,9 +154,16 @@ docker run --rm -p 127.0.0.1:8081:8080 \
   cc-agent-go:local
 ```
 
+上面的端口映射仅供本机手动调试，监听宿主机回环地址。Jenkins 不运行该命令，
+也不会对外提供 WebAgent 或命令执行 API。
+
 网页或 API 传入的 `workingDirectory` 应为容器内绝对路径，例如 `/workspace`。
 不要将主机根目录或 Docker socket 挂载进容器。Jenkinsfile 在带 Docker 的
 Linux 节点上验证依赖方向、测试、打包并归档二进制及清单，随后构建运行镜像。
+流水线在无宿主机端口映射的临时容器里检查三个页面和只读 API，并发送
+无效 JSON 验证普通聊天返回 400、流式聊天返回 SSE 错误事件；不会调用模型，
+也不会发布 Agent 服务。
+服务器约 2 GiB 内存时应让该 Jenkins 节点每次只执行一个镜像构建任务。
 Playwright MCP 需要另行提供 Node.js 与浏览器运行环境，当前镜像未安装。
 
 打开 `http://localhost:8080/`，填写项目绝对目录并点击“加载项目”。左侧显示

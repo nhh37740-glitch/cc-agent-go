@@ -80,14 +80,14 @@ def main():
         return result.returncode
 
     manifest = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "project": "cc-agent-go",
         "builtAtUtc": datetime.now(timezone.utc).isoformat(),
         "source": {
             "commit": commit,
             "commitTree": commit_tree,
             "dirty": dirty,
-            "workingTreeSha256": tree_digest,
+            "buildInputSha256": tree_digest,
         },
         "toolchain": {"go": run("go", "version").stdout.strip()},
         "artifacts": [{
