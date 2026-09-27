@@ -56,8 +56,10 @@ def main():
 
     for command in (
         [sys.executable, "scripts/check_boundaries.py"],
-        ["go", "test", "./..."],
-        ["go", "vet", "./..."],
+        # Tokenizer fixtures mmap a large model file; serialize packages so a
+        # small Jenkins/Docker worker does not run several heavy test processes.
+        ["go", "test", "-p=1", "./..."],
+        ["go", "vet", "-p=1", "./..."],
     ):
         print("+", " ".join(command), flush=True)
         result = run(*command, check=False)
