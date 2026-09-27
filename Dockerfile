@@ -1,6 +1,6 @@
 FROM golang:1.26.4-bookworm AS build
 
-RUN apt-get update && apt-get install -y --no-install-recommends python3 ripgrep \
+RUN apt-get update && apt-get install -y --no-install-recommends python3 ripgrep curl \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -13,7 +13,7 @@ ENV SOURCE_COMMIT=${SOURCE_COMMIT} SOURCE_TREE=${SOURCE_TREE} SOURCE_DIRTY=${SOU
 RUN python3 scripts/release.py
 
 FROM golang:1.26.4-bookworm
-RUN apt-get update && apt-get install -y --no-install-recommends python3 ripgrep \
+RUN apt-get update && apt-get install -y --no-install-recommends python3 ripgrep curl \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 agent \
     && mkdir -p /app/logs /workspace \
