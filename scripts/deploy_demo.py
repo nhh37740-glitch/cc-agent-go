@@ -87,8 +87,6 @@ def environment(container: dict) -> Dict[str, str]:
         values[key] = value
     if len(values) != 6:
         raise DeploymentError("current demo environment count changed; review before deploying")
-    if "DEEPSEEK_API_KEY" not in values:
-        raise DeploymentError("current demo is missing its configured API key variable")
     return values
 
 
