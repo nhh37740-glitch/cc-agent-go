@@ -1,6 +1,10 @@
 pipeline {
     agent { label 'media-workspace-agent' }
     options { timestamps(); disableConcurrentBuilds() }
+    parameters {
+        booleanParam(name: 'DeployDemo', defaultValue: false,
+          description: 'Replace the private loopback demo after build and smoke checks')
+    }
     stages {
         stage('Verify and package') {
             steps {
@@ -65,6 +69,12 @@ pipeline {
                       --data '{' http://127.0.0.1:8080/api/chat/stream)"
                     printf '%s' "$stream_error" | grep -q '"type":"error"'
                 '''
+            }
+        }
+        stage('Deploy private demo') {
+            when { expression { params.DeployDemo == true } }
+            steps {
+                sh 'python3 scripts/deploy_demo.py --build-number "$BUILD_NUMBER"'
             }
         }
     }
