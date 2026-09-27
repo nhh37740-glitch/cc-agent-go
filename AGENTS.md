@@ -20,7 +20,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 | Layer | Technology | Constraint |
 | :--- | :--- | :--- |
-| **Runtime** | Go >= 1.23 | Agent 和 HTTP 使用标准库；tokenizer 使用下方唯一第三方依赖 |
+| **Runtime** | Go 1.26.4（与 go.mod 对齐） | Agent 和 HTTP 使用标准库；tokenizer 使用下方唯一第三方依赖 |
 | **HTTP 服务端** | `net/http` | `HandleFunc("POST /api/chat", handler)` Go 1.22+ 增强路由 |
 | **HTTP 客户端** | `net/http` | `http.DefaultClient` 调用 DeepSeek API |
 | **JSON** | `encoding/json` | 结构体 + tag；动态结构用 `map[string]any` |
@@ -333,7 +333,7 @@ if err := action(); err != nil {
 2. **每步可编译运行**：绝不提交无法通过 `go build ./...` 的代码
 3. **不做 SQLite**：存储只用项目目录中的 JSON 文件；WebAgent 页面展示项目会话列表、历史记录、任务、Agent 事件、日志和结果，不恢复聊天气泡页面
 4. **路径安全**：所有文件操作经过 `validator.go`（`filepath.Abs → Clean → HasPrefix`），禁止目录逃逸
-5. **Bash 安全**：白名单命令 + 禁止 shell 控制字符（`;` `|` `&&` `$()` 反引号），30 秒超时
+5. **命令工具安全**：`command` 工具只运行白名单原生程序，`program` 与 `args` 分开传递，不启动 shell；Windows 执行 `.exe`，Linux 容器执行受限程序集合，默认 60 秒超时
 6. **凭证安全**：真实 Key 只能来自 `DEEPSEEK_API_KEY` 或被 Git 忽略的 `config/local.json`，不得写入正式 Go 文件、示例文件或 Git 提交
 7. **Agent 封装**：WebAgent、SubAgent、狼人杀、剧本杀和元老院只能从外部调用 `Agent.Run`；不得把应用名称、角色、回合或页面字段写入 `agent.Agent`
 8. **不猜测**：遇到计划文件未覆盖的实现细节时，向用户确认而非自行决定

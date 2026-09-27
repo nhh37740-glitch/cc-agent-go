@@ -304,6 +304,9 @@ var nativeCommandDescription = buildNativeCommandDescription()
 
 // Description 返回结构化工具说明。
 func (t *NativeCommandTool) Description() string {
+	if runtime.GOOS == "linux" {
+		return linuxCommandDescription
+	}
 	return nativeCommandDescription
 }
 
@@ -318,7 +321,7 @@ func allowedProgramNames() []string {
 
 // InputSchema 返回原生命令工具的 JSON Schema。
 func (t *NativeCommandTool) InputSchema() map[string]any {
-	return map[string]any{
+	schema := map[string]any{
 		"type":                 "object",
 		"title":                "Windows 原生 EXE 命令",
 		"description":          "直接执行一个白名单内的 Windows 原生 .exe，不启动 Git Bash、WSL、PowerShell 或 cmd.exe。program 与 args 必须分开填写。文件操作优先使用 file；Git/Go 高层操作优先使用对应结构化工具。",
@@ -367,6 +370,21 @@ func (t *NativeCommandTool) InputSchema() map[string]any {
 			{"program": "tasklist", "args": []string{"/FI", "IMAGENAME eq go.exe"}},
 		},
 	}
+	if runtime.GOOS == "linux" {
+		schema["title"] = "Linux 原生命令"
+		schema["description"] = linuxCommandDescription
+		properties := schema["properties"].(map[string]any)
+		programProperty := properties["program"].(map[string]any)
+		programProperty["title"] = "Linux 程序"
+		programProperty["description"] = "白名单程序名，不含路径；直接执行程序，不启动 shell。"
+		programProperty["enum"] = allowedLinuxProgramNames()
+		schema["examples"] = []map[string]any{
+			{"program": "rg", "args": []string{"-n", "TODO", "."}},
+			{"program": "git", "args": []string{"status", "--short"}},
+			{"program": "go", "args": []string{"test", "./..."}, "timeout_seconds": 120},
+		}
+	}
+	return schema
 }
 
 // blockedNativePrograms 即使误加入白名单，也不能作为二级解释器启动。
@@ -565,7 +583,7 @@ func formatNativeCommandOutcome(
 	var result strings.Builder
 	result.WriteString("[command_result]\n")
 	fmt.Fprintf(&result, "status: %s\n", status)
-	fmt.Fprintf(&result, "program: %s.exe\n", program)
+	fmt.Fprintf(&result, "program: %s\n", executableLabel(program))
 	fmt.Fprintf(&result, "exit_code: %d\n", exitCode)
 	fmt.Fprintf(&result, "executable: %s\n", executablePath)
 	fmt.Fprintf(&result, "working_directory: %s\n", workingDirectory)
@@ -597,7 +615,7 @@ func formatNativeInfrastructureError(
 	err error,
 ) error {
 	var detail strings.Builder
-	fmt.Fprintf(&detail, "%s.exe %s", program, message)
+	fmt.Fprintf(&detail, "%s %s", executableLabel(program), message)
 	fmt.Fprintf(&detail, "\nexecutable: %s", executablePath)
 	fmt.Fprintf(&detail, "\nworking_directory: %s", workingDirectory)
 	fmt.Fprintf(&detail, "\nargs: %q", args)
@@ -959,6 +977,9 @@ func (t *NativeCommandTool) Execute(
 	input map[string]any,
 	executionEnvironment ToolExecutionEnvironment,
 ) (string, error) {
+	if runtime.GOOS == "linux" {
+		return executeLinuxCommand(input, executionEnvironment)
+	}
 	if runtime.GOOS != "windows" {
 		return "", fmt.Errorf("command 工具仅支持 Windows；当前运行平台为 %s", runtime.GOOS)
 	}

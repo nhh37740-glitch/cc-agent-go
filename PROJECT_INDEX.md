@@ -72,7 +72,7 @@
 | `tool/execution_environment.go` | `ToolExecutionEnvironment` | `Agent.Run` 把本次工作目录和会话编号传给 `Registry.Execute`。 |
 | `tool/tool.go` | `Tool` | 每个具体工具的 `Execute` 都收到工具参数和本次 `ToolExecutionEnvironment`。 |
 | `tool/registry.go` | `Registry`、`RegisterFunctionTool`、`RegisterTerminalFunctionTool`、`Execute` | 保存普通工具、MCP 动态工具和 `run_subagent`；终止行为是注册信息，不是 `Agent.Run` 中的工具名称判断。 |
-| `tool/bash.go` | `NewNativeCommandTool()` / `command` | Windows 原生命令工具：`program`+`args`，白名单 `.exe`，结构化 `status/exit_code/output`；支持会话 `Context` 取消。 |
+| `tool/bash.go`、`tool/command_portable.go` | `NewNativeCommandTool()` / `command` | Windows 使用白名单 `.exe`，Linux 使用独立白名单程序；`program`+`args` 直接执行，返回结构化 `status/exit_code/output`，支持会话 `Context` 取消。 |
 | `tool/file_crud_tool.go` | `NewFileTool()` / `file` | 工作目录内文件增删改查，不依赖 shell。 |
 | `service/conversation_runs.go` | `ConversationRunRegistry` | 按会话登记 cancel；`POST /api/conversations/{id}/stop` 与 HTTP 断开都会取消当前 Run。 |
 | `tool/skill.go` | `NewSkillTool()`、`SkillTool.Execute` | 读取本次项目的 `.cc-agent/skills/<skill>.md`。 |

@@ -1,7 +1,12 @@
-# cc-agent-go
+# CC Agent (Go)
 
 用 Go 实现可复用的 AI Agent。当前主线不是聊天机器人，而是一个可以被
 WebAgent、SubAgent 和其他应用共同调用的 `agent.Agent`。
+
+当前服务代码在 `agent/`、`memory/`、`model/`、`tool/`、`service/`、
+`harness/` 和根目录 `main.go`。`democode/` 是独立 Go 模块中的历史教学快照，
+不会参与当前服务的 `go test ./...` 与发布构建。`scripts/check_boundaries.py`
+检查核心包的依赖方向，防止 `agent/` 反向依赖 `service/` 或 `harness/`。
 
 ## v15 已完成的执行方式
 
@@ -126,7 +131,33 @@ go fmt ./...
 go build ./...
 go vet ./...
 go test ./...
+python scripts/release.py
 ```
+
+`scripts/release.py` 依次检查依赖方向、运行测试和静态分析，然后生成
+`dist/cc-agent-go`（Windows 上为 `.exe`）及 `dist/manifest.json`。清单记录
+Git commit、commit tree、工作树 SHA-256、构建工具版本及二进制 SHA-256。
+
+## Docker 与 Jenkins
+
+`Dockerfile` 用 Go 1.26.4 构建和测试服务，再把可运行二进制及必需的
+HTML、prompt、配置、人格和 tokenizer 文件放入 Linux 运行镜像。
+Linux 容器里的 `command` 工具直接调用白名单程序；Windows 本机仍调用
+Windows 原生 `.exe`。不经过 shell。
+
+```bash
+docker build -t cc-agent-go:local .
+docker run --rm -p 127.0.0.1:8081:8080 \
+  -e DEEPSEEK_API_KEY \
+  -v /srv/cc-agent-go/workspace:/workspace \
+  -v /srv/cc-agent-go/logs:/app/logs \
+  cc-agent-go:local
+```
+
+网页或 API 传入的 `workingDirectory` 应为容器内绝对路径，例如 `/workspace`。
+不要将主机根目录或 Docker socket 挂载进容器。Jenkinsfile 在带 Docker 的
+Linux 节点上验证依赖方向、测试、打包并归档二进制及清单，随后构建运行镜像。
+Playwright MCP 需要另行提供 Node.js 与浏览器运行环境，当前镜像未安装。
 
 打开 `http://localhost:8080/`，填写项目绝对目录并点击“加载项目”。左侧显示
 该目录的全部会话和 MCP Server；中间显示会话历史、当前任务和结果；右侧显示
