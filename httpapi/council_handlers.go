@@ -25,7 +25,7 @@ func (server *Server) handleCouncil(w http.ResponseWriter, r *http.Request) {
 	if req.MaxRounds < 1 {
 		req.MaxRounds = 3
 	}
-	cfg := server.loadConfig()
+	cfg := server.configForWebRequest(r)
 	transcript, totalTokens, err := service.RunCouncil(
 		req.Topic, req.MaxRounds, req.Interruption, server.personalities, cfg)
 	if err != nil {
@@ -68,7 +68,7 @@ func (server *Server) handleCouncilStream(w http.ResponseWriter, r *http.Request
 		req.MaxRounds = 3
 	}
 
-	cfg := server.loadConfig()
+	cfg := server.configForWebRequest(r)
 	topicFrame, _ := json.Marshal(map[string]string{"type": "topic", "text": req.Topic})
 	fmt.Fprintf(w, "data: %s\n\n", topicFrame)
 	flusher.Flush()

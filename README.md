@@ -84,10 +84,15 @@ V4 官方 `tokenizer.json`：
 ```
 
 也可以用 `CC_AGENT_LOCAL_CONFIG` 指定另一个本地 JSON 文件。
-当前服务器私有演示容器未配置 `DEEPSEEK_API_KEY`，也没有挂载本地配置文件；
-主页、Harness、元老院页面和只读状态接口可访问，但 DeepSeek 模型对话、
-Agent 任务与模型辩论不可用。无效 JSON 的 API 检查不会调用模型，
-因此流水线通过不代表模型推理可用。
+WebAgent、Harness、元老院页面现在也可在页面顶部设置自己的 DeepSeek Key。
+`GET /api/settings/deepseek-key` 只返回是否配置及来源（浏览器或服务器）；
+`PUT` 使用 `{"apiKey":"..."}` 设置或替换；`DELETE` 移除当前浏览器的 Key。
+浏览器 Key 只存在服务进程内存中，通过 HttpOnly、SameSite=Strict 的随机会话
+Cookie 隔离，12 小时后过期；状态接口和 Cookie 均不返回 Key 原文。
+浏览器 Key 优先于环境变量及本地 JSON，移除后恢复服务端默认配置。
+网页录入 Key 仅支持 HTTPS 或 localhost/回环地址；远程 HTTP 页面会被拒绝。
+容器重启会清除浏览器 Key，使用者需重新填写。请仅在可信浏览器中输入自己的 Key。
+Jenkins 的无效 JSON 检查不会调用模型，因此流水线通过不代表模型推理可用。
 
 ## MCP Server
 

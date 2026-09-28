@@ -19,7 +19,10 @@ import (
 
 // RuntimeDependencies 是创建 Runtime 时注入的全部外部依赖。
 type RuntimeDependencies struct {
-	ApplicationConfig          config.Config
+	ApplicationConfig config.Config
+	// ResolveApplicationConfig reads the current credential for this runtime's
+	// browser scope when a background agent starts another task.
+	ResolveApplicationConfig   func() config.Config
 	ConversationStore          *memory.ProjectConversationStore
 	TokenCounter               agent.AgentTokenCounter
 	ModelContextWindowTokens   int
@@ -55,11 +58,22 @@ func GetOrCreateRuntime(
 	workingDirectory string,
 	dependencies RuntimeDependencies,
 ) (*Runtime, error) {
+	return GetOrCreateRuntimeForScope("server", workingDirectory, dependencies)
+}
+
+// GetOrCreateRuntimeForScope keeps browser-provided credentials out of other
+// browsers' cached runtimes, even when they choose the same working directory.
+func GetOrCreateRuntimeForScope(
+	scope string,
+	workingDirectory string,
+	dependencies RuntimeDependencies,
+) (*Runtime, error) {
+	runtimeKey := scope + "\x00" + workingDirectory
 	runtimesMutex.Lock()
 	defer runtimesMutex.Unlock()
 
 	existingRuntime, alreadyCreated :=
-		runtimesByWorkingDirectory[workingDirectory]
+		runtimesByWorkingDirectory[runtimeKey]
 	if alreadyCreated {
 		return existingRuntime, nil
 	}
@@ -109,8 +123,15 @@ func GetOrCreateRuntime(
 		createdRuntime.completionQueue <- uncollectedRecord
 	}
 
-	runtimesByWorkingDirectory[workingDirectory] = createdRuntime
+	runtimesByWorkingDirectory[runtimeKey] = createdRuntime
 	return createdRuntime, nil
+}
+
+func (runtime *Runtime) currentApplicationConfig() config.Config {
+	if runtime.dependencies.ResolveApplicationConfig != nil {
+		return runtime.dependencies.ResolveApplicationConfig()
+	}
+	return runtime.dependencies.ApplicationConfig
 }
 
 // AgentRegistry 返回本运行时的 Agent 注册表（供 HTTP 名单接口使用）。
@@ -188,7 +209,7 @@ func (runtime *Runtime) reportFinishedAgentLocked(
 			ConversationID:   HarnessConversationID,
 		},
 		runtime.HarnessSystemPromptWithLiveStatus(),
-		runtime.dependencies.ApplicationConfig,
+		runtime.currentApplicationConfig(),
 		runtime.harnessTools,
 		runtime.dependencies.ConversationStore,
 		runtime.dependencies.TokenCounter,
@@ -414,7 +435,7 @@ func (runtime *Runtime) runManagedAgent(
 			ConversationID:   agentRecord.ConversationID,
 		},
 		managedSystemPrompt,
-		runtime.dependencies.ApplicationConfig,
+		runtime.currentApplicationConfig(),
 		availableTools,
 		runtime.dependencies.ConversationStore,
 		runtime.dependencies.TokenCounter,

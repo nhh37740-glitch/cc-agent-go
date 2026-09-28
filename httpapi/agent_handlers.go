@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"cc-agent-go/agent"
+	"cc-agent-go/config"
 	"cc-agent-go/service"
 	"cc-agent-go/tool"
 )
@@ -191,7 +192,16 @@ func (server *Server) registerGeneralSubAgentTool(
 	parentConversationID string,
 	completedResultsCallback service.CompletedSubAgentResultsCallback,
 ) error {
-	applicationConfig := server.loadConfig()
+	return server.registerGeneralSubAgentToolForConfig(mainAgentToolRegistry,
+		parentConversationID, completedResultsCallback, server.loadConfig())
+}
+
+func (server *Server) registerGeneralSubAgentToolForConfig(
+	mainAgentToolRegistry *tool.Registry,
+	parentConversationID string,
+	completedResultsCallback service.CompletedSubAgentResultsCallback,
+	applicationConfig config.Config,
+) error {
 
 	executeRunSubAgentTool := func(
 		toolArguments map[string]any,
@@ -358,6 +368,7 @@ func (server *Server) continueMainAgentAfterSubAgents(
 	workingDirectory string,
 	parentConversationID string,
 	subAgentResults []service.SubAgentResult,
+	runtimeScope string,
 ) {
 	backgroundReplyMessageID := service.GenerateConversationId()
 	server.sendBackgroundAgentReplyStarted(
@@ -372,7 +383,7 @@ func (server *Server) continueMainAgentAfterSubAgents(
 		server.conversationExecutionLocks.LockConversation(parentConversationID)
 	defer unlockConversationExecution()
 
-	applicationConfig := server.loadConfig()
+	applicationConfig := server.configForRuntimeScope(runtimeScope)
 	backgroundReplyToolRegistry := tool.NewRegistry()
 	internalContinuationTask, encodeSubAgentResultsError :=
 		agent.EncodeInternalContinuationTask(subAgentResults)
@@ -452,10 +463,12 @@ func (server *Server) continueMainAgentAfterSubAgents(
 func (server *Server) createConversationToolRegistry(
 	parentConversationID string,
 	workingDirectory string,
+	applicationConfig config.Config,
+	runtimeScope string,
 ) (*tool.Registry, error) {
 	conversationToolRegistry :=
 		server.registry.CopyExcludingTools(generalSubAgentToolName)
-	registerGeneralSubAgentError := server.registerGeneralSubAgentTool(
+	registerGeneralSubAgentError := server.registerGeneralSubAgentToolForConfig(
 		conversationToolRegistry,
 		parentConversationID,
 		func(
@@ -466,8 +479,10 @@ func (server *Server) createConversationToolRegistry(
 				workingDirectory,
 				completedParentConversationID,
 				subAgentResults,
+				runtimeScope,
 			)
 		},
+		applicationConfig,
 	)
 	if registerGeneralSubAgentError != nil {
 		return nil, registerGeneralSubAgentError

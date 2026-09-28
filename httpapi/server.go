@@ -10,6 +10,7 @@ import (
 	"cc-agent-go/memory"
 	"cc-agent-go/service"
 	"cc-agent-go/tool"
+	"cc-agent-go/webkey"
 )
 
 type Dependencies struct {
@@ -42,6 +43,7 @@ type Server struct {
 	harnessPrompts             harness.Prompts
 	harnessPromptsLoadError    error
 	applicationLogFilePath     string
+	browserDeepSeekKeys        *webkey.Store
 }
 
 func NewServer(dependencies Dependencies) *Server {
@@ -80,12 +82,16 @@ func NewServer(dependencies Dependencies) *Server {
 		harnessPrompts:             dependencies.HarnessPrompts,
 		harnessPromptsLoadError:    dependencies.HarnessPromptsLoadError,
 		applicationLogFilePath:     dependencies.ApplicationLogFilePath,
+		browserDeepSeekKeys:        webkey.NewStore(),
 	}
 }
 
 func (server *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/chat", server.handleChat)
+	mux.HandleFunc("GET /api/settings/deepseek-key", server.handleDeepSeekKey)
+	mux.HandleFunc("PUT /api/settings/deepseek-key", server.handleDeepSeekKey)
+	mux.HandleFunc("DELETE /api/settings/deepseek-key", server.handleDeepSeekKey)
 	mux.HandleFunc("POST /api/chat/stream", server.handleChatStream)
 	mux.HandleFunc("GET /api/mcp/servers", server.handleListMCPServers)
 	mux.HandleFunc("PUT /api/mcp/servers", server.handleSelectMCPServers)
@@ -103,6 +109,12 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/harness/agents/{name}/heartbeat", server.handleHarnessAgentHeartbeat)
 	mux.HandleFunc("GET /harness", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "harness.html")
+	})
+	mux.HandleFunc("GET /deepseek-key-settings.js", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "deepseek-key-settings.js")
+	})
+	mux.HandleFunc("GET /deepseek-key-settings.css", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "deepseek-key-settings.css")
 	})
 	mux.HandleFunc("GET /council", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "council.html")

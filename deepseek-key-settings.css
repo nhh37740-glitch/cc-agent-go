@@ -1,0 +1,7 @@
+#deepseek-key-settings { padding: 8px 12px; background: #f5f5f5; color: #28313b; font: 13px/1.5 system-ui, sans-serif; }
+.deepseek-key-form { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.deepseek-key-form label { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.deepseek-key-form input { width: 220px; max-width: 52vw; padding: 5px 8px; border: 1px solid #aab2bb; border-radius: 4px; background: white; color: #222; }
+.deepseek-key-form button { padding: 5px 9px; border: 1px solid #8b98a5; border-radius: 4px; background: white; color: #28313b; cursor: pointer; }
+.deepseek-key-form button:disabled { opacity: .5; cursor: default; }
+.deepseek-key-status { font-weight: 600; }

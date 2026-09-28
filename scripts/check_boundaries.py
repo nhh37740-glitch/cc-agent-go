@@ -16,7 +16,7 @@ ALLOWED = {
     "host": {"agent"},
     "service": {"agent", "config", "memory", "model", "modeltoken", "tool"},
     "harness": {"agent", "config", "memory", "model", "modeltoken", "service", "tool"},
-    "httpapi": {"agent", "config", "harness", "mcp", "memory", "model", "service", "tool"},
+    "httpapi": {"agent", "config", "harness", "mcp", "memory", "model", "service", "tool", "webkey"},
 }
 IMPORT = re.compile(r'"cc-agent-go/([a-z][a-z0-9]*)[^"]*"')
 ROOT_IMPORT = re.compile(r'"cc-agent-go"')

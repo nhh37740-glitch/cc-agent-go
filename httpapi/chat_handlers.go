@@ -27,7 +27,7 @@ func (server *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			server.invalidRequestError("handleChat.validate", validateWebAgentTaskError))
 		return
 	}
-	cfg := server.loadConfig()
+	cfg := server.configForWebRequest(r)
 	if strings.TrimSpace(cfg.ApiKey) == "" {
 		server.writeAPIError(w, "handleChat.config", webAgentTaskRequest.ConversationId,
 			service.NewAppError(service.ErrorConfig, "handleChat.config", 0,
@@ -39,6 +39,8 @@ func (server *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		server.createConversationToolRegistry(
 			conversationID,
 			webAgentTaskRequest.WorkingDirectory,
+			cfg,
+			server.browserDeepSeekKeys.Scope(r),
 		)
 	if createToolRegistryError != nil {
 		server.writeAPIError(
@@ -136,7 +138,7 @@ func (server *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "data: %s\n\n", convIdJSON)
 	flusher.Flush()
 
-	cfg := server.loadConfig()
+	cfg := server.configForWebRequest(r)
 	if strings.TrimSpace(cfg.ApiKey) == "" {
 		server.writeSSEError(w, flusher, "handleChatStream.config", conversationId,
 			service.NewAppError(service.ErrorConfig, "handleChatStream.config", 0,
@@ -147,6 +149,8 @@ func (server *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		server.createConversationToolRegistry(
 			conversationId,
 			webAgentTaskRequest.WorkingDirectory,
+			cfg,
+			server.browserDeepSeekKeys.Scope(r),
 		)
 	if createToolRegistryError != nil {
 		server.writeSSEError(

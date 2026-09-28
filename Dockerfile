@@ -27,7 +27,7 @@ COPY --from=build /src/harness/system_prompt.md /app/harness/system_prompt.md
 COPY --from=build /src/harness/managed_agent_prompt.md /app/harness/managed_agent_prompt.md
 COPY --from=build /src/tokenizers /app/tokenizers
 COPY --from=build /src/personalities /app/personalities
-COPY --from=build /src/index.html /src/harness.html /src/council.html /app/
+COPY --from=build /src/index.html /src/harness.html /src/council.html /src/deepseek-key-settings.js /src/deepseek-key-settings.css /app/
 ENV HOME=/home/agent GOTELEMETRY=off
 USER agent
 EXPOSE 8080

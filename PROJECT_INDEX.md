@@ -7,8 +7,10 @@
 
 1. `index.html` 发送 `workingDirectory`、当前选中会话的 `conversationId`
    （新会话为空字符串）和 `message`。
-2. `main.handleChat` 或 `main.handleChatStream` 解包请求；新会话调用
+2. `httpapi.Server.handleChat` 或 `httpapi.Server.handleChatStream` 解包请求；新会话调用
    `service.GenerateConversationId()` 创建实际编号，然后校验目录、编号和任务。
+   `httpapi.Server.configForWebRequest` 从 `webkey.Store` 读取当前浏览器的内存凭据，
+   缺失时保留 `config.Load` 的服务端默认配置。Key 不进入任务 JSON 或会话文件。
 3. handler 创建 `agent.UserTaskInput` 和 `agent.AgentExecutionEnvironment`。
 4. handler 调用 `service.RunAgentTask(...)`。
 5. `service.RunAgentTask` 把 `service.Chat` 或 `service.ChatStream` 放入
@@ -23,9 +25,11 @@
 
 ## 一次 Harness 编排的实际顺序
 
-1. `main.handleHarnessChatStream` 校验请求（message 必填、目录绝对存在，失败
+1. `httpapi.Server.handleHarnessChatStream` 校验请求（message 必填、目录绝对存在，失败
    返回 400 JSON）→ 检查 `harnessPromptsLoadError` → 检查 Key →
-   `harness.GetOrCreateRuntime(workingDirectory, dependencies)`。首次创建时
+   `harness.GetOrCreateRuntimeForScope(browserScope, workingDirectory, dependencies)`。
+   浏览器凭据隔离在不同 Runtime 中，后台任务启动时读取该 scope 当前的 Key。
+   首次创建时
    创建文档树（harness/AGENTS.md、shared/**、residents/*/AGENTS.md）、加载
    `.cc-agent/harness/agents.json`、确保 4 个常驻 Agent 在注册表、构建含
    `agent`、`memory`、`docs` 的工具表、启动完成队列消费 goroutine，并补扫
@@ -67,6 +71,8 @@
 | `memory/conversation_store.go` | `ProjectConversationStore` | 每个读取、保存、列表和删除函数都收到工作目录；同名会话在不同项目生成不同文件。内部锁按完整会话文件路径区分。 |
 | `modeltoken/huggingface_json_token_counter.go` | `HuggingFaceJSONTokenCounter` | 启动时调用 `tokenizers.FromFile` 一次；实现请求计数、文字计数和按 token 截断。 |
 | `config/model_tokenizers.go` | `ModelTokenizerConfiguration`、`LoadModelTokenizerConfiguration` | 按 `Config.Model` 读取 `config/model_tokenizers.json`，返回 tokenizer 文件和上下文窗口。 |
+| `webkey/store.go`、`httpapi/web_key_http.go` | `webkey.Store`、`Server.handleDeepSeekKey`、`Server.configForWebRequest`、`Server.configForRuntimeScope` | 三张网页共用 `/api/settings/deepseek-key`；随机 HttpOnly Cookie 对应进程内存 Key，GET 只返回布尔状态和来源；仅 HTTPS 或本机回环地址允许录入 Key。模型调用沿现有 `config.Config` 注入边界取 Key。 |
+| `deepseek-key-settings.js`、`deepseek-key-settings.css` | 三张网页共用设置组件 | 表单发送 Key 并清空输入框，只显示固定掩码；Docker 镜像显式复制这两个静态资源。 |
 | `config/config.go` | `Config`、`Load` | 读取 DeepSeek Key、并行 SubAgent 数、SubAgent 最大轮数和 Harness Agent 池容量（`MAX_HARNESS_AGENTS`，默认 11）；不再提供固定 workspace 或固定 sessions 目录。 |
 | `model/types.go` | 三种消息内容类型、`ChatRequest`、`SessionJson` | `ChatRequest` 的三个必填 JSON 字段是 `workingDirectory`、`conversationId`、`message`；`SessionJson.StoredMemoryTokens` 保存项目会话文件计数。 |
 | `tool/execution_environment.go` | `ToolExecutionEnvironment` | `Agent.Run` 把本次工作目录和会话编号传给 `Registry.Execute`。 |

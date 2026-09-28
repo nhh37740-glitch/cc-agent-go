@@ -52,7 +52,9 @@ pipeline {
                         sudo docker logs --tail=100 "$container_id" >&2 || true
                         exit 1
                     fi
-                    for route in /harness /council /api/mcp/servers; do
+                    for route in /harness /council /api/mcp/servers \
+                      /deepseek-key-settings.js /deepseek-key-settings.css \
+                      /api/settings/deepseek-key; do
                         sudo docker exec "$container_id" curl --fail --silent \
                           "http://127.0.0.1:8080$route" >/dev/null
                     done

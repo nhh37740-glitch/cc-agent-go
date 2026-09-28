@@ -29,10 +29,10 @@ func (server *Server) publicError(err error) (int, model.ErrorResponse) {
 			resp.Message = "请求参数无效。"
 		case service.ErrorConfig:
 			status = http.StatusServiceUnavailable
-			resp.Message = "服务端未配置 DEEPSEEK_API_KEY。"
+			resp.Message = "DeepSeek Key 未配置，请在网页配置或设置服务端 DEEPSEEK_API_KEY。"
 		case service.ErrorProviderAuth:
 			status = http.StatusBadGateway
-			resp.Message = "DeepSeek API 鉴权失败，请检查服务端 DEEPSEEK_API_KEY。"
+			resp.Message = "DeepSeek API 鉴权失败，请检查当前使用的 Key。"
 		case service.ErrorProviderRateLimit:
 			status = http.StatusServiceUnavailable
 			resp.Message = "DeepSeek 请求过于频繁，请稍后重试。"

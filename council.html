@@ -108,6 +108,7 @@
         .speech-text ul { list-style-type: disc; margin-left: 1.25rem; margin-bottom: 0.5rem; }
         .speech-text ol { list-style-type: decimal; margin-left: 1.25rem; margin-bottom: 0.5rem; }
     </style>
+    <link rel="stylesheet" href="/deepseek-key-settings.css">
 </head>
 <body class="text-neo-slate min-h-screen flex flex-col font-sans selection:bg-neo-gold selection:text-neo-slate">
 
@@ -154,7 +155,7 @@
     </header>
 
     <div class="text-center text-xs text-neo-slate bg-neo-parchment border-b border-neo-gold/30 px-4 py-2" role="note">
-        当前服务器私有演示未配置 DeepSeek Key；可浏览此页面，模型辩论不可用。
+        <div id="deepseek-key-settings">DeepSeek Key 状态加载中…</div>
     </div>
 
     <!-- 主体内容容器：黄金分割两栏布局 -->
@@ -939,5 +940,6 @@
             }, 1000);
         }
     </script>
+<script src="/deepseek-key-settings.js" defer></script>
 </body>
 </html>

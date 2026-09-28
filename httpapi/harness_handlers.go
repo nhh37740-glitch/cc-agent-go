@@ -37,6 +37,16 @@ func (server *Server) buildHarnessRuntimeDependencies(
 	)
 }
 
+func (server *Server) buildHarnessRuntimeDependenciesForScope(scope string) harness.RuntimeDependencies {
+	baseConfig := server.loadConfig()
+	baseConfig.ApiKey = ""
+	dependencies := server.buildHarnessRuntimeDependencies(baseConfig)
+	dependencies.ResolveApplicationConfig = func() config.Config {
+		return server.configForRuntimeScope(scope)
+	}
+	return dependencies
+}
+
 // validateHarnessChatRequest 校验 Harness 对话请求：message 必填，
 // workingDirectory 必须是存在的绝对目录；Harness 会话编号固定为 harness。
 func (server *Server) validateHarnessChatRequest(harnessChatRequest model.ChatRequest) error {
@@ -99,7 +109,7 @@ func (server *Server) handleHarnessChatStream(
 				"handleHarnessChatStream.prompts", 0, server.harnessPromptsLoadError))
 		return
 	}
-	cfg := server.loadConfig()
+	cfg := server.configForWebRequest(httpRequest)
 	if strings.TrimSpace(cfg.ApiKey) == "" {
 		server.writeAPIError(responseWriter, "handleHarnessChatStream.config",
 			harness.HarnessConversationID,
@@ -121,9 +131,11 @@ func (server *Server) handleHarnessChatStream(
 		return
 	}
 
-	harnessRuntime, createRuntimeError := harness.GetOrCreateRuntime(
+	runtimeScope := server.browserDeepSeekKeys.Scope(httpRequest)
+	harnessRuntime, createRuntimeError := harness.GetOrCreateRuntimeForScope(
+		runtimeScope,
 		harnessChatRequest.WorkingDirectory,
-		server.buildHarnessRuntimeDependencies(cfg),
+		server.buildHarnessRuntimeDependenciesForScope(runtimeScope),
 	)
 	if createRuntimeError != nil {
 		server.writeSSEError(responseWriter, flusher,
@@ -203,9 +215,11 @@ func (server *Server) handleHarnessAgents(
 	) {
 		return
 	}
-	harnessRuntime, createRuntimeError := harness.GetOrCreateRuntime(
+	runtimeScope := server.browserDeepSeekKeys.Scope(httpRequest)
+	harnessRuntime, createRuntimeError := harness.GetOrCreateRuntimeForScope(
+		runtimeScope,
 		workingDirectory,
-		server.buildHarnessRuntimeDependencies(server.loadConfig()),
+		server.buildHarnessRuntimeDependenciesForScope(runtimeScope),
 	)
 	if createRuntimeError != nil {
 		server.writeAPIError(responseWriter, "handleHarnessAgents.runtime",
@@ -240,9 +254,11 @@ func (server *Server) handleHarnessAgentMemory(
 		return
 	}
 	agentName := httpRequest.PathValue("name")
-	harnessRuntime, createRuntimeError := harness.GetOrCreateRuntime(
+	runtimeScope := server.browserDeepSeekKeys.Scope(httpRequest)
+	harnessRuntime, createRuntimeError := harness.GetOrCreateRuntimeForScope(
+		runtimeScope,
 		workingDirectory,
-		server.buildHarnessRuntimeDependencies(server.loadConfig()),
+		server.buildHarnessRuntimeDependenciesForScope(runtimeScope),
 	)
 	if createRuntimeError != nil {
 		server.writeAPIError(responseWriter, "handleHarnessAgentMemory.runtime",
@@ -302,9 +318,11 @@ func (server *Server) handleHarnessAgentHeartbeat(
 				fmt.Errorf("agent 名称不能为空")))
 		return
 	}
-	harnessRuntime, createRuntimeError := harness.GetOrCreateRuntime(
+	runtimeScope := server.browserDeepSeekKeys.Scope(httpRequest)
+	harnessRuntime, createRuntimeError := harness.GetOrCreateRuntimeForScope(
+		runtimeScope,
 		workingDirectory,
-		server.buildHarnessRuntimeDependencies(server.loadConfig()),
+		server.buildHarnessRuntimeDependenciesForScope(runtimeScope),
 	)
 	if createRuntimeError != nil {
 		server.writeAPIError(responseWriter, "handleHarnessAgentHeartbeat.runtime",
