@@ -122,3 +122,13 @@ func TestServerHandlerPreservesLegacyPagesAndChatRoutes(t *testing.T) {
 		t.Fatalf("unknown route status = %d, want %d", unknown.Code, http.StatusNotFound)
 	}
 }
+
+func TestServerHandlerReturnsNotFoundForUnknownNestedPage(t *testing.T) {
+	server := NewServer(Dependencies{LoadConfig: func() config.Config { return config.Config{} }})
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/unregistered/nested/page", nil))
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("GET /unregistered/nested/page status = %d, want %d", response.Code, http.StatusNotFound)
+	}
+}

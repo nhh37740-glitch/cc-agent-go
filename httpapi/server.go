@@ -108,6 +108,10 @@ func (server *Server) Handler() http.Handler {
 		http.ServeFile(w, r, "council.html")
 	})
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
 		http.ServeFile(w, r, "index.html")
 	})
 	return mux
