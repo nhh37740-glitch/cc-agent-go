@@ -4,9 +4,11 @@
 WebAgent、SubAgent 和其他应用共同调用的 `agent.Agent`。
 
 当前服务代码在 `agent/`、`memory/`、`model/`、`tool/`、`service/`、
-`harness/` 和根目录 `main.go`。`democode/` 是独立 Go 模块中的历史教学快照，
+`harness/` 和 `httpapi/`。根目录 `main.go` 只装配运行依赖并管理服务生命周期；
+`httpapi.Server` 接收显式依赖并注册 HTTP 路由。`scripts/check_boundaries.py`
+检查正式 Go 包的依赖方向，并禁止根入口重新注册 HTTP 路由。`democode/` 是独立 Go 模块中的历史教学快照，
 不会参与当前服务的 `go test ./...` 与发布构建。`scripts/check_boundaries.py`
-检查核心包的依赖方向，防止 `agent/` 反向依赖 `service/` 或 `harness/`。
+检查正式 Go 包的依赖方向，并保证 HTTP 路由留在 `httpapi/`。
 
 ## v15 已完成的执行方式
 

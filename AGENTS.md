@@ -78,7 +78,9 @@ curl http://localhost:8080/api/chat -X POST -H "Content-Type: application/json" 
 
 ```
 cc-agent-go/
-├── main.go                  # 入口：注册路由，启动 HTTP 服务
+├── main.go                  # 组合入口：装配依赖、启动服务并负责退出清理
+├── httpapi/
+│   └── server.go             # 显式依赖、每实例 Server 状态、HTTP 路由和处理器
 ├── go.mod                   # module cc-agent-go
 ├── agent/
 │   ├── agent.go             # 唯一 Agent.Run 模型—工具循环
@@ -175,6 +177,7 @@ if err := action(); err != nil {
 | `POST` | `/api/harness/chat/stream` | Harness SSE 对话 |
 | `GET` | `/api/harness/agents` | 当前项目被管理 Agent 名单 |
 | `GET` | `/api/harness/agents/{name}/memory` | 读取指定被管理 Agent 的会话记忆 |
+| `POST` | `/api/harness/agents/{name}/heartbeat` | 更新被管理 Agent 的活动心跳 |
 | `GET` | `/harness` | Harness 编排页面 |
 | `POST` | `/api/council` | 非流式元老院讨论 |
 | `POST` | `/api/council/stream` | SSE 元老院讨论 |
@@ -362,7 +365,7 @@ if err := action(); err != nil {
 | v13 | RAG 计划已归档，未实现 | 无正式 Go 文件 | ⏭ 跳过 |
 | v14 | 通用型 agent-as-tool、JSON 输入输出、最多 5 个并行 SubAgent、goroutine + channel、工具表复制 | `config/config.go`、`service/subagent.go`、`tool/registry.go`、`main.go` | ✅ |
 | v15 | 私有字段 Agent、外部执行环境、三种任务输入、唯一循环、项目会话、精确 tokenizer、具体事件 | `agent/`、`memory/`、`modeltoken/`、`host/`、`service/agent_runner.go`、`main.go`、`index.html` | ✅ |
-| v16 | Harness ALL IN AGENT：agent/memory 工具、注册表、完成队列、实况注入、harness.html | `harness/`、`harness.html`、`main.go` | ⏳ |
+| v16 | Harness ALL IN AGENT：agent/memory 工具、注册表、完成队列、实况注入、harness.html | `harness/`、`harness.html`、`httpapi/`、`main.go` | ⏳ |
 | v17 | A2A 与远程 Agent 调用 | `a2a/` | ⏳ |
 
 v9 新功能：元老院多 Agent 辩论，回合制发言，SSE 流式推送，公民插话，配置化人格 MD 文件。

@@ -1,6 +1,12 @@
-package main
+package httpapi
 
 import (
+	"cc-agent-go/config"
+	"cc-agent-go/harness"
+	"cc-agent-go/model"
+	"cc-agent-go/modeltoken"
+	"cc-agent-go/service"
+	"cc-agent-go/tool"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,24 +14,17 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"cc-agent-go/config"
-	"cc-agent-go/harness"
-	"cc-agent-go/model"
-	"cc-agent-go/modeltoken"
-	"cc-agent-go/service"
-	"cc-agent-go/tool"
 )
 
 // arrangeHarnessPromptsOK 把 Harness prompt 全局状态设为已加载。
 func arrangeHarnessPromptsOK(t *testing.T) {
 	t.Helper()
-	harnessPrompts = harness.Prompts{
+	testServer.harnessPrompts = harness.Prompts{
 		HarnessSystemPrompt:      "测试 Harness prompt",
 		ManagedAgentSystemPrompt: "测试执行 prompt",
 	}
-	harnessPromptsLoadError = nil
-	t.Cleanup(func() { harnessPromptsLoadError = nil })
+	testServer.harnessPromptsLoadError = nil
+	t.Cleanup(func() { testServer.harnessPromptsLoadError = nil })
 }
 
 func TestHandleHarnessChatStreamRejectsInvalidJSON(t *testing.T) {
@@ -36,7 +35,7 @@ func TestHandleHarnessChatStreamRejectsInvalidJSON(t *testing.T) {
 		strings.NewReader("{"),
 	)
 
-	handleHarnessChatStream(recorder, request)
+	testServer.handleHarnessChatStream(recorder, request)
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
@@ -82,7 +81,7 @@ func TestHandleHarnessChatStreamRejectsInvalidWorkingDirectory(t *testing.T) {
 				strings.NewReader(testCase.body),
 			)
 
-			handleHarnessChatStream(recorder, request)
+			testServer.handleHarnessChatStream(recorder, request)
 
 			if recorder.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
@@ -104,8 +103,8 @@ func TestHandleHarnessChatStreamRejectsInvalidWorkingDirectory(t *testing.T) {
 
 func TestHarnessRoutesReturnConfigErrorWhenPromptsMissing(t *testing.T) {
 	workingDirectory := t.TempDir()
-	harnessPromptsLoadError = os.ErrNotExist
-	t.Cleanup(func() { harnessPromptsLoadError = nil })
+	testServer.harnessPromptsLoadError = os.ErrNotExist
+	t.Cleanup(func() { testServer.harnessPromptsLoadError = nil })
 
 	chatBody, _ := json.Marshal(map[string]string{
 		"workingDirectory": workingDirectory,
@@ -117,7 +116,7 @@ func TestHarnessRoutesReturnConfigErrorWhenPromptsMissing(t *testing.T) {
 		"/api/harness/chat/stream",
 		strings.NewReader(string(chatBody)),
 	)
-	handleHarnessChatStream(chatRecorder, chatRequest)
+	testServer.handleHarnessChatStream(chatRecorder, chatRequest)
 	if chatRecorder.Code == http.StatusOK {
 		t.Fatal("prompt 缺失时 chat 路由不应返回 200")
 	}
@@ -128,7 +127,7 @@ func TestHarnessRoutesReturnConfigErrorWhenPromptsMissing(t *testing.T) {
 		"/api/harness/agents?workingDirectory="+url.QueryEscape(workingDirectory),
 		nil,
 	)
-	handleHarnessAgents(agentsRecorder, agentsRequest)
+	testServer.handleHarnessAgents(agentsRecorder, agentsRequest)
 	if agentsRecorder.Code == http.StatusOK {
 		t.Fatal("prompt 缺失时名单路由不应返回 200")
 	}
@@ -148,7 +147,7 @@ func TestHandleHarnessAgentsReturnsRoster(t *testing.T) {
 	// 创建 Runtime 后应自动出现 4 个常驻 Agent（idle）。
 	harnessRuntime, createRuntimeError := harness.GetOrCreateRuntime(
 		workingDirectory,
-		buildHarnessRuntimeDependencies(config.Load()),
+		testServer.buildHarnessRuntimeDependencies(config.Load()),
 	)
 	if createRuntimeError != nil {
 		t.Fatalf("GetOrCreateRuntime: %v", createRuntimeError)
@@ -160,7 +159,7 @@ func TestHandleHarnessAgentsReturnsRoster(t *testing.T) {
 		"/api/harness/agents?workingDirectory="+url.QueryEscape(workingDirectory),
 		nil,
 	)
-	handleHarnessAgents(initialRecorder, initialRequest)
+	testServer.handleHarnessAgents(initialRecorder, initialRequest)
 	if initialRecorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", initialRecorder.Code, http.StatusOK)
 	}
@@ -188,7 +187,7 @@ func TestHandleHarnessAgentsReturnsRoster(t *testing.T) {
 		"/api/harness/agents?workingDirectory="+url.QueryEscape(workingDirectory),
 		nil,
 	)
-	handleHarnessAgents(rosterRecorder, rosterRequest)
+	testServer.handleHarnessAgents(rosterRecorder, rosterRequest)
 	var rosterResponse struct {
 		Agents []harness.ManagedAgentRecord `json:"agents"`
 	}
@@ -219,7 +218,7 @@ func TestHandleHarnessAgentMemoryReturnsSession(t *testing.T) {
 
 	harnessRuntime, createRuntimeError := harness.GetOrCreateRuntime(
 		workingDirectory,
-		buildHarnessRuntimeDependencies(config.Load()),
+		testServer.buildHarnessRuntimeDependencies(config.Load()),
 	)
 	if createRuntimeError != nil {
 		t.Fatalf("GetOrCreateRuntime: %v", createRuntimeError)
@@ -239,7 +238,7 @@ func TestHandleHarnessAgentMemoryReturnsSession(t *testing.T) {
 			},
 		},
 	}
-	if saveError := projectConversationStore.SaveConversation(
+	if saveError := testServer.projectConversationStore.SaveConversation(
 		workingDirectory,
 		seededSession,
 	); saveError != nil {
@@ -249,7 +248,7 @@ func TestHandleHarnessAgentMemoryReturnsSession(t *testing.T) {
 	harnessMux := http.NewServeMux()
 	harnessMux.HandleFunc(
 		"GET /api/harness/agents/{name}/memory",
-		handleHarnessAgentMemory,
+		testServer.handleHarnessAgentMemory,
 	)
 	testServer := httptest.NewServer(harnessMux)
 	defer testServer.Close()
@@ -295,11 +294,11 @@ func TestManagedAgentToolRegistriesComposition(t *testing.T) {
 		tool.NewSkillTool(),
 		tool.NewCreateSkillTool(),
 	} {
-		if registerError := registry.Register(baseTool); registerError != nil {
+		if registerError := testServer.registry.Register(baseTool); registerError != nil {
 			t.Fatalf("注册基础工具失败: %v", registerError)
 		}
 	}
-	if registerMCPError := registry.RegisterFunctionTool(
+	if registerMCPError := testServer.registry.RegisterFunctionTool(
 		"mcp_playwright__browser_navigate",
 		"假 MCP 工具",
 		map[string]any{"type": "object", "properties": map[string]any{}},
@@ -311,10 +310,10 @@ func TestManagedAgentToolRegistriesComposition(t *testing.T) {
 		t.Fatalf("注册假 MCP 工具失败: %v", registerMCPError)
 	}
 	t.Cleanup(func() {
-		registry.Unregister("mcp_playwright__browser_navigate")
+		testServer.registry.Unregister("mcp_playwright__browser_navigate")
 	})
 
-	managedAgentTools := registry.CopyExcludingTools(generalSubAgentToolName)
+	managedAgentTools := testServer.registry.CopyExcludingTools(generalSubAgentToolName)
 	registeredNames := make(map[string]bool)
 	for _, toolDefinition := range managedAgentTools.GetDefinitions() {
 		registeredNames[toolDefinition["name"].(string)] = true
@@ -353,8 +352,8 @@ func TestHandleHarnessChatStreamIntegration(t *testing.T) {
 		t.Fatalf("创建 token 计数器失败: %v", createTokenCounterError)
 	}
 	defer tokenCounter.Close()
-	configuredTokenCounter = tokenCounter
-	configuredModelContextWindowTokens =
+	testServer.tokenCounter = tokenCounter
+	testServer.modelContextWindowTokens =
 		tokenizerConfiguration.MaximumContextTokens
 
 	loadedHarnessPrompts, loadPromptsError := harness.LoadPrompts(
@@ -364,8 +363,8 @@ func TestHandleHarnessChatStreamIntegration(t *testing.T) {
 	if loadPromptsError != nil {
 		t.Fatalf("加载 Harness prompt 失败: %v", loadPromptsError)
 	}
-	harnessPrompts = loadedHarnessPrompts
-	harnessPromptsLoadError = nil
+	testServer.harnessPrompts = loadedHarnessPrompts
+	testServer.harnessPromptsLoadError = nil
 
 	integrationBody, _ := json.Marshal(map[string]string{
 		"workingDirectory": t.TempDir(),
@@ -378,7 +377,7 @@ func TestHandleHarnessChatStreamIntegration(t *testing.T) {
 		strings.NewReader(string(integrationBody)),
 	)
 
-	handleHarnessChatStream(recorder, request)
+	testServer.handleHarnessChatStream(recorder, request)
 
 	streamBody := recorder.Body.String()
 	for _, expectedFrame := range []string{
@@ -401,7 +400,7 @@ func TestHandleHarnessAgentHeartbeat(t *testing.T) {
 
 	harnessRuntime, createRuntimeError := harness.GetOrCreateRuntime(
 		workingDirectory,
-		buildHarnessRuntimeDependencies(config.Load()),
+		testServer.buildHarnessRuntimeDependencies(config.Load()),
 	)
 	if createRuntimeError != nil {
 		t.Fatalf("GetOrCreateRuntime: %v", createRuntimeError)
@@ -414,7 +413,7 @@ func TestHandleHarnessAgentHeartbeat(t *testing.T) {
 	heartbeatMux := http.NewServeMux()
 	heartbeatMux.HandleFunc(
 		"POST /api/harness/agents/{name}/heartbeat",
-		handleHarnessAgentHeartbeat,
+		testServer.handleHarnessAgentHeartbeat,
 	)
 	testServer := httptest.NewServer(heartbeatMux)
 	defer testServer.Close()

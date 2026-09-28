@@ -61,7 +61,7 @@
 | `agent/agent.go` | `AgentConfiguration`、`Agent`、`NewAgent`、`Agent.Run` | `Run` 中保存唯一循环：准备请求 → 精确计数 → DeepSeek → 工具 → 下一轮或完成 → 保存项目会话。它只使用 `tool.Registry`，不检查 MCP Server 名称或普通工具名称。 |
 | `agent/model_call.go` | `AgentModelCallRequest`、`AgentModelCallFunction` | `service.RunAgentTask` 提供具体 DeepSeek 调用函数；`Agent.Run` 只调用该函数。 |
 | `agent/result.go` | 三种完成结果和两种记忆保存结果 | 分别表达正常完成、终止工具完成、达到最大轮数，以及记忆保存成功或失败。 |
-| `agent/events.go` | round、文字、工具、压缩、保存和完成事件 | `Agent.Run` 发送具体事件；`main.writeAgentEventSSE` 按具体事件类型编码 JSON。 |
+| `agent/events.go` | round、文字、工具、压缩、保存和完成事件 | `Agent.Run` 发送具体事件；`httpapi.writeAgentEventSSE` 按具体事件类型编码 JSON。 |
 | `agent/memory_reference.go` | `AgentMemoryReference`、`loadRecentConversation` | 生成工作目录、`.cc-agent/sessions/<id>.json`、`AGENTS.md` 和允许读取命令的 system instruction；按 `KeepRecentMemoryTokens` 预算从会话文件装配「历史摘要 + 最近对话」到请求开头（摘要固定保留，预算外靠工具现读）。 |
 | `agent/token_counter.go` | `PreparedModelRequest`、`AgentTokenCounter`、`TokenTruncationResult` | `Agent.Run` 在每次模型调用前计数请求，并用相同 tokenizer 限制工具结果和历史文件。 |
 | `memory/conversation_store.go` | `ProjectConversationStore` | 每个读取、保存、列表和删除函数都收到工作目录；同名会话在不同项目生成不同文件。内部锁按完整会话文件路径区分。 |
@@ -80,7 +80,8 @@
 | `service/agent_runner.go` | `AgentRunOptions`、`RunAgentTask` | 把 DeepSeek `Chat`/`ChatStream` 适配成 `AgentModelCallFunction`，然后只调用 `Agent.Run`。 |
 | `service/subagent.go` | `RunSubAgent`、`RunSubAgentsInParallel`、`RunSubAgentsInBackground` | `RunSubAgent` 创建 `HostedAgentTaskInput` 和独立 `AgentExecutionEnvironment` 后调用 `RunAgentTask`；这里不再保存第二份模型—工具循环。 |
 | `service/client.go` / `service/stream.go` | `Chat`、`ChatStream` | 只处理 DeepSeek HTTP 请求和响应，不管理 Agent round 或工具。 |
-| `main.go` | HTTP handlers、`handleHarnessChatStream`、`handleHarnessAgents`、`handleHarnessAgentMemory`、`harnessMCPLiveStatusText`、`buildHarnessRuntimeDependencies`、`assignWebAgentConversationID`、`handleListRecentApplicationLogs`、SubAgent 工具注册、`main` | 启动时加载 tokenizer；WebAgent 新会话由 handler 创建编号，已有会话沿用前端选中的编号；会话接口按 `workingDirectory` 列出和读取项目历史；日志接口读取 `logs/server.jsonl` 最近的有效 JSON；后台回调创建 `InternalContinuationTaskInput` 并调用同一个 `RunAgentTask`；启动时加载 Harness 两个 prompt（缺失时 Harness 路由返回配置错误但不退出），Harness 路由校验先于 SSE 头（参数错误返回真实 400）。 |
+| `main.go` | Composition root、`main` | 加载配置、tokenizer、人格与 MCP/Harness prompt；创建 Registry、会话状态和 `httpapi.Server`，启动 HTTP 服务并负责退出清理。 |
+| `httpapi/server.go` | `Dependencies`、`Server`、`NewServer`、`Handler` | HTTP 路由、页面和 API handlers；通过 `Dependencies` 注入配置加载器、Registry、MCP 管理器、会话存储、token counter 与 Harness prompt；每个 Server 拥有独立状态。 |
 | `mcp/server_tools.go` | MCP 动态工具注册和 `tools/call` | 注册的执行函数接受 `ToolExecutionEnvironment`，但浏览器 MCP 不读取本地目录；增加 MCP Server 不修改 `Agent.Run`。 |
 | `host/participant_host.go` | `ParticipantTurn`、`RunParticipantTurn` | 外部主持人选择角色、项目目录、角色会话编号和当前任务，再调用同一个 `Agent.Run`。 |
 | `harness/paths.go` | `SlugForAgentName`、`ManagedAgentConversationID`、`AgentRegistryFilePath`、`SharedDirectoryPath`、`ResidentDirectoryPath` | slug 清洗（中文临时名回退 `agent-<序号>`）、`harness-agent-<slug>` 会话编号、注册表/共享/常驻路径。 |
@@ -91,7 +92,7 @@
 | `harness/agent_tool.go` | `managedAgentTool`（`agent`） | 三参数 `agent`/`request`/`forget`；非阻塞启动被管理 Agent；运行中同名拒绝；常驻名不可 forget。 |
 | `harness/memory_tool.go` | `harnessMemoryTool`（`memory`） | 读取 Harness 自己的会话记忆；`recentMessages`（默认 20）与 Go 正则 `pattern` 过滤。 |
 | `harness/docs_tool.go` | `harnessDocsTool`（`docs`） | 主管理受限读：仅 harness/AGENTS.md、shared/**、residents/*/AGENTS.md；禁止专属 docs 与会话文件，防上下文爆炸。 |
-| `harness/agent_events_json.go` | `AgentEventJSONFields` | 事件→JSON 的 harness 本地 switch，字段名与 `main.writeAgentEventSSE` 对齐；扇出到 `ConversationEventReceivers`。 |
+| `harness/agent_events_json.go` | `AgentEventJSONFields` | 事件→JSON 的 harness 本地 switch，字段名与 `httpapi.writeAgentEventSSE` 对齐；扇出到 `ConversationEventReceivers`。 |
 | `harness/harness.go` | `Prompts`、`LoadPrompts`、`BuildRuntimeDependencies` | 启动时加载 `harness/system_prompt.md` 与 `harness/managed_agent_prompt.md`；缺失时 Harness 路由返回配置错误。 |
 | `harness/system_prompt.md` / `harness/managed_agent_prompt.md` | 编排者 prompt / 执行型 Agent 统一 prompt | 常驻/临时分类、文档布局、主管理严格可读范围、docs 工具、派工必填字段；执行型 Agent 强制最终汇报（成功/失败都必须有正文）。 |
 | `index.html` | WebAgent 项目页面 | 用户输入项目目录后，页面调用会话列表接口；点击会话后加载历史；新会话编号由 Go 创建；中间显示历史和当前结果；右侧显示 Agent 事件及服务端 JSON 日志；左侧管理 MCP Server，并显示实际 HTTP 错误。顶栏与 `/harness`、`/council` 互链。 |
