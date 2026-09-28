@@ -81,7 +81,13 @@
 | `service/subagent.go` | `RunSubAgent`、`RunSubAgentsInParallel`、`RunSubAgentsInBackground` | `RunSubAgent` 创建 `HostedAgentTaskInput` 和独立 `AgentExecutionEnvironment` 后调用 `RunAgentTask`；这里不再保存第二份模型—工具循环。 |
 | `service/client.go` / `service/stream.go` | `Chat`、`ChatStream` | 只处理 DeepSeek HTTP 请求和响应，不管理 Agent round 或工具。 |
 | `main.go` | Composition root、`main` | 加载配置、tokenizer、人格与 MCP/Harness prompt；创建 Registry、会话状态和 `httpapi.Server`，启动 HTTP 服务并负责退出清理。 |
-| `httpapi/server.go` | `Dependencies`、`Server`、`NewServer`、`Handler` | HTTP 路由、页面和 API handlers；通过 `Dependencies` 注入配置加载器、Registry、MCP 管理器、会话存储、token counter 与 Harness prompt；每个 Server 拥有独立状态。 |
+| `httpapi/server.go` | `Dependencies`、`Server`、`NewServer`、`Handler` | 持有显式注入的运行依赖；为每个 Server 创建独立会话状态；注册兼容的页面与 API 路由。 |
+| `httpapi/agent_handlers.go` / `httpapi/chat_handlers.go` | SubAgent 编排、WebAgent 聊天与事件处理 | 使用 Server 注入的 Registry、事件接收器、锁、会话存储和 token counter；不依赖根入口的包级状态。 |
+| `httpapi/api_errors.go` | API 错误分类、HTTP 状态与 SSE 错误编码 | 将服务错误转换为原有错误 JSON、状态码和流式事件。 |
+| `httpapi/mcp_handlers.go` | MCP Server 列表与选择路由 | 使用注入的 MCPServerManager 和工具 Registry。 |
+| `httpapi/harness_handlers.go` | Harness 对话、Agent 名单、记忆与 heartbeat 路由 | 在每个请求中按注入的配置、prompt 和存储装配 Harness Runtime。 |
+| `httpapi/conversation_handlers.go` | 会话停止、事件、列表、读取、删除和日志路由 | 使用注入的运行注册表、事件接收器、会话存储与日志路径。 |
+| `httpapi/council_handlers.go` | 元老院讨论路由 | 通过注入的人格、配置与事件处理模型讨论。 |
 | `mcp/server_tools.go` | MCP 动态工具注册和 `tools/call` | 注册的执行函数接受 `ToolExecutionEnvironment`，但浏览器 MCP 不读取本地目录；增加 MCP Server 不修改 `Agent.Run`。 |
 | `host/participant_host.go` | `ParticipantTurn`、`RunParticipantTurn` | 外部主持人选择角色、项目目录、角色会话编号和当前任务，再调用同一个 `Agent.Run`。 |
 | `harness/paths.go` | `SlugForAgentName`、`ManagedAgentConversationID`、`AgentRegistryFilePath`、`SharedDirectoryPath`、`ResidentDirectoryPath` | slug 清洗（中文临时名回退 `agent-<序号>`）、`harness-agent-<slug>` 会话编号、注册表/共享/常驻路径。 |

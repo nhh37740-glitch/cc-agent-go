@@ -80,7 +80,14 @@ curl http://localhost:8080/api/chat -X POST -H "Content-Type: application/json" 
 cc-agent-go/
 ├── main.go                  # 组合入口：装配依赖、启动服务并负责退出清理
 ├── httpapi/
-│   └── server.go             # 显式依赖、每实例 Server 状态、HTTP 路由和处理器
+│   ├── server.go             # 显式依赖、每实例 Server 状态和 HTTP 路由
+│   ├── agent_handlers.go     # Agent/SubAgent 请求编排
+│   ├── chat_handlers.go      # WebAgent 聊天和事件处理
+│   ├── api_errors.go         # HTTP/SSE 错误映射
+│   ├── mcp_handlers.go       # MCP Server API
+│   ├── harness_handlers.go   # Harness API
+│   ├── conversation_handlers.go # 会话与日志 API
+│   └── council_handlers.go   # 元老院 API
 ├── go.mod                   # module cc-agent-go
 ├── agent/
 │   ├── agent.go             # 唯一 Agent.Run 模型—工具循环
